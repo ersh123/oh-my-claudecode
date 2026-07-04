@@ -585,3 +585,32 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - External interactive Claude/tmux dogfood was not run under the codex-only advisor boundary; the compiled Stop bridge is the live hook path under test.
 - `.mjs` parity, team, state IO, and docs roadmap areas remain open.
+
+## 2026-07-05 — dogfood/mjs-session-start-template-restore
+
+Candidates + WSJF:
+- TAKE: align installed session-start template ultrawork restore wording with runtime script. Value 7, risk reduction 7, urgency 5, complexity 1 => 19.0. The installed standalone hook told new sessions to continue an old ultrawork task, while `scripts/session-start.mjs` already treats restored state as prior-session context.
+- DEFER: full session-start template parity rewrite. Value 8, risk reduction 7, urgency 5, complexity 8 => 2.5. The template and runtime script differ broadly, but only the restore wording had a small proven safety drift in this slice.
+- DROP: delete standalone template restore support. Value 3, risk reduction 4, urgency 2, complexity 4 => 2.25. That would remove useful installed-hook behavior instead of aligning it.
+
+Changed:
+- `templates/hooks/session-start.mjs` now restores ultrawork as prior-session context and tells the model to prioritize the newest user request.
+- `src/installer/__tests__/session-start-template.test.ts` pins the installed template against the old imperative restore wording.
+- `ROADMAP.md` records this under `.mjs` parity without marking the area complete.
+
+Evidence:
+- RED: `npx vitest run src/installer/__tests__/session-start-template.test.ts --reporter=verbose` failed on `still restores ultrawork for the owning session` because the template did not contain `Prioritize the user's newest request` and still emitted `Continue working in ultrawork mode until all tasks are complete.`
+- GREEN targeted: the same template suite passed 16/16 after the fix.
+- Build: `npm run build` exited 0 and regenerated the compiled installer template test artifacts.
+- Dogfood direct installed-template probe: `node templates/hooks/session-start.mjs` with active ultrawork state wrote `.omc/dogfood/mjs-template-session-start-1783201240/output.json`; parsed evidence had `continue=true`, `hasRestore=true`, `hasPrioritize=true`, `hasImperative=false`, and quote `Treat this as prior-session context only. Prioritize the user's newest request, and resume ultrawork only if the user explicitly asks to continue it.`
+- Typecheck: `npx tsc` exited 0.
+- Focused parity run: `npx vitest run src/installer/__tests__/session-start-template.test.ts src/__tests__/session-start-script-context.test.ts --reporter=verbose` passed 21/21.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 0 failing test(s) match test-baseline.json`; JSON confirms `numTotalTests=10252`, `numPassedTests=10245`, `numFailedTests=0`, and `success=true`.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The change only removes an installed-template instruction that could make a fresh session continue stale ultrawork context. It aligns template behavior with the already-tested runtime script and does not alter state lookup, session collision, or PID liveness logic.
+
+Remaining risk:
+- Broader session-start template/runtime drift remains. This slice only closes the ultrawork restore wording mismatch.
+- `.mjs` parity, team terminal/model-routing, state IO, and docs roadmap areas remain open.
