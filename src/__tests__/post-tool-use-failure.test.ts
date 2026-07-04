@@ -6,10 +6,20 @@ import { afterEach, describe, expect, it } from 'vitest';
 const NODE = process.execPath;
 const REPO_ROOT = resolve(join(__dirname, '..', '..'));
 const SCRIPT_PATH = join(REPO_ROOT, 'scripts', 'post-tool-use-failure.mjs');
+const TEMPLATE_SCRIPT_PATH = join(REPO_ROOT, 'templates', 'hooks', 'post-tool-use-failure.mjs');
 const TEST_TMP_ROOT = join(REPO_ROOT, '.tmp-post-tool-use-failure-tests');
 
-function runHook(input: Record<string, unknown>, extraEnv?: Record<string, string>) {
-  const raw = execFileSync(NODE, [SCRIPT_PATH], {
+const HOOK_SCRIPT_PATHS = [
+  ['runtime', SCRIPT_PATH],
+  ['template', TEMPLATE_SCRIPT_PATH],
+] as const;
+
+function runHook(
+  input: Record<string, unknown>,
+  extraEnv?: Record<string, string>,
+  scriptPath = SCRIPT_PATH,
+) {
+  const raw = execFileSync(NODE, [scriptPath], {
     input: JSON.stringify(input),
     encoding: 'utf-8',
     env: {
@@ -47,7 +57,7 @@ describe('post-tool-use-failure.mjs', () => {
     return cwd;
   }
 
-  it('suppresses optional omx startup read method-not-found noise', () => {
+  it.each(HOOK_SCRIPT_PATHS)('suppresses optional omx startup read method-not-found noise in %s artifact', (_name, scriptPath) => {
     const cwd = makeRepoLocalTempDir();
     const errorPath = join(cwd, '.omc', 'state', 'last-tool-error.json');
 
@@ -56,7 +66,7 @@ describe('post-tool-use-failure.mjs', () => {
       tool_input: { mode: 'deep-interview' },
       error: 'Method not found',
       cwd,
-    });
+    }, undefined, scriptPath);
 
     expect(result).toEqual({ continue: true, suppressOutput: true });
     expect(existsSync(errorPath)).toBe(false);
@@ -91,7 +101,7 @@ describe('post-tool-use-failure.mjs', () => {
     expect(errorState.retry_count).toBe(1);
   });
 
-  it('suppresses broad AGENTS scan permission-denied noise for Bash', () => {
+  it.each(HOOK_SCRIPT_PATHS)('suppresses broad AGENTS scan permission-denied noise for Bash in %s artifact', (_name, scriptPath) => {
     const cwd = makeRepoLocalTempDir();
     const errorPath = join(cwd, '.omc', 'state', 'last-tool-error.json');
 
@@ -106,7 +116,7 @@ describe('post-tool-use-failure.mjs', () => {
         'Command failed with exit code 1:',
       ].join('\n'),
       cwd,
-    });
+    }, undefined, scriptPath);
 
     expect(result).toEqual({ continue: true, suppressOutput: true });
     expect(existsSync(errorPath)).toBe(false);
