@@ -707,3 +707,32 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Live merge will repeat build, typecheck, focused affected tests, built-code dogfood, baseline, diff scans, and `loop-last-good` movement.
 - `.mjs` parity, state IO, docs, and livelock coverage remain roadmap work; team exit criteria are now closed in this worktree.
+
+## 2026-07-05 — dogfood/code-simplifier-template-windowshide
+
+Candidates + WSJF:
+- TAKE: add standalone code-simplifier template to the Windows child-process hide guard. Value 5, risk reduction 6, urgency 4, complexity 1 => 15.0. Runtime `scripts/code-simplifier.mjs` hid nested `execSync` windows, but the installed template did not.
+- DEFER: `verify-deliverables.mjs` canonical team-stage fallback. Value 5, risk reduction 5, urgency 4, complexity 2 => 7.0. Drift is real, but the hook currently emits the same suppressed output for skip/pass/fail, so behavior evidence is weak.
+- DROP: broad hook template/runtime sync. Value 8, risk reduction 7, urgency 5, complexity 8 => 2.5. Existing standalone templates intentionally differ from live scripts; byte-syncing them would be a large unrelated behavior surface.
+
+Changed:
+- `templates/hooks/code-simplifier.mjs` now passes `windowsHide: true` to its nested `git diff HEAD --name-only` `execSync`, matching the runtime script.
+- `tests/lint/windows-hide-hooks.test.ts` now scans the standalone code-simplifier template as a recurring hook script, so future child-process calls there must hide Windows console windows.
+- `ROADMAP.md` records the `.mjs` parity evidence without marking the whole area done.
+
+Evidence:
+- RED: `npx vitest run tests/lint/windows-hide-hooks.test.ts --reporter=verbose` failed with `templates/hooks/code-simplifier.mjs:56: execSync missing windowsHide: true`.
+- GREEN affected: `npx vitest run tests/lint/windows-hide-hooks.test.ts src/installer/__tests__/hook-templates.test.ts --reporter=verbose` passed 12/12.
+- Direct standalone-template smoke: `.omc/dogfood/code-simplifier-template-windowshide-1783205534201/output.json` shows the template blocked a modified `sample.ts`, wrote the code-simplifier marker, and source contained `windowsHide: true`.
+- Build: `npm run build` exited 0 with no committed generated diff for this template-only change.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and baseline JSON confirms `numTotalTests=10259`, `numPassedTests=10252`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: behavior/test diff is 3 lines across `templates/hooks/code-simplifier.mjs` and `tests/lint/windows-hide-hooks.test.ts`; `ROADMAP.md` and this journal only record evidence.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The fix is scoped to one child-process option in the standalone template plus lint coverage. It does not alter opt-in semantics, marker behavior, runtime hook routing, or generated bridge output.
+
+Remaining risk:
+- `.mjs` parity remains open; this slice only closes code-simplifier Windows child-process hardening parity.
+- Live merge will repeat build, typecheck, affected tests, direct standalone-template smoke, baseline, diff scans, and `loop-last-good` movement.
