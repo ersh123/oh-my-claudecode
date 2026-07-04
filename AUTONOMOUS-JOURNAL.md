@@ -71,3 +71,33 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Four accepted baseline failures remain: auto-update reconciliation, subagent-lock latency, and two tmux spawnWorkerInPane cases.
 - Full-suite stdout is still noisy from existing git/tmux fixtures; the JSON baseline set remains the source of truth.
+
+## 2026-07-05 — dogfood/auto-update-baseline-shrink
+
+Candidates + WSJF:
+- TAKE: shrink `test-baseline.json` by fixing host-FS leakage in `auto-update.test.ts`. Value 7, risk reduction 8, urgency 7, complexity 1 => 22.0. Deterministic unit failure, one test boundary, no runtime behavior change needed.
+- DEFER: tmux `spawnWorkerInPane` baseline failures. Value 7, risk reduction 8, urgency 6, complexity 7 => 3.0. Needs separate terminal-delivery root-cause pass.
+- DEFER: `subagent-lock` perf baseline. Value 5, risk reduction 6, urgency 4, complexity 8 => 1.9. Timing-sensitive and lower confidence.
+
+Changed:
+- `auto-update.test.ts` now mocks `realpathSync.native` with the rest of `fs`, so unit tests do not depend on the currently installed `~/.claude/plugins/cache` symlink layout.
+- Removed the fixed auto-update failure from `test-baseline.json`, shrinking the known-failure set from 4 to 3.
+
+Evidence:
+- RED: `npx vitest run src/__tests__/auto-update.test.ts -t 'fails reconciliation when active plugin cache repair reports validation errors'` failed with `expected true to be false`.
+- Root cause: the test `activeRoot` matched the real `/home/niko/.claude/plugins/cache/omc/oh-my-claudecode/4.14.1` symlink, and unmocked `realpathSync.native` filtered it out as outside cache before validation ran.
+- GREEN targeted: same targeted command passed 1/1 after mocking `realpathSync.native`.
+- GREEN auto-update suite: `npx vitest run src/__tests__/auto-update.test.ts` passed 36/36.
+- Build: `npm run build` exited 0 and regenerated `dist/__tests__/auto-update.test.js`.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 3 failing test(s) match test-baseline.json`.
+- Baseline JSON failures are now exactly: subagent-lock latency plus two `spawnWorkerInPane` tmux cases.
+- Secret/format scan: `git diff --check` and diff scan for key/token/password/private-key patterns produced no output.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The fix is scoped to test isolation. Runtime cache-root canonicalization stays unchanged, including the existing escape protection covered by installer plugin-cache tests.
+> The baseline shrink is justified by fresh targeted, file-level, build, and full-suite baseline evidence.
+
+Remaining risk:
+- Three accepted baseline failures remain: subagent-lock latency and two tmux spawnWorkerInPane cases.
+- Full-suite stdout remains noisy and briefly printed an intermediate outside-baseline warning before the JSON baseline concluded cleanly; the final JSON set and `baseline ok: 3` are the source of truth.
