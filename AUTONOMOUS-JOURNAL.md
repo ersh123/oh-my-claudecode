@@ -452,3 +452,27 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - The hook still cannot cryptographically prove reviewer independence; it only enforces the transcript channel and role type.
 - Human-gate request-id fidelity remains open on the roadmap.
+
+## 2026-07-05 — dogfood/nikoflow-human-turn-fidelity
+
+Candidates + WSJF:
+- TAKE: close nikoflow human/request-id roadmap criteria with fresh evidence only. Value 7, risk reduction 8, urgency 5, complexity 1 => 20.0. The code already had the invariants; the roadmap remained open because evidence had not been rechecked after the reviewer-role slice.
+- DEFER: change human-gate semantics to parse/understand the user's approval text. Value 6, risk reduction 5, urgency 3, complexity 6 => 2.33. The current known limitation is content-blind approval, not a break in post-mint turn enforcement.
+- DROP: add production code for a passing no-op guard. Value 2, risk reduction 1, urgency 1, complexity 3 => 1.33. No failing behavior was found in this slice.
+
+Changed:
+- `ROADMAP.md` now marks nikoflow Done against its explicit criteria: human gates, reviewer gates, stale request ids, and request-id fidelity.
+- Removed the stale backlog item for investigating request-id fidelity.
+
+Evidence:
+- Code inspection: `recordNikoflowUserPrompt` is called from `UserPromptSubmit` only; `readNikoflowGateText` ignores nested `tool_result` text blocks for human gates.
+- Focused nikoflow run: `npx vitest run src/hooks/nikoflow/__tests__/nikoflow-checkloop.test.ts src/hooks/nikoflow/__tests__/nikoflow-gates.test.ts src/hooks/nikoflow/__tests__/nikoflow-properties.test.ts src/hooks/nikoflow/__tests__/nikoflow-execute.test.ts src/hooks/nikoflow/__tests__/nikoflow-roles.test.ts --reporter=verbose` passed 57/57.
+- Covered by that run: post-mint user-turn requirement, no-user self-confirm rejection, premature tag request-id rotation, stale/wrong request-id rejection, prompt request-id injection, and property-based request-id mismatch rejection.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> Evidence-only closure. No runtime, generated artifact, or test assertion changed.
+> The remaining content-blind human approval caveat stays documented in `docs/NIKOFLOW-FORK.md`.
+
+Remaining risk:
+- Human-gate approval is still content-blind: a user turn containing "no" still lets the model emit a gate tag. This is outside the closed roadmap criterion and remains a product/semantics decision.

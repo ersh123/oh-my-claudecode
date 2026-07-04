@@ -4,7 +4,7 @@ This is the steering artifact required by the autonomous mandate. Mark an area d
 
 | Area | Exit criteria | Status | Evidence / next action |
 | --- | --- | --- | --- |
-| nikoflow | [ ] Human gates require a post-request real user turn. [x] Execute/verify gates require independent reviewer tool results. [ ] Stale request ids fail closed. [ ] Request-id fidelity is pinned. | In progress | Execute/verify now reject non-reviewer Task gate laundering (`executor` Task negatives). Next: finish request-id fidelity without weakening anti-self-approval. |
+| nikoflow | [x] Human gates require a post-request real user turn. [x] Execute/verify gates require independent reviewer tool results. [x] Stale request ids fail closed. [x] Request-id fidelity is pinned. | Done | Fresh focused nikoflow evidence covers post-mint user turns, no-user/self-confirm rejection, request-id rotation, stale-id rejection, prompt injection, reviewer role fidelity, and property mismatch checks. |
 | ralph | [ ] Cannot self-approve. [ ] Phase machine cannot livelock on recoverable failures. [ ] Live dogfood has BLOCK->PASS evidence. | Unchecked | Discovery pass needed. |
 | team | [ ] Team phases reach terminal states. [ ] Worker launch/model routing is deterministic. [x] Worktree cleanup is covered. | In progress | Spawn env baseline fixed; cleanup now removes safe clean worktrees even when unrelated backup blockers keep team state. Next: audit terminal phase/model-routing gaps. |
 | persistent-mode | [x] Runtime hook cannot silently skip active nikoflow missing-engine enforcement. [x] Runtime/template missing-engine parity is checked. [x] Failure mode is explicit in tests. [x] Live plugin Stop manifest smoke covers real hook config. | Done | Runtime and installed template both fail closed for missing TS engine; live manifest-shaped Stop command blocks active nikoflow state in a temp git project/state. Broader template/runtime parity stays under `.mjs` parity. |
@@ -17,7 +17,6 @@ This is the steering artifact required by the autonomous mandate. Mark an area d
 ## Backlog
 
 - Design nikoflow F1 write ordering and stop before production edits.
-- Investigate request-id fidelity without weakening anti-self-approval.
 - Audit team terminal phase/model-routing gaps now that cleanup orphan path is covered.
 - Audit `.mjs` defaults and parsers against TS runtime.
 - Extend livelock and anti-self-approval coverage across ralph, team, and persistent-mode.
