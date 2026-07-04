@@ -1,0 +1,7 @@
+[
+  "auto-update reconciliation fails reconciliation when active plugin cache repair reports validation errors",
+  "subagent-lock benchmark sequential locked updates stay within Linux latency guardrails",
+  "omc ask command loads --agent-prompt role from resolved prompts dir and prepends role content",
+  "spawnWorkerInPane uses argv-style launch with literal tmux send-keys",
+  "spawnWorkerInPane sends cmux worker command text to the target surface and submits with send-key-surface"
+]
