@@ -67,11 +67,6 @@ function resolveAskPromptsDir(
   packageRoot: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const codexHomeOverride = env.CODEX_HOME?.trim();
-  if (codexHomeOverride) {
-    return join(codexHomeOverride, 'prompts');
-  }
-
   try {
     const scopePath = join(cwd, '.omx', 'setup-scope.json');
     if (existsSync(scopePath)) {
@@ -82,6 +77,11 @@ function resolveAskPromptsDir(
     }
   } catch {
     // Ignore malformed persisted scope and fall back to package agents.
+  }
+
+  const codexHomeOverride = env.CODEX_HOME?.trim();
+  if (codexHomeOverride) {
+    return join(codexHomeOverride, 'prompts');
   }
 
   return join(packageRoot, 'agents');

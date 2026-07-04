@@ -47,10 +47,6 @@ function getPackageRoot() {
     }
 }
 function resolveAskPromptsDir(cwd, packageRoot, env = process.env) {
-    const codexHomeOverride = env.CODEX_HOME?.trim();
-    if (codexHomeOverride) {
-        return join(codexHomeOverride, 'prompts');
-    }
     try {
         const scopePath = join(cwd, '.omx', 'setup-scope.json');
         if (existsSync(scopePath)) {
@@ -62,6 +58,10 @@ function resolveAskPromptsDir(cwd, packageRoot, env = process.env) {
     }
     catch {
         // Ignore malformed persisted scope and fall back to package agents.
+    }
+    const codexHomeOverride = env.CODEX_HOME?.trim();
+    if (codexHomeOverride) {
+        return join(codexHomeOverride, 'prompts');
     }
     return join(packageRoot, 'agents');
 }
