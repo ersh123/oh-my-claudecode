@@ -354,6 +354,50 @@ describe('Ralph verification flow', () => {
         const legacyPrdPath = join(testDir, '.omc', 'prd.json');
         expect(JSON.parse(readFileSync(legacyPrdPath, 'utf-8'))).toEqual(legacyPrd);
     });
+    it('does not immediately restart completion verification after the final rejection attempt', async () => {
+        const sessionId = 'ralph-completion-final-rejection';
+        const sessionDir = join(testDir, '.omc', 'state', 'sessions', sessionId);
+        mkdirSync(sessionDir, { recursive: true });
+        const prd = {
+            project: 'Test',
+            branchName: 'ralph/test',
+            description: 'Completion rejection should return to work',
+            userStories: [
+                {
+                    id: 'US-001',
+                    title: 'Done story',
+                    description: 'Claimed complete',
+                    acceptanceCriteria: ['Criterion is implemented'],
+                    priority: 1,
+                    passes: true,
+                    architectVerified: true,
+                },
+            ],
+        };
+        writePrd(testDir, prd);
+        writeRalphState(sessionId, { critic_mode: 'critic' });
+        writeFileSync(join(sessionDir, 'ralph-verification-state.json'), JSON.stringify({
+            pending: true,
+            completion_claim: 'All stories are complete',
+            verification_attempts: 2,
+            max_verification_attempts: 3,
+            requested_at: new Date().toISOString(),
+            original_task: 'Implement issue #2999',
+            critic_mode: 'critic',
+            verification_scope: 'completion',
+            request_id: 'completion-request',
+        }));
+        const transcriptDir = join(claudeConfigDir, 'sessions', sessionId);
+        mkdirSync(transcriptDir, { recursive: true });
+        writeFileSync(join(transcriptDir, 'transcript.md'), 'Critic: Missing test coverage before completion.\n');
+        const result = await checkPersistentModes(sessionId, testDir);
+        expect(result.shouldBlock).toBe(true);
+        expect(result.mode).toBe('ralph');
+        expect(result.message).toContain('<ralph-continuation-after-rejection>');
+        expect(result.message).toContain('Missing test coverage before completion.');
+        expect(result.message).not.toContain('<ralph-verification>');
+        expect(result.message).not.toContain('Attempt 1/3');
+    });
     it('does not reuse stale earlier story approval from transcript tail', async () => {
         const sessionId = 'ralph-story-stale-approval';
         const sessionDir = join(testDir, '.omc', 'state', 'sessions', sessionId);

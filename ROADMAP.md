@@ -5,7 +5,7 @@ This is the steering artifact required by the autonomous mandate. Mark an area d
 | Area | Exit criteria | Status | Evidence / next action |
 | --- | --- | --- | --- |
 | nikoflow | [x] Human gates require a post-request real user turn. [x] Execute/verify gates require independent reviewer tool results. [x] Stale request ids fail closed. [x] Request-id fidelity is pinned. | Done | Fresh focused nikoflow evidence covers post-mint user turns, no-user/self-confirm rejection, request-id rotation, stale-id rejection, prompt injection, reviewer role fidelity, and property mismatch checks. |
-| ralph | [x] Cannot self-approve. [ ] Phase machine cannot livelock on recoverable failures. [ ] Live dogfood has BLOCK->PASS evidence. | In progress | Ralph verification rejects ordinary copied approval text, stale request ids, and non-reviewer native Task `agent_type` while accepting reviewer `agent_type`. Next: phase-livelock and live dogfood BLOCK->PASS evidence. |
+| ralph | [x] Cannot self-approve. [x] Phase machine cannot livelock on recoverable failures. [ ] Live dogfood has BLOCK->PASS evidence. | In progress | Ralph verification rejects copied approval text, stale request ids, non-reviewer native Task `agent_type`, and final-rejection verification reminting while accepting reviewer `agent_type`. Next: live dogfood BLOCK->PASS evidence. |
 | team | [ ] Team phases reach terminal states. [ ] Worker launch/model routing is deterministic. [x] Worktree cleanup is covered. | In progress | Spawn env baseline fixed; cleanup now removes safe clean worktrees even when unrelated backup blockers keep team state. Next: audit terminal phase/model-routing gaps. |
 | persistent-mode | [x] Runtime hook cannot silently skip active nikoflow missing-engine enforcement. [x] Runtime/template missing-engine parity is checked. [x] Failure mode is explicit in tests. [x] Live plugin Stop manifest smoke covers real hook config. | Done | Runtime and installed template both fail closed for missing TS engine; live manifest-shaped Stop command blocks active nikoflow state in a temp git project/state. Broader template/runtime parity stays under `.mjs` parity. |
 | state IO | [ ] Cross-process writes are atomic where needed. [ ] RMW order is designed for nikoflow F1. [ ] No user work is lost on crash/retry. | Escalation-gated | F1 is design-then-STOP before production edits. |
@@ -19,7 +19,7 @@ This is the steering artifact required by the autonomous mandate. Mark an area d
 - Design nikoflow F1 write ordering and stop before production edits.
 - Audit team terminal phase/model-routing gaps now that cleanup orphan path is covered.
 - Audit `.mjs` defaults and parsers against TS runtime.
-- Extend livelock coverage across ralph, team, and persistent-mode.
+- Extend livelock coverage across team and persistent-mode.
 
 ## Cadence
 

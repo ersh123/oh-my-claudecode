@@ -501,3 +501,31 @@ Reviewer verdict (manual Codex-only local diff review):
 
 Remaining risk:
 - Ralph livelock behavior and live dogfood BLOCK->PASS evidence remain open on the roadmap.
+
+## 2026-07-05 — dogfood/ralph-livelock
+
+Candidates + WSJF:
+- TAKE: stop completion-scope final rejection from immediately reminting a fresh Ralph verification request. Value 8, risk reduction 8, urgency 5, complexity 2 => 10.5. The phase machine could reset attempts forever on recoverable reviewer failures.
+- DEFER: live BLOCK->PASS dogfood transcript evidence. Value 8, risk reduction 7, urgency 5, complexity 4 => 5.0. It belongs after the deterministic phase-machine regression lands and verifies in live.
+- DROP: rewrite Ralph verifier state handling. Value 5, risk reduction 4, urgency 3, complexity 7 => 1.71. The bug was a caller state-loss edge, not a verifier API failure.
+
+Changed:
+- `checkRalphLoop` now keeps the `recordArchitectFeedback()` return value when the final rejection attempt clears persisted verification state.
+- Ralph verification tests now prove final completion rejection returns `<ralph-continuation-after-rejection>` instead of starting `Attempt 1/3` again.
+- `ROADMAP.md` marks the Ralph phase-livelock criterion checked and leaves live BLOCK->PASS evidence open.
+
+Evidence:
+- RED: focused Ralph suite failed before the fix because final completion rejection produced a fresh `<ralph-verification>` with `Attempt 1/3`.
+- GREEN targeted: `npx vitest run src/hooks/persistent-mode/__tests__/ralph-verification-flow.test.ts --reporter=verbose` passed 10/10.
+- Build: `npm run build` exited 0 and regenerated `dist/hooks/persistent-mode/*` plus `bridge/cli.cjs`.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 0 failing test(s) match test-baseline.json`.
+- Baseline JSON confirms `numTotalTests=10247`, `numPassedTests=10240`, `numFailedTests=0`, and `success=true`.
+- Format/sensitive-data scan: `git diff --check` produced no output; diff sensitive-value scan produced no hits.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The fix preserves the reviewer feedback state only long enough to block and return the agent to work. It does not mint a new verification request, loosen reviewer gates, or alter approval handling.
+
+Remaining risk:
+- Ralph still needs live dogfood BLOCK->PASS transcript evidence before its roadmap row can be marked Done.
