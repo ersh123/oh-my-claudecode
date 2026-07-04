@@ -36,6 +36,9 @@ export interface NikoflowState {
   iteration: number;
   /** When the loop started */
   started_at: string;
+  /** Refreshed on every Stop-hook iteration so a live long session is not
+   *  treated as stale; a crashed/legacy file goes stale on its own. */
+  last_checked_at?: string;
   /** The original task prompt (control flags stripped) */
   prompt: string;
   /** Session ID the loop is bound to */
@@ -112,6 +115,7 @@ export function incrementNikoflowIteration(
     return null;
   }
   state.iteration += 1;
+  state.last_checked_at = new Date().toISOString();
   return writeNikoflowState(directory, state, sessionId) ? state : null;
 }
 
@@ -145,6 +149,77 @@ export function materializePhases(depth: NikoflowDepth): string[] {
   return [...NIKOFLOW_PHASES[depth]];
 }
 
+/**
+ * The current phase name, or null when the depth is not yet chosen (still in
+ * depth-selection / grilling) or when every phase has completed.
+ */
+export function getCurrentPhase(state: NikoflowState): string | null {
+  if (!state.depth || state.phases.length === 0) return null;
+  return state.phases[state.phase_index] ?? null;
+}
+
+/** Whether all phases have completed (phase_index ran off the end). */
+export function isNikoflowComplete(state: NikoflowState): boolean {
+  return (
+    !!state.depth &&
+    state.phases.length > 0 &&
+    state.phase_index >= state.phases.length
+  );
+}
+
+/**
+ * Set the depth tier and materialize the phase list. Depth is immutable once
+ * the flow has advanced past the first phase — tier changes mid-flow would
+ * invalidate already-passed gates, so callers must cancel + restart instead.
+ * Returns false if the change is rejected.
+ */
+export function setNikoflowDepth(
+  directory: string,
+  depth: NikoflowDepth,
+  sessionId?: string,
+): boolean {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return false;
+
+  // Immutable after the flow has moved past depth selection.
+  if (state.depth && state.phase_index > 0) return false;
+
+  state.depth = depth;
+  state.phases = materializePhases(depth);
+  state.phase_index = 0;
+  state.pbt_enabled = depth === "deep";
+  return writeNikoflowState(directory, state, sessionId);
+}
+
+/**
+ * Advance to the next phase. Returns the new current phase, or null when the
+ * flow has completed all phases (the caller should then clear state / cancel).
+ * No-op guard: cannot advance before a depth is chosen.
+ */
+export function advanceNikoflowPhase(
+  directory: string,
+  sessionId?: string,
+): { phase: string | null; complete: boolean } | null {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active || !state.depth || state.phases.length === 0) {
+    return null;
+  }
+
+  // Idempotent past the end: a re-fired gate detector must not drift the index.
+  if (state.phase_index >= state.phases.length) {
+    return { phase: null, complete: true };
+  }
+
+  state.phase_index += 1;
+  const complete = state.phase_index >= state.phases.length;
+  if (!writeNikoflowState(directory, state, sessionId)) return null;
+
+  return {
+    phase: complete ? null : state.phases[state.phase_index],
+    complete,
+  };
+}
+
 /** Create a Nikoflow loop hook instance bound to a working directory. */
 export function createNikoflowLoopHook(directory: string): NikoflowLoopHook {
   const startLoop = (
@@ -160,6 +235,7 @@ export function createNikoflowLoopHook(directory: string): NikoflowLoopHook {
       active: true,
       iteration: 1,
       started_at: now,
+      last_checked_at: now,
       prompt: normalizedPrompt,
       session_id: sessionId,
       project_path: directory,

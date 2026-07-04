@@ -19,6 +19,7 @@ import { readUltraworkState, writeUltraworkState, incrementReinforcement, deacti
 import { resolveToWorktreeRoot, resolveSessionStatePath, resolveStatePath, getOmcRoot } from '../../lib/worktree-paths.js';
 import { readModeState, writeModeState } from '../../lib/mode-state-io.js';
 import { readRalphState, writeRalphState, incrementRalphIteration, clearRalphState, findPrdPath, getPrdCompletionStatus, getRalphContext, getStory, markStoryIncomplete, markStoryArchitectVerified, readVerificationState, startVerification, recordArchitectFeedback, getArchitectVerificationPrompt, getArchitectRejectionContinuationPrompt, detectArchitectApproval, detectArchitectRejection, clearVerificationState, } from '../ralph/index.js';
+import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
 import { isAutopilotActive } from '../autopilot/index.js';
@@ -700,6 +701,50 @@ function checkArchitectRejectionInTranscript(sessionId) {
         }
     }
     return { rejected: false, feedback: '' };
+}
+/**
+ * Check Nikoflow state and determine if the Stop event should be blocked.
+ *
+ * TSK-001 skeleton: while the mode is active it hard-blocks Stop with a
+ * continuation banner (mirroring ralph) until `/oh-my-claudecode:cancel`
+ * clears the state. Phase-gate enforcement (per-phase advance conditions,
+ * human gates, reviewer convergence) lands in TSK-002+.
+ */
+async function checkNikoflowLoop(sessionId, directory, cancelInProgress) {
+    const workingDir = resolveToWorktreeRoot(directory);
+    const state = readNikoflowState(workingDir, sessionId);
+    // Ignore inactive or stale (crashed/legacy) state so it can't hard-block
+    // Stop forever in later sessions. Mirrors checkRalphLoop.
+    if (!state || !state.active || isStaleState(state)) {
+        return null;
+    }
+    // Respect an in-flight cancel: let the Stop through so cleanup can settle.
+    if (cancelInProgress) {
+        return null;
+    }
+    // Advance the iteration counter first so the emitted prompt reflects the
+    // current iteration (and refreshes last_checked_at to keep the session live).
+    const current = incrementNikoflowIteration(workingDir, sessionId) ?? state;
+    // Every phase has completed but state was not cleared — remind to cancel.
+    if (isNikoflowComplete(current)) {
+        return {
+            shouldBlock: true,
+            message: `<nikoflow-continuation phase="complete" iteration="${current.iteration}">\n` +
+                `All Niko Flow phases have passed. Run \`/oh-my-claudecode:cancel\` to exit and clean up state.\n` +
+                `</nikoflow-continuation>`,
+            mode: 'nikoflow',
+        };
+    }
+    // No depth chosen yet → depth-selection (first act of Grilling).
+    const phase = getCurrentPhase(current);
+    const message = phase
+        ? getPhasePrompt(phase, current)
+        : getDepthSelectionPrompt(current);
+    return {
+        shouldBlock: true,
+        message,
+        mode: 'nikoflow',
+    };
 }
 /**
  * Check Ralph Loop state and determine if it should continue
@@ -1841,6 +1886,13 @@ async function resolvePersistentModeBlock(sessionId, directory, stopContext // N
         const autopilotResult = await runAutopilotPriority();
         if (autopilotResult)
             return autopilotResult;
+    }
+    // Priority 1.5: Nikoflow (phase-gated methodology loop, sibling of ralph)
+    if (!tombstonedWorkflowModes.has('nikoflow') && isModeActive('nikoflow', workingDir, sessionId)) {
+        const nikoflowResult = await checkNikoflowLoop(sessionId, workingDir, cancelInProgress);
+        if (nikoflowResult) {
+            return nikoflowResult;
+        }
     }
     // Priority 1.6: Autoresearch (stateful single-mission runtime)
     const autoresearchResult = await checkAutoresearch(sessionId, workingDir, cancelInProgress);

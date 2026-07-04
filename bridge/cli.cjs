@@ -7553,6 +7553,7 @@ var init_mode_names = __esm({
       AUTORESEARCH: "autoresearch",
       TEAM: "team",
       RALPH: "ralph",
+      NIKOFLOW: "nikoflow",
       ULTRAWORK: "ultrawork",
       ULTRAQA: "ultraqa",
       RALPLAN: "ralplan",
@@ -7564,6 +7565,7 @@ var init_mode_names = __esm({
       MODE_NAMES.AUTORESEARCH,
       MODE_NAMES.TEAM,
       MODE_NAMES.RALPH,
+      MODE_NAMES.NIKOFLOW,
       MODE_NAMES.ULTRAWORK,
       MODE_NAMES.ULTRAQA,
       MODE_NAMES.RALPLAN,
@@ -7575,6 +7577,7 @@ var init_mode_names = __esm({
       [MODE_NAMES.AUTORESEARCH]: "autoresearch-state.json",
       [MODE_NAMES.TEAM]: "team-state.json",
       [MODE_NAMES.RALPH]: "ralph-state.json",
+      [MODE_NAMES.NIKOFLOW]: "nikoflow-state.json",
       [MODE_NAMES.ULTRAWORK]: "ultrawork-state.json",
       [MODE_NAMES.ULTRAQA]: "ultraqa-state.json",
       [MODE_NAMES.RALPLAN]: "ralplan-state.json",
@@ -7586,6 +7589,8 @@ var init_mode_names = __esm({
       { file: MODE_STATE_FILE_MAP[MODE_NAMES.AUTORESEARCH], mode: MODE_NAMES.AUTORESEARCH },
       { file: MODE_STATE_FILE_MAP[MODE_NAMES.TEAM], mode: MODE_NAMES.TEAM },
       { file: MODE_STATE_FILE_MAP[MODE_NAMES.RALPH], mode: MODE_NAMES.RALPH },
+      { file: MODE_STATE_FILE_MAP[MODE_NAMES.NIKOFLOW], mode: MODE_NAMES.NIKOFLOW },
+      { file: "nikoflow-verification.json", mode: MODE_NAMES.NIKOFLOW },
       { file: MODE_STATE_FILE_MAP[MODE_NAMES.ULTRAWORK], mode: MODE_NAMES.ULTRAWORK },
       { file: MODE_STATE_FILE_MAP[MODE_NAMES.ULTRAQA], mode: MODE_NAMES.ULTRAQA },
       { file: MODE_STATE_FILE_MAP[MODE_NAMES.RALPLAN], mode: MODE_NAMES.RALPLAN },
@@ -7858,6 +7863,13 @@ var init_mode_registry = __esm({
         name: "Ralph",
         stateFile: MODE_STATE_FILE_MAP[MODE_NAMES.RALPH],
         markerFile: "ralph-verification.json",
+        activeProperty: "active",
+        hasGlobalState: false
+      },
+      [MODE_NAMES.NIKOFLOW]: {
+        name: "Nikoflow",
+        stateFile: MODE_STATE_FILE_MAP[MODE_NAMES.NIKOFLOW],
+        markerFile: "nikoflow-verification.json",
         activeProperty: "active",
         hasGlobalState: false
       },
@@ -8865,7 +8877,7 @@ function buildHookCommand(filename) {
 function getHooksSettingsConfig() {
   return HOOKS_SETTINGS_CONFIG_NODE;
 }
-var import_path44, import_fs32, import_url7, import_os9, MIN_NODE_VERSION, ULTRAWORK_MESSAGE, ULTRATHINK_MESSAGE, SEARCH_MESSAGE, ANALYZE_MESSAGE, CODE_REVIEW_MESSAGE, SECURITY_REVIEW_MESSAGE, TDD_MESSAGE, RALPH_MESSAGE, PROMPT_TRANSLATION_MESSAGE, KEYWORD_DETECTOR_SCRIPT_NODE, STOP_CONTINUATION_SCRIPT_NODE, PERSISTENT_MODE_SCRIPT_NODE, CODE_SIMPLIFIER_SCRIPT_NODE, SESSION_START_SCRIPT_NODE, POST_TOOL_USE_SCRIPT_NODE, HOOKS_SETTINGS_CONFIG_NODE;
+var import_path44, import_fs32, import_url7, import_os9, MIN_NODE_VERSION, ULTRAWORK_MESSAGE, ULTRATHINK_MESSAGE, SEARCH_MESSAGE, ANALYZE_MESSAGE, CODE_REVIEW_MESSAGE, SECURITY_REVIEW_MESSAGE, TDD_MESSAGE, RALPH_MESSAGE, NIKOFLOW_MESSAGE, PROMPT_TRANSLATION_MESSAGE, KEYWORD_DETECTOR_SCRIPT_NODE, STOP_CONTINUATION_SCRIPT_NODE, PERSISTENT_MODE_SCRIPT_NODE, CODE_SIMPLIFIER_SCRIPT_NODE, SESSION_START_SCRIPT_NODE, POST_TOOL_USE_SCRIPT_NODE, HOOKS_SETTINGS_CONFIG_NODE;
 var init_hooks = __esm({
   "src/installer/hooks.ts"() {
     "use strict";
@@ -8976,6 +8988,28 @@ Ralph mode auto-activates Ultrawork for maximum parallel execution. Follow these
 - When FULLY complete, run \`/oh-my-claudecode:cancel\` to cleanly exit and clean up state files
 
 Continue working until the task is truly done.
+`;
+    NIKOFLOW_MESSAGE = `[NIKOFLOW MODE ACTIVATED \u2014 Niko Flow v2.1]
+
+A phase-gated methodology loop is now active. Each phase is a hard quality gate \u2014
+do not advance until the current gate passes.
+
+### Depth tiers
+- \u{1F7E2} Tactical (1-file bugfix): Grilling \u2192 Verification
+- \u{1F7E1} Standard (new feature): Grilling \u2192 ADR \u2192 PRD \u2192 Ticketization \u2192 TDD \u2192 Verification
+- \u{1F534} Deep (architectural): full cycle + property-based tests + evidence
+If depth was not given explicitly, propose one during Grilling and confirm with the user.
+
+### Phases
+1. \u{1F525} Grilling \u2014 interrogate the task (why, why this way, alternatives, risks) before any code. Gate: user-confirmed shared understanding.
+2. \u{1F4CB} ADR \u2014 only for a decision that is hard-to-reverse AND surprising AND a real trade-off (all three); otherwise record a skip.
+3. \u{1F4C4} PRD \u2014 "[Actor] can [capability]" + User Stories with Given/When/Then. Gate: test seams confirmed.
+4. \u{1F3AB} Ticketization \u2014 atomic vertical-slice tickets (TSK-001\u2026) with acceptance criteria + blocked-by. Gate: user approves the breakdown.
+5. \u{1F534}\u{1F7E2}\u267B\uFE0F TDD \u2014 RED\u2192GREEN, no prod code without a failing test; refactor belongs to review.
+6. \u2705 Verification \u2014 independent fresh-context reviewer + green validation (tests/lint/build) before completion.
+
+Follow the /oh-my-claudecode:nikoflow skill. When the task is FULLY complete and verified,
+run \`/oh-my-claudecode:cancel\` to exit and clean up state.
 `;
     PROMPT_TRANSLATION_MESSAGE = `[PROMPT TRANSLATION] Non-English input detected.
 When delegating via Task(), write prompt arguments in English for consistent agent routing.
@@ -19665,6 +19699,203 @@ var init_cancel = __esm({
   }
 });
 
+// src/hooks/nikoflow/loop.ts
+function readNikoflowState(directory, sessionId) {
+  const state = readModeState(MODE, directory, sessionId);
+  if (state && sessionId && state.session_id && state.session_id !== sessionId) {
+    return null;
+  }
+  return state;
+}
+function writeNikoflowState(directory, state, sessionId) {
+  return writeModeState(
+    MODE,
+    state,
+    directory,
+    sessionId
+  );
+}
+function clearNikoflowState(directory, sessionId) {
+  return clearModeStateFile(MODE, directory, sessionId);
+}
+function incrementNikoflowIteration(directory, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) {
+    return null;
+  }
+  state.iteration += 1;
+  state.last_checked_at = (/* @__PURE__ */ new Date()).toISOString();
+  return writeNikoflowState(directory, state, sessionId) ? state : null;
+}
+function detectDepthFlag(prompt) {
+  const colon = prompt.match(/nikoflow\s*:\s*(tactical|standard|deep)/i);
+  if (colon) return colon[1].toLowerCase();
+  const tier = prompt.match(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/i);
+  if (tier) return tier[1].toLowerCase();
+  if (/--deep\b/i.test(prompt)) return "deep";
+  if (/--tactical\b/i.test(prompt)) return "tactical";
+  if (/--standard\b/i.test(prompt)) return "standard";
+  return null;
+}
+function stripNikoflowFlags(prompt) {
+  return prompt.replace(/nikoflow\s*:\s*(tactical|standard|deep)/gi, "").replace(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/gi, "").replace(/--(?:deep|tactical|standard)\b/gi, "").replace(/\s+/g, " ").trim();
+}
+function materializePhases(depth) {
+  return [...NIKOFLOW_PHASES[depth]];
+}
+function getCurrentPhase(state) {
+  if (!state.depth || state.phases.length === 0) return null;
+  return state.phases[state.phase_index] ?? null;
+}
+function isNikoflowComplete(state) {
+  return !!state.depth && state.phases.length > 0 && state.phase_index >= state.phases.length;
+}
+function setNikoflowDepth(directory, depth, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return false;
+  if (state.depth && state.phase_index > 0) return false;
+  state.depth = depth;
+  state.phases = materializePhases(depth);
+  state.phase_index = 0;
+  state.pbt_enabled = depth === "deep";
+  return writeNikoflowState(directory, state, sessionId);
+}
+function advanceNikoflowPhase(directory, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active || !state.depth || state.phases.length === 0) {
+    return null;
+  }
+  if (state.phase_index >= state.phases.length) {
+    return { phase: null, complete: true };
+  }
+  state.phase_index += 1;
+  const complete = state.phase_index >= state.phases.length;
+  if (!writeNikoflowState(directory, state, sessionId)) return null;
+  return {
+    phase: complete ? null : state.phases[state.phase_index],
+    complete
+  };
+}
+function createNikoflowLoopHook(directory) {
+  const startLoop = (sessionId, prompt, options) => {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const depth = options?.depth ?? detectDepthFlag(prompt);
+    const normalizedPrompt = stripNikoflowFlags(prompt);
+    const state = {
+      active: true,
+      iteration: 1,
+      started_at: now,
+      last_checked_at: now,
+      prompt: normalizedPrompt,
+      session_id: sessionId,
+      project_path: directory,
+      depth,
+      phases: depth ? materializePhases(depth) : [],
+      phase_index: 0,
+      pbt_enabled: depth === "deep"
+    };
+    return writeNikoflowState(directory, state, sessionId);
+  };
+  const cancelLoop = (sessionId) => {
+    const state = readNikoflowState(directory, sessionId);
+    if (!state || state.session_id !== sessionId) {
+      return false;
+    }
+    return clearNikoflowState(directory, sessionId);
+  };
+  const getState = (sessionId) => {
+    return readNikoflowState(directory, sessionId);
+  };
+  return { startLoop, cancelLoop, getState };
+}
+var NIKOFLOW_DEPTHS, NIKOFLOW_PHASES, MODE;
+var init_loop2 = __esm({
+  "src/hooks/nikoflow/loop.ts"() {
+    "use strict";
+    init_mode_state_io();
+    NIKOFLOW_DEPTHS = ["tactical", "standard", "deep"];
+    NIKOFLOW_PHASES = {
+      tactical: ["interview", "execute", "verify"],
+      standard: ["interview", "adr", "prd", "tickets", "execute", "verify"],
+      deep: ["interview", "adr", "prd", "tickets", "execute", "verify"]
+    };
+    MODE = "nikoflow";
+  }
+});
+
+// src/hooks/nikoflow/prompts.ts
+function getDepthSelectionPrompt(state) {
+  return `<nikoflow-continuation phase="grilling:depth" iteration="${state.iteration}">
+NIKOFLOW \u2014 depth not yet chosen. Begin Grilling by sizing the task:
+- \u{1F7E2} tactical \u2014 a 1-file bug fix or trivially-scoped change (Grilling \u2192 Execute \u2192 Verification).
+- \u{1F7E1} standard \u2014 a new feature (Grilling \u2192 ADR \u2192 PRD \u2192 Ticketization \u2192 TDD \u2192 Verification).
+- \u{1F534} deep \u2014 an architectural change (full cycle + property-based tests + evidence).
+Propose the smallest tier that fits, with a one-line justification, and confirm it with the user.
+Once agreed, record it by emitting on its own line:
+<nikoflow-gate phase="depth" depth="tactical|standard|deep">CONFIRMED</nikoflow-gate>
+(the tag is only accepted after the user has actually replied \u2014 do not self-confirm).
+${CANCEL_HINT}
+</nikoflow-continuation>`;
+}
+function getPhasePrompt2(phase, state) {
+  const body = PHASE_BODIES[phase] ?? `Phase "${phase}". Continue the methodology.`;
+  const depth = state.depth ?? "undecided";
+  return `<nikoflow-continuation phase="${phase}" depth="${depth}" iteration="${state.iteration}">
+${body}
+${CANCEL_HINT}
+</nikoflow-continuation>`;
+}
+var CANCEL_HINT, PHASE_BODIES;
+var init_prompts2 = __esm({
+  "src/hooks/nikoflow/prompts.ts"() {
+    "use strict";
+    CANCEL_HINT = "When the whole task is FULLY complete and the Verification gate has passed, run `/oh-my-claudecode:cancel` to exit. If cancel fails, retry with `/oh-my-claudecode:cancel --force`.";
+    PHASE_BODIES = {
+      interview: `Phase \u{1F525} GRILLING. Interrogate the task one question at a time: why, why this way, what alternatives, what risks. If a question can be answered by reading the code, read instead of asking. Do not write any implementation until the user confirms shared understanding. GATE \u2014 emit after the user confirms:
+<nikoflow-gate phase="interview">CONFIRMED</nikoflow-gate>`,
+      adr: `Phase \u{1F4CB} ADR. Record an architecture decision ONLY if it is hard-to-reverse AND surprising-without-context AND the result of a real trade-off (all three). Give 2+ options, rationale, consequences; write it to docs/adr/NNNN-slug.md. Otherwise record a skip with a reason. GATE \u2014 emit one of:
+<nikoflow-gate phase="adr" decision="docs/adr/NNNN-slug.md">RECORDED</nikoflow-gate>
+<nikoflow-gate phase="adr" skip="reason">SKIPPED</nikoflow-gate>`,
+      prd: `Phase \u{1F4C4} PRD. Write "[Actor] can [capability]" with User Stories carrying Given/When/Then acceptance criteria \u2014 no implementation detail. Sketch the test seams (prefer the highest, fewest seams) and confirm them with the user. GATE \u2014 emit after seams confirmed:
+<nikoflow-gate phase="prd">SEAMS_CONFIRMED</nikoflow-gate>`,
+      tickets: `Phase \u{1F3AB} TICKETIZATION. Split the PRD into atomic vertical-slice tickets (TSK-001\u2026) that each cut through all layers and are demoable on their own, with acceptance criteria + blocked-by dependencies + a self-verification step. Present the breakdown and iterate until the user approves it. GATE \u2014 emit after approval:
+<nikoflow-gate phase="tickets">APPROVED</nikoflow-gate>`,
+      execute: `Phase \u{1F534}\u{1F7E2}\u267B\uFE0F EXECUTE (TDD). Work tickets in dependency order. For each: test only at the pre-agreed seams, RED before GREEN (failing test first, then minimum code to pass), one vertical slice at a time; refactor belongs to review. Deep tier: add property-based tests per ticket touching pure logic. Each finished ticket needs an independent reviewer approval. GATE \u2014 emit after every ticket is done + reviewer-approved:
+<nikoflow-gate phase="execute">ALL_TICKETS_APPROVED</nikoflow-gate>`,
+      verify: `Phase \u2705 VERIFICATION. Spawn a fresh, context-isolated independent reviewer; iterate fix \u2192 re-review until local validation (tests/lint/build) is green AND the reviewer scores the changed surface \u2265 9.5/10 or reports no actionable findings. Never accept a passing score while validation is red. GATE \u2014 emit after the reviewer passes on green validation:
+<nikoflow-gate phase="verify">VERIFIED</nikoflow-gate>`
+    };
+  }
+});
+
+// src/hooks/nikoflow/index.ts
+var nikoflow_exports = {};
+__export(nikoflow_exports, {
+  NIKOFLOW_DEPTHS: () => NIKOFLOW_DEPTHS,
+  NIKOFLOW_PHASES: () => NIKOFLOW_PHASES,
+  advanceNikoflowPhase: () => advanceNikoflowPhase,
+  clearNikoflowState: () => clearNikoflowState,
+  createNikoflowLoopHook: () => createNikoflowLoopHook,
+  detectDepthFlag: () => detectDepthFlag,
+  getCurrentPhase: () => getCurrentPhase,
+  getDepthSelectionPrompt: () => getDepthSelectionPrompt,
+  getPhasePrompt: () => getPhasePrompt2,
+  incrementNikoflowIteration: () => incrementNikoflowIteration,
+  isNikoflowComplete: () => isNikoflowComplete,
+  materializePhases: () => materializePhases,
+  readNikoflowState: () => readNikoflowState,
+  setNikoflowDepth: () => setNikoflowDepth,
+  stripNikoflowFlags: () => stripNikoflowFlags,
+  writeNikoflowState: () => writeNikoflowState
+});
+var init_nikoflow = __esm({
+  "src/hooks/nikoflow/index.ts"() {
+    "use strict";
+    init_loop2();
+    init_prompts2();
+  }
+});
+
 // src/lib/truncate-prompt.ts
 function truncatePromptForEcho(prompt, maxChars = DEFAULT_PROMPT_ECHO_MAX_CHARS) {
   const trimmed = prompt.trim();
@@ -20217,6 +20448,33 @@ function checkArchitectRejectionInTranscript(sessionId) {
     }
   }
   return { rejected: false, feedback: "" };
+}
+async function checkNikoflowLoop(sessionId, directory, cancelInProgress) {
+  const workingDir = resolveToWorktreeRoot(directory);
+  const state = readNikoflowState(workingDir, sessionId);
+  if (!state || !state.active || isStaleState(state)) {
+    return null;
+  }
+  if (cancelInProgress) {
+    return null;
+  }
+  const current = incrementNikoflowIteration(workingDir, sessionId) ?? state;
+  if (isNikoflowComplete(current)) {
+    return {
+      shouldBlock: true,
+      message: `<nikoflow-continuation phase="complete" iteration="${current.iteration}">
+All Niko Flow phases have passed. Run \`/oh-my-claudecode:cancel\` to exit and clean up state.
+</nikoflow-continuation>`,
+      mode: "nikoflow"
+    };
+  }
+  const phase = getCurrentPhase(current);
+  const message = phase ? getPhasePrompt2(phase, current) : getDepthSelectionPrompt(current);
+  return {
+    shouldBlock: true,
+    message,
+    mode: "nikoflow"
+  };
 }
 async function checkRalphLoop(sessionId, directory, cancelInProgress) {
   const workingDir = resolveToWorktreeRoot(directory);
@@ -21046,6 +21304,12 @@ async function resolvePersistentModeBlock(sessionId, directory, stopContext) {
     const autopilotResult = await runAutopilotPriority();
     if (autopilotResult) return autopilotResult;
   }
+  if (!tombstonedWorkflowModes.has("nikoflow") && isModeActive("nikoflow", workingDir, sessionId)) {
+    const nikoflowResult = await checkNikoflowLoop(sessionId, workingDir, cancelInProgress);
+    if (nikoflowResult) {
+      return nikoflowResult;
+    }
+  }
   const autoresearchResult = await checkAutoresearch(sessionId, workingDir, cancelInProgress);
   if (autoresearchResult) {
     return autoresearchResult;
@@ -21110,6 +21374,7 @@ var init_persistent_mode = __esm({
     init_worktree_paths();
     init_mode_state_io();
     init_ralph();
+    init_nikoflow();
     init_todo_continuation();
     init_hooks();
     init_autopilot();
@@ -83423,6 +83688,7 @@ function isHeavyMode(keywordType) {
 var KEYWORD_PATTERNS = {
   cancel: /\b(cancelomc|stopomc)\b/i,
   ralph: /\b(ralph)\b(?!-)|(랄프)(?!로렌)|(ラルフ)(?!・?ローレン)/i,
+  nikoflow: /\b(nikoflow|niko[\s-]?flow|nflow)\b|(никофлоу)/i,
   autopilot: /\b(autopilot|auto[\s-]?pilot|fullsend|full\s+auto)\b|(오토파일럿)|(オートパイロット)/i,
   ultrawork: /\b(ultrawork|ulw)\b|(울트라워크)|(ウルトラワーク)/i,
   // Team keyword detection disabled — team mode is now explicit-only via /team skill.
@@ -83450,6 +83716,7 @@ var KEYWORD_SKIP_PREDICATES = {
 var KEYWORD_PRIORITY = [
   "cancel",
   "ralph",
+  "nikoflow",
   "autopilot",
   "team",
   "ultrawork",
@@ -83470,6 +83737,7 @@ var KEYWORD_PRIORITY = [
 var CANONICAL_WORKFLOW_SLASH_SKILLS = [
   "autopilot",
   "ralph",
+  "nikoflow",
   "team",
   "ultrawork",
   "ultraqa",
@@ -83480,6 +83748,7 @@ var CANONICAL_WORKFLOW_SLASH_SKILLS = [
 var SLASH_SKILL_TO_KEYWORD_TYPE = {
   autopilot: "autopilot",
   ralph: "ralph",
+  nikoflow: "nikoflow",
   team: "team",
   ultrawork: "ultrawork",
   "deep-interview": "deep-interview",
@@ -83957,6 +84226,7 @@ function getAllKeywordsWithSizeCheck(text, options = {}) {
 }
 var EXECUTION_GATE_KEYWORDS = /* @__PURE__ */ new Set([
   "ralph",
+  "nikoflow",
   "autopilot",
   "team",
   "ultrawork"
@@ -85223,6 +85493,7 @@ var TASK_OUTPUT_STATUS_PATTERN = /<status>([^<]+)<\/status>/i;
 var SAFE_SESSION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/;
 var MODE_CONFIRMATION_SKILL_MAP = {
   ralph: ["ralph", "ultrawork"],
+  nikoflow: ["nikoflow"],
   ultrawork: ["ultrawork"],
   autopilot: ["autopilot"],
   ralplan: ["ralplan"]
@@ -86201,6 +86472,23 @@ Running directly without heavy agent stacking. Prefix with \`quick:\`, \`simple:
         messages.push(RALPH_MESSAGE);
         break;
       }
+      case "nikoflow": {
+        const { createNikoflowLoopHook: createNikoflowLoopHook2, detectDepthFlag: detectDepthFlag2 } = await Promise.resolve().then(() => (init_nikoflow(), nikoflow_exports));
+        const depth = detectDepthFlag2(promptText) ?? void 0;
+        const hook = createNikoflowLoopHook2(directory);
+        const started = hook.startLoop(
+          sessionId,
+          promptText,
+          {
+            ...depth ? { depth } : {}
+          }
+        );
+        if (started) {
+          markModeAwaitingConfirmation(directory, sessionId, "nikoflow");
+        }
+        messages.push(NIKOFLOW_MESSAGE);
+        break;
+      }
       case "ultrawork": {
         const { activateUltrawork: activateUltrawork2 } = await Promise.resolve().then(() => (init_ultrawork2(), ultrawork_exports));
         const activated = activateUltrawork2(promptText, sessionId, directory);
@@ -86966,6 +87254,19 @@ async function processPostToolUse(input) {
         }
       );
     }
+    if (skillName === "nikoflow") {
+      const { createNikoflowLoopHook: createNikoflowLoopHook2, detectDepthFlag: detectDepthFlag2 } = await Promise.resolve().then(() => (init_nikoflow(), nikoflow_exports));
+      const rawPrompt = typeof input.prompt === "string" && input.prompt.trim().length > 0 ? input.prompt : "Nikoflow methodology loop activated via Skill tool";
+      const depth = detectDepthFlag2(rawPrompt) ?? void 0;
+      const hook = createNikoflowLoopHook2(directory);
+      hook.startLoop(
+        input.sessionId,
+        rawPrompt,
+        {
+          ...depth ? { depth } : {}
+        }
+      );
+    }
     const { clearSkillActiveState: clearSkillActiveState2, readSkillActiveState: readSkillActiveState2 } = await Promise.resolve().then(() => (init_skill_state(), skill_state_exports));
     const currentState = readSkillActiveState2(directory, input.sessionId);
     const completingSkill = (getInvokedSkillName(input.toolInput) ?? "").toLowerCase().replace(/^oh-my-claudecode:/, "");
@@ -87099,7 +87400,7 @@ async function processAutopilot(input) {
   const directory = resolveToWorktreeRoot(input.directory);
   const {
     readAutopilotState: readAutopilotState2,
-    getPhasePrompt: getPhasePrompt2,
+    getPhasePrompt: getPhasePrompt3,
     hasPipelineTracking: hasPipelineTracking2,
     generatePipelinePrompt: generatePipelinePrompt2
   } = await Promise.resolve().then(() => (init_autopilot(), autopilot_exports));
@@ -87128,7 +87429,7 @@ ${detailParts.join("\n\n")}`
     planPath: state.planning.plan_path || resolveAutopilotPlanPath(config2),
     openQuestionsPath: resolveOpenQuestionsPlanPath(config2)
   };
-  const phasePrompt = getPhasePrompt2(state.phase, context);
+  const phasePrompt = getPhasePrompt3(state.phase, context);
   const runtimeInsight = formatAutopilotRuntimeInsight(directory, input.sessionId);
   if (phasePrompt || runtimeInsight) {
     const detailParts = [runtimeInsight, phasePrompt].filter(Boolean);

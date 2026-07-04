@@ -13,6 +13,7 @@ import { classifyTaskSize, isHeavyMode, } from '../task-size-detector/index.js';
 const KEYWORD_PATTERNS = {
     cancel: /\b(cancelomc|stopomc)\b/i,
     ralph: /\b(ralph)\b(?!-)|(랄프)(?!로렌)|(ラルフ)(?!・?ローレン)/i,
+    nikoflow: /\b(nikoflow|niko[\s-]?flow|nflow)\b|(никофлоу)/i,
     autopilot: /\b(autopilot|auto[\s-]?pilot|fullsend|full\s+auto)\b|(오토파일럿)|(オートパイロット)/i,
     ultrawork: /\b(ultrawork|ulw)\b|(울트라워크)|(ウルトラワーク)/i,
     // Team keyword detection disabled — team mode is now explicit-only via /team skill.
@@ -56,7 +57,7 @@ const KEYWORD_SKIP_PREDICATES = {
  * Priority order for keyword detection
  */
 const KEYWORD_PRIORITY = [
-    'cancel', 'ralph', 'autopilot', 'team', 'ultrawork',
+    'cancel', 'ralph', 'nikoflow', 'autopilot', 'team', 'ultrawork',
     'ccg', 'ralplan', 'tdd', 'code-review', 'security-review',
     'ultrathink', 'deepsearch', 'analyze', 'deep-interview', 'codex', 'gemini', 'cursor', 'antigravity'
 ];
@@ -69,6 +70,7 @@ const KEYWORD_PRIORITY = [
 const CANONICAL_WORKFLOW_SLASH_SKILLS = [
     'autopilot',
     'ralph',
+    'nikoflow',
     'team',
     'ultrawork',
     'ultraqa',
@@ -86,6 +88,7 @@ const CANONICAL_WORKFLOW_SLASH_SKILLS = [
 const SLASH_SKILL_TO_KEYWORD_TYPE = {
     autopilot: 'autopilot',
     ralph: 'ralph',
+    nikoflow: 'nikoflow',
     team: 'team',
     ultrawork: 'ultrawork',
     'deep-interview': 'deep-interview',
@@ -734,6 +737,7 @@ export function getPrimaryKeyword(text) {
  */
 export const EXECUTION_GATE_KEYWORDS = new Set([
     'ralph',
+    'nikoflow',
     'autopilot',
     'team',
     'ultrawork',

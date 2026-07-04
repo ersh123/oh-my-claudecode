@@ -34,7 +34,7 @@ import { resolveAutopilotPlanPath, resolveOpenQuestionsPlanPath, } from "../conf
 import { formatAutopilotRuntimeInsight } from "./autopilot/runtime-insight.js";
 import { writeSkillActiveState, isCanonicalWorkflowSkill, upsertWorkflowSkillSlot, markWorkflowSkillCompleted, pruneExpiredWorkflowSkillTombstones, readSkillActiveStateNormalized, writeSkillActiveStateCopies, } from "./skill-state/index.js";
 import { parseExplicitWorkflowSlashInvocation } from "./keyword-detector/index.js";
-import { ULTRATHINK_MESSAGE, SEARCH_MESSAGE, ANALYZE_MESSAGE, TDD_MESSAGE, CODE_REVIEW_MESSAGE, SECURITY_REVIEW_MESSAGE, RALPH_MESSAGE, PROMPT_TRANSLATION_MESSAGE, } from "../installer/hooks.js";
+import { ULTRATHINK_MESSAGE, SEARCH_MESSAGE, ANALYZE_MESSAGE, TDD_MESSAGE, CODE_REVIEW_MESSAGE, SECURITY_REVIEW_MESSAGE, RALPH_MESSAGE, NIKOFLOW_MESSAGE, PROMPT_TRANSLATION_MESSAGE, } from "../installer/hooks.js";
 import { getUltraworkMessage } from "./keyword-detector/ultrawork/index.js";
 // Agent dashboard is used in pre/post-tool-use hot path
 import { getAgentDashboard } from "./subagent-tracker/index.js";
@@ -85,6 +85,7 @@ const TASK_OUTPUT_STATUS_PATTERN = /<status>([^<]+)<\/status>/i;
 const SAFE_SESSION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/;
 const MODE_CONFIRMATION_SKILL_MAP = {
     ralph: ["ralph", "ultrawork"],
+    nikoflow: ["nikoflow"],
     ultrawork: ["ultrawork"],
     autopilot: ["autopilot"],
     ralplan: ["ralplan"],
@@ -1199,6 +1200,20 @@ async function processKeywordDetector(input) {
                 messages.push(RALPH_MESSAGE);
                 break;
             }
+            case "nikoflow": {
+                // Lazy-load nikoflow module
+                const { createNikoflowLoopHook, detectDepthFlag } = await import("./nikoflow/index.js");
+                const depth = detectDepthFlag(promptText) ?? undefined;
+                const hook = createNikoflowLoopHook(directory);
+                const started = hook.startLoop(sessionId, promptText, {
+                    ...(depth ? { depth } : {}),
+                });
+                if (started) {
+                    markModeAwaitingConfirmation(directory, sessionId, 'nikoflow');
+                }
+                messages.push(NIKOFLOW_MESSAGE);
+                break;
+            }
             case "ultrawork": {
                 // Lazy-load ultrawork module
                 const { activateUltrawork } = await import("./ultrawork/index.js");
@@ -2088,6 +2103,17 @@ async function processPostToolUse(input) {
             const hook = createRalphLoopHook(directory);
             hook.startLoop(input.sessionId, cleanPrompt, {
                 ...(criticMode ? { criticMode } : {}),
+            });
+        }
+        if (skillName === "nikoflow") {
+            const { createNikoflowLoopHook, detectDepthFlag } = await import("./nikoflow/index.js");
+            const rawPrompt = typeof input.prompt === "string" && input.prompt.trim().length > 0
+                ? input.prompt
+                : "Nikoflow methodology loop activated via Skill tool";
+            const depth = detectDepthFlag(rawPrompt) ?? undefined;
+            const hook = createNikoflowLoopHook(directory);
+            hook.startLoop(input.sessionId, rawPrompt, {
+                ...(depth ? { depth } : {}),
             });
         }
         // Clear skill-active state on skill completion to prevent false-blocking.

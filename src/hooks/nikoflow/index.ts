@@ -20,6 +20,10 @@ export {
   detectDepthFlag,
   stripNikoflowFlags,
   materializePhases,
+  getCurrentPhase,
+  isNikoflowComplete,
+  setNikoflowDepth,
+  advanceNikoflowPhase,
 
   // Constants
   NIKOFLOW_DEPTHS,
@@ -31,3 +35,8 @@ export {
   type NikoflowLoopOptions,
   type NikoflowLoopHook,
 } from "./loop.js";
+
+export {
+  getDepthSelectionPrompt,
+  getPhasePrompt,
+} from "./prompts.js";

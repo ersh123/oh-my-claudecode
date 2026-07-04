@@ -50,6 +50,10 @@ import {
 import {
   readNikoflowState,
   incrementNikoflowIteration,
+  getCurrentPhase,
+  isNikoflowComplete,
+  getDepthSelectionPrompt,
+  getPhasePrompt,
 } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, StopContext, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
@@ -942,7 +946,9 @@ async function checkNikoflowLoop(
   const workingDir = resolveToWorktreeRoot(directory);
   const state = readNikoflowState(workingDir, sessionId);
 
-  if (!state || !state.active) {
+  // Ignore inactive or stale (crashed/legacy) state so it can't hard-block
+  // Stop forever in later sessions. Mirrors checkRalphLoop.
+  if (!state || !state.active || isStaleState(state)) {
     return null;
   }
 
@@ -951,18 +957,27 @@ async function checkNikoflowLoop(
     return null;
   }
 
-  const depthLabel = state.depth ?? 'undecided';
-  const phase = state.phases[state.phase_index] ?? 'interview';
+  // Advance the iteration counter first so the emitted prompt reflects the
+  // current iteration (and refreshes last_checked_at to keep the session live).
+  const current = incrementNikoflowIteration(workingDir, sessionId) ?? state;
 
-  const message =
-    `<nikoflow-continuation>\n` +
-    `Niko Flow v2.1 mode is ACTIVE — depth: ${depthLabel}, phase: ${phase}, iteration ${state.iteration}.\n` +
-    `Follow the /oh-my-claudecode:nikoflow skill and drive the methodology to completion.\n` +
-    `When the task is FULLY complete and verified, run \`/oh-my-claudecode:cancel\` to exit and clean up state. ` +
-    `If cancel fails, retry with \`/oh-my-claudecode:cancel --force\`.\n` +
-    `</nikoflow-continuation>`;
+  // Every phase has completed but state was not cleared — remind to cancel.
+  if (isNikoflowComplete(current)) {
+    return {
+      shouldBlock: true,
+      message:
+        `<nikoflow-continuation phase="complete" iteration="${current.iteration}">\n` +
+        `All Niko Flow phases have passed. Run \`/oh-my-claudecode:cancel\` to exit and clean up state.\n` +
+        `</nikoflow-continuation>`,
+      mode: 'nikoflow',
+    };
+  }
 
-  incrementNikoflowIteration(workingDir, sessionId);
+  // No depth chosen yet → depth-selection (first act of Grilling).
+  const phase = getCurrentPhase(current);
+  const message = phase
+    ? getPhasePrompt(phase, current)
+    : getDepthSelectionPrompt(current);
 
   return {
     shouldBlock: true,

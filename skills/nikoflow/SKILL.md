@@ -26,7 +26,7 @@ persistence — plus an explicit methodology dimension.
 <Depth_Tiers>
 Pick the smallest tier that fits; if not given explicitly (`nikoflow:deep`), propose one during
 Grilling and confirm with the user.
-- 🟢 Tactical (1-file bugfix): Grilling → Verification.
+- 🟢 Tactical (1-file bugfix): Grilling → Execute → Verification.
 - 🟡 Standard (new feature): Grilling → ADR → PRD → Ticketization → TDD → Verification (no PBT).
 - 🔴 Deep (architectural change): full cycle + property-based tests + evidence artifacts.
 </Depth_Tiers>
