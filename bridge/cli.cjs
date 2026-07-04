@@ -31659,6 +31659,37 @@ function resolveCliBinaryPath(binary) {
 function shouldUseClaudeBareMode(env2 = process.env) {
   return typeof env2.ANTHROPIC_API_KEY === "string" && env2.ANTHROPIC_API_KEY.trim().length > 0;
 }
+function normalizeClaudeModelArg(model) {
+  return isProviderSpecificModelId(model) ? model : normalizeToCcAlias(model);
+}
+function normalizeClaudeModelFlags(model, extraFlags) {
+  let explicitModel;
+  const remainingFlags = [];
+  for (let i = 0; i < extraFlags.length; i += 1) {
+    const flag = extraFlags[i];
+    if (flag === "--model") {
+      const next = extraFlags[i + 1];
+      if (typeof next === "string" && next.length > 0 && !next.startsWith("--")) {
+        explicitModel = next;
+        i += 1;
+      }
+      continue;
+    }
+    if (flag.startsWith("--model=")) {
+      const value = flag.slice("--model=".length);
+      if (value.length > 0) {
+        explicitModel = value;
+      }
+      continue;
+    }
+    remainingFlags.push(flag);
+  }
+  const selectedModel = explicitModel ?? model;
+  return {
+    ...selectedModel ? { model: normalizeClaudeModelArg(selectedModel) } : {},
+    extraFlags: remainingFlags
+  };
+}
 function getContract(agentType) {
   const contract = CONTRACTS[agentType];
   if (!contract) {
@@ -31812,15 +31843,15 @@ var init_model_contract = __esm({
         binary: "claude",
         installInstructions: "Install Claude CLI: https://claude.ai/download",
         buildLaunchArgs(model, extraFlags = []) {
+          const normalized = normalizeClaudeModelFlags(model, extraFlags);
           const args = ["--dangerously-skip-permissions"];
-          if (shouldUseClaudeBareMode() && !extraFlags.includes("--bare")) {
+          if (shouldUseClaudeBareMode() && !normalized.extraFlags.includes("--bare")) {
             args.push("--bare");
           }
-          if (model) {
-            const resolved = isProviderSpecificModelId(model) ? model : normalizeToCcAlias(model);
-            args.push("--model", resolved);
+          if (normalized.model) {
+            args.push("--model", normalized.model);
           }
-          return [...args, ...extraFlags];
+          return [...args, ...normalized.extraFlags];
         },
         parseOutput(rawOutput) {
           return rawOutput.trim();

@@ -332,6 +332,24 @@ describe('model-contract', () => {
         expect(countArg(deduped, '--bare')).toBe(1);
       });
     });
+    it('claude gives explicit worker launch --model flags precedence and normalizes duplicates', () => {
+      const args = buildLaunchArgs('claude', {
+        teamName: 't',
+        workerName: 'w',
+        cwd: '/tmp',
+        model: 'env-resolved-model',
+        extraFlags: ['--label', 'worker-1', '--model', 'explicit-model', '--model=last-model', '--verbose'],
+      });
+
+      expect(args).toEqual([
+        '--dangerously-skip-permissions',
+        '--model',
+        'last-model',
+        '--label',
+        'worker-1',
+        '--verbose',
+      ]);
+    });
     it('codex includes --dangerously-bypass-approvals-and-sandbox', () => {
       const args = buildLaunchArgs('codex', { teamName: 't', workerName: 'w', cwd: '/tmp' });
       expect(args).not.toContain('exec');
