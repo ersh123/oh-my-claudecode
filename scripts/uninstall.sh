@@ -26,7 +26,7 @@ echo "Components to be removed:"
 echo "  - Agents (architect, document-specialist, explore, etc. + legacy aliases)"
 echo "  - Commands (omc, ultrawork, plan, etc.)"
 echo "  - Skills (ultrawork, git-master, frontend-ui-ux)"
-echo "  - Hooks (keyword-detector, silent-auto-update, stop-continuation)"
+echo "  - Hooks (current .mjs hooks + legacy .sh hook aliases)"
 echo "  - Version and state files"
 echo "  - Hook configurations from settings.json"
 echo ""
@@ -84,7 +84,18 @@ rm -rf "$CLAUDE_CONFIG_DIR/skills/frontend-ui-ux"
 
 # Remove hooks
 echo -e "${BLUE}Removing hooks...${NC}"
+rm -f "$CLAUDE_CONFIG_DIR/hooks/code-simplifier.mjs"
+rm -f "$CLAUDE_CONFIG_DIR/hooks/keyword-detector.mjs"
+rm -f "$CLAUDE_CONFIG_DIR/hooks/persistent-mode.mjs"
+rm -f "$CLAUDE_CONFIG_DIR/hooks/post-tool-use-failure.mjs"
+rm -f "$CLAUDE_CONFIG_DIR/hooks/post-tool-use.mjs"
+rm -f "$CLAUDE_CONFIG_DIR/hooks/pre-tool-use.mjs"
+rm -f "$CLAUDE_CONFIG_DIR/hooks/session-start.mjs"
+rm -f "$CLAUDE_CONFIG_DIR/hooks/stop-continuation.mjs"
+rm -f "$CLAUDE_CONFIG_DIR/hooks/workflow-drift-guard.mjs"
 rm -f "$CLAUDE_CONFIG_DIR/hooks/keyword-detector.sh"
+rm -f "$CLAUDE_CONFIG_DIR/hooks/persistent-mode.sh"
+rm -f "$CLAUDE_CONFIG_DIR/hooks/session-start.sh"
 rm -f "$CLAUDE_CONFIG_DIR/hooks/stop-continuation.sh"
 rm -f "$CLAUDE_CONFIG_DIR/hooks/silent-auto-update.sh"
 
@@ -107,31 +118,56 @@ if [ -f "$SETTINGS_FILE" ] && command -v jq &> /dev/null; then
     # This removes hooks that reference omc hook scripts
     TEMP_SETTINGS=$(mktemp)
 
-    # Use jq to filter out OMC hooks
+    # Use jq to filter out OMC hooks across all hook events.
     jq '
-      # Remove OMC hooks from UserPromptSubmit
-      if .hooks.UserPromptSubmit then
-        .hooks.UserPromptSubmit |= map(
-          if .hooks then
-            .hooks |= map(select(.command | (contains("keyword-detector.sh") or contains("silent-auto-update.sh") or contains("stop-continuation.sh")) | not))
-          else .
-          end
-        ) | .hooks.UserPromptSubmit |= map(select(.hooks | length > 0))
-      else . end |
+      def omc_hook_names: [
+        "code-simplifier.mjs",
+        "context-guard-stop.mjs",
+        "keyword-detector.mjs",
+        "permission-handler.mjs",
+        "persistent-mode.mjs",
+        "post-tool-rules-injector.mjs",
+        "post-tool-use-failure.mjs",
+        "post-tool-use.mjs",
+        "post-tool-verifier.mjs",
+        "pre-compact.mjs",
+        "pre-tool-enforcer.mjs",
+        "pre-tool-use.mjs",
+        "project-memory-posttool.mjs",
+        "project-memory-precompact.mjs",
+        "project-memory-session.mjs",
+        "session-end.mjs",
+        "session-start.mjs",
+        "setup-init.mjs",
+        "setup-maintenance.mjs",
+        "skill-injector.mjs",
+        "subagent-tracker.mjs",
+        "verify-deliverables.mjs",
+        "wiki-pre-compact.mjs",
+        "wiki-session-end.mjs",
+        "wiki-session-start.mjs",
+        "workflow-drift-guard.mjs",
+        "keyword-detector.sh",
+        "persistent-mode.sh",
+        "session-start.sh",
+        "silent-auto-update.sh",
+        "stop-continuation.sh"
+      ];
+      def is_omc_hook_command:
+        type == "string" and (. as $command | any(omc_hook_names[]; . as $hook | $command | contains($hook)));
 
-      # Remove OMC hooks from Stop
-      if .hooks.Stop then
-        .hooks.Stop |= map(
-          if .hooks then
-            .hooks |= map(select(.command | (contains("keyword-detector.sh") or contains("silent-auto-update.sh") or contains("stop-continuation.sh")) | not))
-          else .
-          end
-        ) | .hooks.Stop |= map(select(.hooks | length > 0))
+      if .hooks then
+        .hooks |= with_entries(
+          .value |= map(
+            if .hooks then
+              .hooks |= map(select(((.command // "") | is_omc_hook_command) | not))
+            else .
+            end
+          )
+          | .value |= map(select(((.hooks // []) | length) > 0))
+        )
+        | .hooks |= with_entries(select(((.value // []) | length) > 0))
       else . end |
-
-      # Clean up empty hooks sections
-      if .hooks.UserPromptSubmit == [] then del(.hooks.UserPromptSubmit) else . end |
-      if .hooks.Stop == [] then del(.hooks.Stop) else . end |
       if .hooks == {} then del(.hooks) else . end
     ' "$SETTINGS_FILE" > "$TEMP_SETTINGS" 2>/dev/null
 
@@ -148,9 +184,8 @@ else
     if [ -f "$SETTINGS_FILE" ]; then
         echo -e "${YELLOW}⚠ jq not installed - cannot auto-remove hooks from settings.json${NC}"
         echo "  Please manually edit $SETTINGS_FILE and remove the following hooks:"
-        echo "    - keyword-detector.sh"
-        echo "    - silent-auto-update.sh"
-        echo "    - stop-continuation.sh"
+        echo "    - OMC .mjs hooks (keyword-detector.mjs, persistent-mode.mjs, etc.)"
+        echo "    - legacy OMC .sh hooks (keyword-detector.sh, stop-continuation.sh, etc.)"
     fi
 fi
 

@@ -79,6 +79,9 @@ describe('Tier-0 contract docs consistency', () => {
         expect(hooksDoc).toContain("with 25 hooks.");
         expect(hooksDoc).toContain('| `persistent-mode.mjs` | Maintains active mode state (ralph, ultrawork, etc.) | 10s |');
         expect(hooksDoc).not.toContain('persistent-mode.cjs');
+        expect(referenceDoc).toContain('OMC registers 25 hook scripts across 11 Claude Code lifecycle events.');
+        expect(referenceDoc).toContain('| **Stop**               | `context-guard-stop.mjs`, `workflow-drift-guard.mjs`, `persistent-mode.mjs`, `code-simplifier.mjs`');
+        expect(referenceDoc).not.toContain('persistent-mode.cjs');
     });
     it('documents the local dogfood recovery anchor and zero-baseline gate', () => {
         expect(gettingStartedDoc).toContain('loop-last-good');
