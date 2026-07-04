@@ -157,3 +157,33 @@ Reviewer verdict (manual Codex-only local diff review):
 
 Remaining risk:
 - Full-suite stdout remains noisy from existing git/tmux fixtures and can print intermediate outside-baseline warnings; the final JSON and `baseline ok: 0` line are the source of truth.
+
+## 2026-07-05 — dogfood/roadmap-steering
+
+Candidates + WSJF:
+- TAKE: create the mandate-required `ROADMAP.md`. Value 8, risk reduction 7, urgency 8, complexity 1 => 23.0. The file is explicitly required by §4 and is currently absent.
+- DEFER: systematic `.mjs`/TS parity audit. Value 8, risk reduction 8, urgency 6, complexity 6 => 3.7. Higher value after the steering artifact exists.
+- DEFER: nikoflow cancel-path worktree cleanup. Value 6, risk reduction 6, urgency 5, complexity 5 => 3.4. Needs a separate repro and runtime dogfood.
+
+Changed:
+- Added `ROADMAP.md` with the required OMC trust areas, exit criteria, status, backlog, and audit cadence.
+- No runtime, source, scripts, dist, or baseline files changed.
+
+Evidence:
+- RED/repro: `test -f ROADMAP.md` exited 1 before the iteration.
+- GREEN/repro: `test -f ROADMAP.md` exits 0 after the iteration.
+- Build: `npm run build` exited 0.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 0 failing test(s) match test-baseline.json`.
+- Baseline JSON confirms `numTotalTests=10231`, `numPassedTests=10224`, `numFailedTests=0`, and no failed assertions.
+- Generated drift: `git status --porcelain dist/ bridge/cli.cjs bridge/mcp-server.cjs bridge/team-mcp.cjs bridge/runtime-cli.cjs bridge/team.js` produced no output.
+- Format scan: `git diff --check` produced no output.
+- Dogfood: exempt as a pure-docs steering artifact under mandate §2.5.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> This is a pure-docs steering artifact. No anti-self-approval, gate matching, request-id, reviewer-channel, `dist/`, runtime, test assertion, or baseline behavior changed.
+> The change closes a mandate §4 gap and adds no speculative runtime surface.
+
+Remaining risk:
+- Area statuses are intentionally conservative; most rows stay `Unchecked` or `In progress` until backed by later discovery or tests.
