@@ -529,3 +529,30 @@ Reviewer verdict (manual Codex-only local diff review):
 
 Remaining risk:
 - Ralph still needs live dogfood BLOCK->PASS transcript evidence before its roadmap row can be marked Done.
+
+## 2026-07-05 — dogfood/transcript-scan
+
+Candidates + WSJF:
+- TAKE: add a committed transcript evidence extractor before live dogfood automation. Value 7, risk reduction 8, urgency 6, complexity 2 => 10.5. The roadmap required BLOCK/PASS quotes without leaking session/profile paths, and current code only had HUD parsing plus token redaction.
+- DEFER: run Ralph live BLOCK->PASS dogfood. Value 8, risk reduction 8, urgency 6, complexity 4 => 5.5. It needs the extractor first so the evidence artifact is safe and mechanically checked.
+- DROP: build a full transcript-report CLI. Value 5, risk reduction 4, urgency 3, complexity 5 => 2.4. A small helper plus tests is enough for the next dogfood pass.
+
+Changed:
+- Added `extractDogfoodTranscriptEvidence()` and `redactTranscriptEvidence()` for JSONL/raw transcript text.
+- Added focused tests for hook-noise parsing, separate BLOCK then PASS quote extraction, no fabricated PASS from `BLOCK->PASS` summaries, and token/session/profile path redaction.
+- `ROADMAP.md` now marks transcript scan Done while leaving Ralph live BLOCK->PASS evidence open.
+
+Evidence:
+- GREEN targeted: `npx vitest run src/__tests__/dogfood-transcript-evidence.test.ts --reporter=verbose` passed 4/4.
+- Build: `npm run build` exited 0 and generated `dist/dogfood/transcript-evidence.*` plus the compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 0 failing test(s) match test-baseline.json`.
+- Baseline JSON confirms `numTotalTests=10251`, `numPassedTests=10244`, `numFailedTests=0`, and `success=true`.
+- Format/sensitive-data scan: staged `git diff --cached --check` produced no output; staged added-lines sensitive-value/path scan produced no hits.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The helper is deliberately small: it extracts only the first BLOCK quote and the first later PASS quote, redacts via the existing token redactor plus path scrubbing, and refuses one-line `BLOCK->PASS` summaries as proof.
+
+Remaining risk:
+- Ralph still needs a live dogfood transcript run that produces real BLOCK and PASS quotes through this extractor.
