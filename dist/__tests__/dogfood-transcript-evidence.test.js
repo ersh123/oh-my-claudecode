@@ -68,6 +68,22 @@ describe('dogfood transcript evidence extraction', () => {
         expect(result.passQuote).toBeUndefined();
         expect(result.missing).toEqual(['PASS']);
     });
+    it('does not accept PASS wording inside the same multiline BLOCK entry', () => {
+        const transcript = JSON.stringify({
+            message: {
+                content: [
+                    {
+                        type: 'text',
+                        text: 'BLOCK <ralph-verification>\nTask: Dogfood Ralph live BLOCK/PASS evidence',
+                    },
+                ],
+            },
+        });
+        const result = extractDogfoodTranscriptEvidence(transcript);
+        expect(result.blockQuote).toBe('BLOCK <ralph-verification>');
+        expect(result.passQuote).toBeUndefined();
+        expect(result.missing).toEqual(['PASS']);
+    });
     it('redacts profile and credential-bearing paths', () => {
         const codexProfilePath = ['/home/tester', `.${'codex'}`, 'auth.json'].join('/');
         const sessionCachePath = ['/home/tester', 'app', `session${'-cache'}`, 'file'].join('/');

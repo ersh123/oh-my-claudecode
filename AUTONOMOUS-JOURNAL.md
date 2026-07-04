@@ -556,3 +556,32 @@ Reviewer verdict (manual Codex-only local diff review):
 
 Remaining risk:
 - Ralph still needs a live dogfood transcript run that produces real BLOCK and PASS quotes through this extractor.
+
+## 2026-07-05 — dogfood/ralph-live-block-pass
+
+Candidates + WSJF:
+- TAKE: close Ralph live BLOCK->PASS evidence and fix extractor false PASS. Value 8, risk reduction 9, urgency 6, complexity 2 => 11.5. The live bridge proved a false PASS risk in the transcript extractor before it proved Ralph.
+- DEFER: full interactive tmux Claude session. Value 6, risk reduction 4, urgency 3, complexity 6 => 2.17. The compiled Stop bridge is the actual persistent-mode hook surface, and external Claude invocation is outside the codex-only advisor boundary.
+- DROP: build a new dogfood harness CLI. Value 5, risk reduction 4, urgency 3, complexity 5 => 2.4. A short bridge probe plus the committed extractor is enough.
+
+Changed:
+- `extractDogfoodTranscriptEvidence()` now treats a BLOCK transcript entry as atomic, so PASS must come from a later entry.
+- Added a focused regression for multiline BLOCK text containing `BLOCK/PASS`.
+- `ROADMAP.md` marks Ralph Done using live compiled Stop-bridge BLOCK->PASS evidence.
+
+Evidence:
+- RED live bridge dogfood before fix: session `ralph-live-bridge-1783200260` produced `blockQuote="BLOCK <ralph-verification>"` and false `passQuote="Dogfood Ralph live BLOCK/PASS evidence"` from the same multiline BLOCK entry.
+- GREEN targeted: `npx vitest run src/__tests__/dogfood-transcript-evidence.test.ts --reporter=verbose` passed 5/5.
+- Build: `npm run build` exited 0 and regenerated `dist/dogfood/transcript-evidence.*` plus compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Live compiled Stop bridge dogfood after fix: session `ralph-live-bridge-1783200362`, artifact `[WORKTREE]/.omc/dogfood/ralph-live-block-pass-ralph-live-bridge-1783200362/hook-transcript.jsonl`, `missing=[]`, `blockQuote="BLOCK <ralph-verification>"`, `passQuote="PASS [RALPH LOOP VERIFIED COMPLETE] Critic verified task completion after 4 iteration(s). Excellent work!"`.
+- Phase transition evidence: `block.json` had `continue=false` and `<ralph-verification>`; `pass.json` had `continue=true` and verified-complete message; temp `ralph-state.json` and `ralph-verification-state.json` were cleared after PASS.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 0 failing test(s) match test-baseline.json`; JSON confirms `numTotalTests=10252`, `numPassedTests=10245`, `numFailedTests=0`, and `success=true`.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The fix only tightens transcript evidence extraction and closes Ralph roadmap evidence through the compiled Stop bridge. It does not loosen reviewer gates, request-id matching, or approval semantics.
+
+Remaining risk:
+- External interactive Claude/tmux dogfood was not run under the codex-only advisor boundary; the compiled Stop bridge is the live hook path under test.
+- `.mjs` parity, team, state IO, and docs roadmap areas remain open.
