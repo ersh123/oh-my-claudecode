@@ -5269,7 +5269,7 @@ function shouldUseClaudeBareMode(env = process.env) {
 function normalizeClaudeModelArg(model) {
   return isProviderSpecificModelId(model) ? model : normalizeToCcAlias(model);
 }
-function normalizeClaudeModelFlags(model, extraFlags) {
+function normalizeModelFlags(model, extraFlags, normalizeModel = (value) => value) {
   let explicitModel;
   const remainingFlags = [];
   for (let i = 0; i < extraFlags.length; i += 1) {
@@ -5293,7 +5293,7 @@ function normalizeClaudeModelFlags(model, extraFlags) {
   }
   const selectedModel = explicitModel ?? model;
   return {
-    ...selectedModel ? { model: normalizeClaudeModelArg(selectedModel) } : {},
+    ...selectedModel ? { model: normalizeModel(selectedModel) } : {},
     extraFlags: remainingFlags
   };
 }
@@ -5430,7 +5430,7 @@ var init_model_contract = __esm({
         binary: "claude",
         installInstructions: "Install Claude CLI: https://claude.ai/download",
         buildLaunchArgs(model, extraFlags = []) {
-          const normalized = normalizeClaudeModelFlags(model, extraFlags);
+          const normalized = normalizeModelFlags(model, extraFlags, normalizeClaudeModelArg);
           const args = ["--dangerously-skip-permissions"];
           if (shouldUseClaudeBareMode() && !normalized.extraFlags.includes("--bare")) {
             args.push("--bare");
@@ -5453,9 +5453,10 @@ var init_model_contract = __esm({
         // the live Codex TUI with `codex` as the worker process.
         supportsPromptMode: false,
         buildLaunchArgs(model, extraFlags = []) {
+          const normalized = normalizeModelFlags(model, extraFlags);
           const args = ["--dangerously-bypass-approvals-and-sandbox"];
-          if (model) args.push("--model", model);
-          return [...args, ...extraFlags];
+          if (normalized.model) args.push("--model", normalized.model);
+          return [...args, ...normalized.extraFlags];
         },
         parseOutput(rawOutput) {
           const lines = rawOutput.trim().split("\n").filter(Boolean);
@@ -5481,9 +5482,10 @@ var init_model_contract = __esm({
         supportsPromptMode: true,
         promptModeFlag: "-p",
         buildLaunchArgs(model, extraFlags = []) {
+          const normalized = normalizeModelFlags(model, extraFlags);
           const args = ["--approval-mode", "yolo"];
-          if (model) args.push("--model", model);
-          return [...args, ...extraFlags];
+          if (normalized.model) args.push("--model", normalized.model);
+          return [...args, ...normalized.extraFlags];
         },
         parseOutput(rawOutput) {
           return rawOutput.trim();
@@ -5496,9 +5498,10 @@ var init_model_contract = __esm({
         supportsPromptMode: true,
         promptModeFlag: "-p",
         buildLaunchArgs(model, extraFlags = []) {
+          const normalized = normalizeModelFlags(model, extraFlags);
           const args = ["--always-approve"];
-          if (model) args.push("--model", model);
-          return [...args, ...extraFlags];
+          if (normalized.model) args.push("--model", normalized.model);
+          return [...args, ...normalized.extraFlags];
         },
         parseOutput(rawOutput) {
           return rawOutput.trim();
@@ -5511,9 +5514,10 @@ var init_model_contract = __esm({
         supportsPromptMode: true,
         promptModeFlag: "-p",
         buildLaunchArgs(model, extraFlags = []) {
+          const normalized = normalizeModelFlags(model, extraFlags);
           const args = ["--dangerously-skip-permissions"];
-          if (model) args.push("--model", model);
-          return [...args, ...extraFlags];
+          if (normalized.model) args.push("--model", normalized.model);
+          return [...args, ...normalized.extraFlags];
         },
         parseOutput(rawOutput) {
           return rawOutput.trim();

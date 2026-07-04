@@ -188,9 +188,10 @@ function normalizeClaudeModelArg(model: string): string {
   return isProviderSpecificModelId(model) ? model : normalizeToCcAlias(model);
 }
 
-function normalizeClaudeModelFlags(
+function normalizeModelFlags(
   model: string | undefined,
   extraFlags: string[],
+  normalizeModel: (model: string) => string = (value) => value,
 ): { model?: string; extraFlags: string[] } {
   let explicitModel: string | undefined;
   const remainingFlags: string[] = [];
@@ -217,7 +218,7 @@ function normalizeClaudeModelFlags(
 
   const selectedModel = explicitModel ?? model;
   return {
-    ...(selectedModel ? { model: normalizeClaudeModelArg(selectedModel) } : {}),
+    ...(selectedModel ? { model: normalizeModel(selectedModel) } : {}),
     extraFlags: remainingFlags,
   };
 }
@@ -228,7 +229,7 @@ const CONTRACTS: Record<CliAgentType, CliAgentContract> = {
     binary: 'claude',
     installInstructions: 'Install Claude CLI: https://claude.ai/download',
     buildLaunchArgs(model?: string, extraFlags: string[] = []): string[] {
-      const normalized = normalizeClaudeModelFlags(model, extraFlags);
+      const normalized = normalizeModelFlags(model, extraFlags, normalizeClaudeModelArg);
       const args = ['--dangerously-skip-permissions'];
       if (shouldUseClaudeBareMode() && !normalized.extraFlags.includes('--bare')) {
         args.push('--bare');
@@ -251,9 +252,10 @@ const CONTRACTS: Record<CliAgentType, CliAgentContract> = {
     // the live Codex TUI with `codex` as the worker process.
     supportsPromptMode: false,
     buildLaunchArgs(model?: string, extraFlags: string[] = []): string[] {
+      const normalized = normalizeModelFlags(model, extraFlags);
       const args = ['--dangerously-bypass-approvals-and-sandbox'];
-      if (model) args.push('--model', model);
-      return [...args, ...extraFlags];
+      if (normalized.model) args.push('--model', normalized.model);
+      return [...args, ...normalized.extraFlags];
     },
     parseOutput(rawOutput: string): string {
       // Codex outputs JSONL — extract the last assistant message
@@ -281,9 +283,10 @@ const CONTRACTS: Record<CliAgentType, CliAgentContract> = {
     supportsPromptMode: true,
     promptModeFlag: '-p',
     buildLaunchArgs(model?: string, extraFlags: string[] = []): string[] {
+      const normalized = normalizeModelFlags(model, extraFlags);
       const args = ['--approval-mode', 'yolo'];
-      if (model) args.push('--model', model);
-      return [...args, ...extraFlags];
+      if (normalized.model) args.push('--model', normalized.model);
+      return [...args, ...normalized.extraFlags];
     },
     parseOutput(rawOutput: string): string {
       return rawOutput.trim();
@@ -296,9 +299,10 @@ const CONTRACTS: Record<CliAgentType, CliAgentContract> = {
     supportsPromptMode: true,
     promptModeFlag: '-p',
     buildLaunchArgs(model?: string, extraFlags: string[] = []): string[] {
+      const normalized = normalizeModelFlags(model, extraFlags);
       const args = ['--always-approve'];
-      if (model) args.push('--model', model);
-      return [...args, ...extraFlags];
+      if (normalized.model) args.push('--model', normalized.model);
+      return [...args, ...normalized.extraFlags];
     },
     parseOutput(rawOutput: string): string {
       return rawOutput.trim();
@@ -311,14 +315,15 @@ const CONTRACTS: Record<CliAgentType, CliAgentContract> = {
     supportsPromptMode: true,
     promptModeFlag: '-p',
     buildLaunchArgs(model?: string, extraFlags: string[] = []): string[] {
+      const normalized = normalizeModelFlags(model, extraFlags);
       // agy's `-p`/`--print` is appended by getPromptModeArgs as `-p <instruction>`,
       // where the prompt is the VALUE of `-p` (not a boolean). All other flags
       // MUST precede that `-p`, so buildLaunchArgs returns only the leading flags
       // (like grok). --dangerously-skip-permissions suppresses approval prompts,
       // so no trust-confirm send-keys is needed (unlike gemini). Verified agy 1.0.10.
       const args = ['--dangerously-skip-permissions'];
-      if (model) args.push('--model', model);
-      return [...args, ...extraFlags];
+      if (normalized.model) args.push('--model', normalized.model);
+      return [...args, ...normalized.extraFlags];
     },
     parseOutput(rawOutput: string): string {
       return rawOutput.trim();
