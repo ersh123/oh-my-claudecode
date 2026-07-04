@@ -614,3 +614,32 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Broader session-start template/runtime drift remains. This slice only closes the ultrawork restore wording mismatch.
 - `.mjs` parity, team terminal/model-routing, state IO, and docs roadmap areas remain open.
+
+## 2026-07-05 — dogfood/team-model-launch-arg-normalization
+
+Candidates + WSJF:
+- TAKE: enforce deterministic Claude worker model flag precedence. Value 7, risk reduction 8, urgency 5, complexity 2 => 10.0. `AGENTS.md` promises explicit launch `--model` wins and duplicates are normalized, but the builder emitted conflicting flags.
+- DEFER: full team terminal state audit. Value 8, risk reduction 7, urgency 5, complexity 6 => 3.33. Still open, but this slice closes a concrete worker launch/model-routing drift.
+- DROP: route all providers through the same dedupe helper. Value 4, risk reduction 3, urgency 2, complexity 5 => 1.8. The contract is explicitly Claude worker model selection; external providers already have provider-specific model behavior covered.
+
+Changed:
+- `src/team/model-contract.ts` now extracts `--model <value>` and `--model=<value>` from Claude worker `extraFlags`, lets the last explicit launch model win over resolved env/model input, emits one canonical `--model <value>`, and preserves unrelated flags.
+- `src/team/__tests__/model-contract.test.ts` pins the duplicate/conflicting `--model` regression.
+- `ROADMAP.md` records this under team model-routing evidence without marking team complete.
+
+Evidence:
+- RED: model-contract suite failed on the new test because args contained `--model env-resolved-model`, `--model explicit-model`, and `--model=last-model`.
+- GREEN targeted: `npx vitest run src/team/__tests__/model-contract.test.ts --reporter=verbose` passed 67/67.
+- Build: `npm run build` exited 0 and regenerated bridge/dist artifacts.
+- Focused launch/model run: `npx vitest run src/team/__tests__/model-contract.test.ts src/team/__tests__/runtime-prompt-mode.test.ts src/team/__tests__/tmux-session.spawn.test.ts --reporter=verbose` passed 112/112.
+- Direct built-code dogfood: `.omc/dogfood/team-model-launch-args-1783202455/output.json` had `modelFlagCount=1`, `selectedModel="last-model"`, `hasEnvResolvedModel=false`, `hasEqualsModelFlag=false`, and `preservedUnrelatedFlags=true`.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and baseline JSON confirms `numTotalTests=10253`, `numPassedTests=10246`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The fix is scoped to Claude worker launch arg construction. It preserves provider-specific model IDs, existing Claude alias normalization, `--bare` dedupe, and unrelated launch flags while removing duplicate/conflicting model flags promised against by `AGENTS.md`.
+
+Remaining risk:
+- Team terminal phase audit remains open; this slice closes only worker launch/model-routing determinism.
+- Live merge will repeat build, typecheck, focused launch/model tests, built-code dogfood, and baseline before moving `loop-last-good`.
