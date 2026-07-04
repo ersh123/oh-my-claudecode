@@ -55,6 +55,7 @@
     "bench:prompts:compare": "tsx benchmarks/run-all.ts --compare",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
+    "test:baseline": "node scripts/check-test-baseline.mjs --run-vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src",
     "format": "prettier --write src/**/*.ts",
