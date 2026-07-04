@@ -1,10 +1,10 @@
 # Hooks System
 
-> OMC's 21 hooks intercept Claude Code lifecycle events to enable magic keywords, context injection, and quality enforcement.
+> OMC's 25 hooks intercept Claude Code lifecycle events to enable magic keywords, context injection, and quality enforcement.
 
 ## What Are Hooks?
 
-Hooks are scripts that execute automatically in response to Claude Code lifecycle events. oh-my-claudecode extends Claude Code's default behavior with 21 hooks.
+Hooks are scripts that execute automatically in response to Claude Code lifecycle events. oh-my-claudecode extends Claude Code's default behavior with 25 hooks.
 
 When a user submits a prompt, a tool runs, or a session starts/ends, hooks fire automatically to inject additional context, activate modes, and manage state.
 
@@ -111,10 +111,11 @@ Fires when a new session begins.
 |--------|---------|------|---------|
 | `session-start.mjs` | `*` | Session initialization, state restoration | 5s |
 | `project-memory-session.mjs` | `*` | Loads project memory | 5s |
+| `wiki-session-start.mjs` | `*` | Loads wiki/session context | 5s |
 | `setup-init.mjs` | `init` | Initial setup wizard | 30s |
 | `setup-maintenance.mjs` | `maintenance` | Maintenance tasks | 60s |
 
-The `init` and `maintenance` matchers only run in special cases. For normal session starts, only the two `*` matcher scripts execute.
+The `init` and `maintenance` matchers only run in special cases. For normal session starts, only the three `*` matcher scripts execute.
 
 ### PreToolUse
 
@@ -144,6 +145,7 @@ Fires after a tool use completes.
 |--------|------|---------|
 | `post-tool-verifier.mjs` | Verifies tool results and injects additional context | 3s |
 | `project-memory-posttool.mjs` | Updates project memory | 3s |
+| `post-tool-rules-injector.mjs` | Injects relevant project rules after file/tool activity | 3s |
 
 Injects additional guidance based on Read, Write, Edit, and Bash results. For example, after reading a file it may hint "consider using parallel reads."
 
@@ -184,6 +186,7 @@ Fires immediately before context compaction.
 |--------|------|---------|
 | `pre-compact.mjs` | Preserves state before compaction | 10s |
 | `project-memory-precompact.mjs` | Preserves project memory | 5s |
+| `wiki-pre-compact.mjs` | Preserves wiki/session context before compaction | 3s |
 
 Saves important state and memory before compaction runs because the context window is full.
 
@@ -195,7 +198,7 @@ Fires when Claude finishes a response.
 |--------|------|---------|
 | `context-guard-stop.mjs` | Monitors context usage | 5s |
 | `workflow-drift-guard.mjs` | Blocks narrow structured-question and fake-completion drift | 3s |
-| `persistent-mode.cjs` | Maintains active mode state (ralph, ultrawork, etc.) | 10s |
+| `persistent-mode.mjs` | Maintains active mode state (ralph, ultrawork, etc.) | 10s |
 | `code-simplifier.mjs` | Auto-simplifies modified files (opt-in) | 5s |
 
 `persistent-mode` injects a reinforcement message like "The boulder never stops" when an active execution mode is running, prompting continued work.
@@ -207,6 +210,7 @@ Fires when a session ends.
 | Script | Role | Timeout |
 |--------|------|---------|
 | `session-end.mjs` | Saves session summary, sends callback notifications | 30s |
+| `wiki-session-end.mjs` | Saves wiki/session summary data | 30s |
 
 Saves agent activity, token usage, and other session data to `.omc/sessions/`. If configured, sends completion notifications via Discord, Telegram, or Slack.
 

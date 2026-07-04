@@ -14,6 +14,11 @@ function readProjectFile(...segments: string[]): string {
 describe('Tier-0 contract docs consistency', () => {
   const referenceDoc = readProjectFile('docs', 'REFERENCE.md');
   const claudeDoc = readProjectFile('docs', 'CLAUDE.md');
+  const gettingStartedDoc = readProjectFile('docs', 'GETTING-STARTED.md');
+  const hooksDoc = readProjectFile('docs', 'HOOKS.md');
+  const hooksManifest = JSON.parse(readProjectFile('hooks', 'hooks.json')) as {
+    hooks: Record<string, Array<{ hooks: Array<{ command: string; timeout?: number }> }>>;
+  };
 
   it('keeps REFERENCE ToC counts aligned with section headings', () => {
     const tocAgents = referenceDoc.match(/\[Agents \((\d+) Total\)\]\(#agents-\d+-total\)/);
@@ -79,6 +84,40 @@ describe('Tier-0 contract docs consistency', () => {
     expect(referenceDoc).toContain('/oh-my-claudecode:setup');
     expect(localPluginDoc).toContain('/setup');
     expect(localPluginDoc).toContain('git worktrees');
+  });
+
+  it('keeps hook docs aligned with the hook manifest count and Stop script names', () => {
+    const hookEntries = Object.values(hooksManifest.hooks).flatMap((entries) =>
+      entries.flatMap((entry) => entry.hooks),
+    );
+    const stopEntries = hooksManifest.hooks.Stop.flatMap((entry) => entry.hooks);
+    const stopCommands = stopEntries.map((hook) => hook.command);
+
+    expect(hookEntries).toHaveLength(25);
+    expect(stopCommands.some((command) => command.includes('/scripts/persistent-mode.mjs'))).toBe(true);
+    expect(stopCommands.some((command) => command.includes('/scripts/persistent-mode.cjs'))).toBe(false);
+
+    expect(hooksDoc).toContain("OMC's 25 hooks");
+    expect(hooksDoc).toContain("with 25 hooks.");
+    expect(hooksDoc).toContain('| `persistent-mode.mjs` | Maintains active mode state (ralph, ultrawork, etc.) | 10s |');
+    expect(hooksDoc).not.toContain('persistent-mode.cjs');
+  });
+
+  it('documents the local dogfood recovery anchor and zero-baseline gate', () => {
+    expect(gettingStartedDoc).toContain('loop-last-good');
+    expect(gettingStartedDoc).toContain('refs/heads/loop-last-good');
+    expect(gettingStartedDoc).toContain('refs/tags/loop-last-good');
+    expect(gettingStartedDoc).toContain('npm run test:baseline');
+    expect(gettingStartedDoc).toContain('git switch -c recover-loop loop-last-good');
+  });
+
+  it('keeps platform docs aligned with the Node hook runtime', () => {
+    expect(gettingStartedDoc).toContain('Node.js (.mjs via run.cjs)');
+    expect(referenceDoc).toContain('Node.js (.mjs via run.cjs)');
+    expect(referenceDoc).toContain('find-node.sh');
+    expect(gettingStartedDoc).not.toContain('Bash (.sh)');
+    expect(referenceDoc).not.toContain('Bash (.sh)');
+    expect(referenceDoc).not.toContain('OMC_USE_NODE_HOOKS');
   });
 
   it('uses the published /docs/ path instead of the removed docs.html path in README links', () => {

@@ -1037,17 +1037,15 @@ stopomc
 
 ### Operating Systems
 
-| Platform    | Install Method              | Hook Type      |
-| ----------- | --------------------------- | -------------- |
-| **Windows** | WSL2 recommended (see note) | Node.js (.mjs) |
-| **macOS**   | Claude Code Plugin          | Bash (.sh)     |
-| **Linux**   | Claude Code Plugin          | Bash (.sh)     |
+| Platform    | Install Method              | Hook Type                   |
+| ----------- | --------------------------- | --------------------------- |
+| **Windows** | WSL2 recommended (see note) | Node.js (.mjs via run.cjs)  |
+| **macOS**   | Claude Code Plugin          | Node.js (.mjs via run.cjs)  |
+| **Linux**   | Claude Code Plugin          | Node.js (.mjs via run.cjs)  |
 
-> **Note**: Bash hooks are fully portable across macOS and Linux (no GNU-specific dependencies).
+> **Note**: OMC hook scripts are Node.js `.mjs` files. Published macOS/Linux plugin caches may wrap them with `find-node.sh` so nvm/fnm installs can find Node in non-interactive hook shells.
 
 > **Windows**: Native Windows (win32) support is experimental. Features that launch tmux-backed worker panes require a tmux-compatible binary. OMC supports native [psmux](https://github.com/psmux/psmux) for PowerShell 7+ users who want visible Claude Code teammate panes in interactive team workflows, and recommends WSL2 as the fallback when no compatible `tmux` command is installed or native Windows behavior is insufficient. psmux does not force worktree agents, non-interactive/print-mode agents, or model-selected in-process agents into visible panes. Native Windows issues may have limited support.
-
-> **Advanced**: Set `OMC_USE_NODE_HOOKS=1` to use Node.js hooks on macOS/Linux.
 
 ### Available Tools
 
@@ -1224,7 +1222,7 @@ Available presets: `minimal`, `focused`, `full`, `dense`, `analytics`, `opencode
 | Issue                 | Solution                                                                         |
 | --------------------- | -------------------------------------------------------------------------------- |
 | Commands not found    | Re-run `/oh-my-claudecode:omc-setup`                                             |
-| Hooks not executing   | Check hook permissions: `chmod +x ~/.claude/hooks/**/*.sh`                       |
+| Hooks not executing   | Run `/oh-my-claudecode:omc-doctor`; verify the plugin `hooks/hooks.json` and Node path |
 | Agents not delegating | Verify CLAUDE.md is loaded: check `./.claude/CLAUDE.md` or `~/.claude/CLAUDE.md` |
 | LSP tools not working | Install language servers: `npm install -g typescript-language-server`            |
 | Token limit errors    | Use `/oh-my-claudecode:` for token-efficient execution                           |

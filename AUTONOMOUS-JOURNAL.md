@@ -736,3 +736,33 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - `.mjs` parity remains open; this slice only closes code-simplifier Windows child-process hardening parity.
 - Live merge will repeat build, typecheck, affected tests, direct standalone-template smoke, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/docs-recovery-accuracy
+
+Candidates + WSJF:
+- TAKE: document the local dogfood recovery anchor and pin stale hook docs to the current manifest. Value 6, risk reduction 7, urgency 5, complexity 1 => 18.0. The roadmap explicitly required `loop-last-good` recovery docs, while `docs/HOOKS.md` still claimed 21 hooks and `persistent-mode.cjs`.
+- DEFER: broad command/gate docs audit. Value 7, risk reduction 6, urgency 4, complexity 5 => 3.4. Useful, but higher surface and better handled as a separate docs pass.
+- DROP: mark the docs area fully done after this slice. Value 2, risk reduction 1, urgency 1, complexity 1 => 4.0. Recovery and hook manifest drift are fixed here, but command/gate docs still need a broader audit.
+
+Changed:
+- `docs/GETTING-STARTED.md` now documents `loop-last-good` as the local dogfood recovery anchor, including both branch/tag refs and the `npm run test:baseline` gate.
+- `docs/HOOKS.md` now matches the current 25-hook manifest count, includes the wiki/rules-injector hook rows, and uses `persistent-mode.mjs` for Stop.
+- `docs/GETTING-STARTED.md` and `docs/REFERENCE.md` now describe Node `.mjs` hooks via `run.cjs` / `find-node.sh` instead of stale Bash `.sh` hook docs.
+- `src/__tests__/tier0-docs-consistency.test.ts` pins the recovery strings, hook count, Stop persistent-mode script name, and platform hook runtime docs against `hooks/hooks.json`.
+- `ROADMAP.md` marks recovery docs done while keeping broader docs command/gate accuracy in progress.
+
+Evidence:
+- RED: `npx vitest run src/__tests__/tier0-docs-consistency.test.ts --reporter=verbose` failed on `OMC's 25 hooks` and `loop-last-good`, proving the new checks caught stale docs.
+- GREEN affected: `npx vitest run src/__tests__/tier0-docs-consistency.test.ts src/__tests__/run-cjs-graceful-fallback.test.ts --reporter=verbose` passed 28/28 after docs updates.
+- Build: `npm run build` exited 0 and regenerated `dist/__tests__/tier0-docs-consistency.test.js`.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and baseline JSON confirms `numTotalTests=10262`, `numPassedTests=10255`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; added-line sensitive scan reported `0` hits.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The change is docs/test scoped. `GETTING-STARTED`, `HOOKS`, and `REFERENCE` now match the current hook manifest and local dogfood recovery practice; the test verifies the manifest count and Stop script name from `hooks/hooks.json` instead of only trusting prose.
+
+Remaining risk:
+- Broader command/gate docs accuracy remains open after this recovery-focused slice.
+- Live merge will repeat focused docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
