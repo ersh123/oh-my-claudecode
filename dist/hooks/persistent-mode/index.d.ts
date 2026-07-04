@@ -91,6 +91,7 @@ export declare function recordIdleNotificationSent(stateDir: string, sessionId?:
  * error (never silent completion) — per TSK-004 carry-forward.
  */
 export declare function handleNikoflowExecute(workingDir: string, sessionId: string | undefined, current: NikoflowState, transcriptPath?: string): PersistentModeResult;
+export declare function handleNikoflowVerify(workingDir: string, sessionId: string | undefined, current: NikoflowState, transcriptPath?: string): PersistentModeResult;
 /**
  * Main persistent mode checker.
  * Resolves which mode (if any) should block, then applies the thinking-only

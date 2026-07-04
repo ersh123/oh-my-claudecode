@@ -23,7 +23,7 @@ export const NIKOFLOW_GATE_PAYLOADS: Record<string, string[]> = {
   // execute advances per-ticket via dynamic "execute:TSK-NNN" gates (payload
   // TICKET_DONE, passed explicitly) and auto-advances when all tickets are done —
   // there is no phase-level "execute" gate.
-  verify: ["VERIFIED"],
+  verify: ["VERIFIED", "NO_ACTIONABLE_FINDINGS"],
 };
 
 /** Gates that require proof of a real user turn after the request was minted. */
@@ -38,6 +38,10 @@ export interface GateMatch {
   matched: boolean;
   /** For the depth gate: the tier the user confirmed, if present. */
   depth?: NikoflowDepth;
+  /** The exact payload that matched (e.g. VERIFIED vs NO_ACTIONABLE_FINDINGS). */
+  payload?: string;
+  /** For the verify gate: the reviewer's numeric score, if present. */
+  score?: number;
 }
 
 function extractAttribute(attributes: string, name: string): string | undefined {
@@ -91,7 +95,16 @@ export function detectNikoflowGate(
       if (rid !== opts.requestId) continue;
     }
 
-    const result: GateMatch = { matched: true };
+    const result: GateMatch = { matched: true, payload };
+    const scoreAttr = extractAttribute(attributes, "score");
+    if (scoreAttr !== undefined) {
+      const parsed = Number.parseFloat(scoreAttr);
+      // Scores are on a 1–10 scale; ignore out-of-range values (a placeholder
+      // like "N.N" → NaN, or "99" → nonsense) so they can't force a pass.
+      if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 10) {
+        result.score = parsed;
+      }
+    }
     if (opts.phase === "depth") {
       const depthAttr = extractAttribute(attributes, "depth")?.toLowerCase();
       // A depth confirmation is only real with a concrete tier — a verbatim

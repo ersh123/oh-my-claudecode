@@ -32,9 +32,14 @@ export {
   recordNikoflowUserPrompt,
   userRepliedAfterMint,
 
+  // Verify convergence (TSK-006)
+  recordVerifyPass,
+
   // Constants
   NIKOFLOW_DEPTHS,
   NIKOFLOW_PHASES,
+  NIKOFLOW_VERIFY_SCORE_THRESHOLD,
+  NIKOFLOW_VERIFY_MAX_PASSES,
 
   // Types
   type NikoflowDepth,
@@ -73,4 +78,4 @@ export {
   type DagValidation,
 } from "./tickets.js";
 
-export { getExecuteTicketPrompt } from "./prompts.js";
+export { getExecuteTicketPrompt, getVerifyPrompt } from "./prompts.js";

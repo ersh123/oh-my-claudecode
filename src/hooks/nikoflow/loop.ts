@@ -65,7 +65,14 @@ export interface NikoflowState {
   /** Timestamp of the most recent real UserPromptSubmit (ISO). Used to prove a
    *  human actually replied after a gate was requested (anti-self-approval). */
   last_user_prompt_at?: string;
+  /** Number of failed verify-review passes (loop-review convergence, TSK-006). */
+  verify_pass?: number;
 }
+
+/** Verify gate: reviewer score at/above this passes. */
+export const NIKOFLOW_VERIFY_SCORE_THRESHOLD = 9.5;
+/** Verify gate: after this many failed passes, escalate to the user. */
+export const NIKOFLOW_VERIFY_MAX_PASSES = 6;
 
 export interface NikoflowLoopOptions {
   depth?: NikoflowDepth;
@@ -286,6 +293,18 @@ export function clearGateRequest(
   delete state.awaiting_gate;
   delete state.gate_request_minted_at;
   return writeNikoflowState(directory, state, sessionId);
+}
+
+/** Increment the failed-verify-pass counter and return the new value. */
+export function recordVerifyPass(
+  directory: string,
+  sessionId?: string,
+): number {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return 0;
+  state.verify_pass = (state.verify_pass ?? 0) + 1;
+  writeNikoflowState(directory, state, sessionId);
+  return state.verify_pass;
 }
 
 /** Record a real UserPromptSubmit timestamp (anti-self-approval evidence). */

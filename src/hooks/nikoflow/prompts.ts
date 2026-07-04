@@ -131,6 +131,45 @@ export function getExecuteTicketPrompt(
   );
 }
 
+/**
+ * Verify-phase convergence prompt (loop-review). Each pass spawns a FRESH,
+ * context-isolated reviewer that returns a numeric score; the phase completes
+ * when the reviewer scores ≥ 9.5 or reports no actionable findings AND local
+ * validation is green.
+ */
+export function getVerifyPrompt(
+  state: NikoflowState,
+  requestId: string | undefined,
+  pass: number,
+): string {
+  // Placeholder score "N.N" so a verbatim copy of the example fails (NaN) — the
+  // reviewer must substitute its real score. NAF is payload-only.
+  const okTag = injectRequestId(
+    `<nikoflow-gate phase="verify" score="N.N">VERIFIED</nikoflow-gate>`,
+    requestId,
+  );
+  const noFindingsTag = injectRequestId(
+    `<nikoflow-gate phase="verify">NO_ACTIONABLE_FINDINGS</nikoflow-gate>`,
+    requestId,
+  );
+  return (
+    `<nikoflow-continuation phase="verify" iteration="${state.iteration}" pass="${pass}">\n` +
+    `✅ VERIFICATION (loop-review, pass ${pass}). First run local validation for the changed ` +
+    `surface (tests, typecheck, lint, build) and make it GREEN — the gate must never pass while ` +
+    `validation is red.\n` +
+    `Then spawn a FRESH, context-isolated reviewer subagent (Task/Agent) that has NOT seen your ` +
+    `reasoning. Give it this request-id and the diff scope. The reviewer inspects the change for ` +
+    `correctness, regressions, security, and missing high-value tests, and returns a score from ` +
+    `1–10. It must emit — in ITS OWN final output, replacing N.N with its actual score — exactly one of:\n` +
+    `  ${okTag}   (score ≥ 9.5 on green validation), or\n` +
+    `  ${noFindingsTag}   (no actionable findings remain).\n` +
+    `If the reviewer scores below 9.5 with actionable findings, fix them and a NEW reviewer runs ` +
+    `next pass. The gate is accepted only from the reviewer subagent's output, never your own text.\n` +
+    `${CANCEL_HINT}\n` +
+    `</nikoflow-continuation>`
+  );
+}
+
 /** Continuation prompt for a named phase. */
 export function getPhasePrompt(
   phase: string,

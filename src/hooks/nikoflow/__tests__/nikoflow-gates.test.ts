@@ -18,7 +18,7 @@ describe("nikoflow gate detection (TSK-003)", () => {
 
   it("matches a valid correlated tag", () => {
     const t = `blah <nikoflow-gate phase="interview" request-id="${RID}">CONFIRMED</nikoflow-gate> ok`;
-    expect(detectNikoflowGate(t, { phase: "interview", requestId: RID })).toEqual({ matched: true });
+    expect(detectNikoflowGate(t, { phase: "interview", requestId: RID })).toMatchObject({ matched: true });
   });
 
   it("rejects a wrong phase", () => {
@@ -66,7 +66,7 @@ describe("nikoflow gate detection (TSK-003)", () => {
 
   it("extracts the confirmed depth for the depth gate", () => {
     const t = `<nikoflow-gate phase="depth" depth="deep" request-id="${RID}">CONFIRMED</nikoflow-gate>`;
-    expect(detectNikoflowGate(t, { phase: "depth", requestId: RID })).toEqual({ matched: true, depth: "deep" });
+    expect(detectNikoflowGate(t, { phase: "depth", requestId: RID })).toMatchObject({ matched: true, depth: "deep" });
   });
 
   it("adr gate accepts RECORDED or SKIPPED", () => {

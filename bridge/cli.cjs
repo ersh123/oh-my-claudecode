@@ -19803,6 +19803,13 @@ function clearGateRequest(directory, sessionId) {
   delete state.gate_request_minted_at;
   return writeNikoflowState(directory, state, sessionId);
 }
+function recordVerifyPass(directory, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return 0;
+  state.verify_pass = (state.verify_pass ?? 0) + 1;
+  writeNikoflowState(directory, state, sessionId);
+  return state.verify_pass;
+}
 function recordNikoflowUserPrompt(directory, sessionId) {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return false;
@@ -19848,7 +19855,7 @@ function createNikoflowLoopHook(directory) {
   };
   return { startLoop, cancelLoop, getState };
 }
-var import_crypto11, NIKOFLOW_DEPTHS, NIKOFLOW_PHASES, MODE;
+var import_crypto11, NIKOFLOW_DEPTHS, NIKOFLOW_PHASES, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, MODE;
 var init_loop2 = __esm({
   "src/hooks/nikoflow/loop.ts"() {
     "use strict";
@@ -19860,6 +19867,8 @@ var init_loop2 = __esm({
       standard: ["interview", "adr", "prd", "tickets", "execute", "verify"],
       deep: ["interview", "adr", "prd", "tickets", "execute", "verify"]
     };
+    NIKOFLOW_VERIFY_SCORE_THRESHOLD = 9.5;
+    NIKOFLOW_VERIFY_MAX_PASSES = 6;
     MODE = "nikoflow";
   }
 });
@@ -19906,6 +19915,24 @@ Work this ONE vertical slice: RED (a failing test at a pre-agreed seam) \u2192 G
 ` : "") + `When the slice is green, spawn a FRESH, context-isolated reviewer subagent (Task/Agent) to check it against the acceptance criteria and repo standards. Pass the reviewer this request-id and instruct it to emit \u2014 in ITS OWN final output \u2014 the ticket gate on its own line ONLY if it approves on green validation:
 ${gateTag}
 The gate is accepted only from the reviewer subagent's output, never from your own text \u2014 emitting it yourself will not advance the ticket.
+${CANCEL_HINT}
+</nikoflow-continuation>`;
+}
+function getVerifyPrompt(state, requestId, pass) {
+  const okTag = injectRequestId(
+    `<nikoflow-gate phase="verify" score="N.N">VERIFIED</nikoflow-gate>`,
+    requestId
+  );
+  const noFindingsTag = injectRequestId(
+    `<nikoflow-gate phase="verify">NO_ACTIONABLE_FINDINGS</nikoflow-gate>`,
+    requestId
+  );
+  return `<nikoflow-continuation phase="verify" iteration="${state.iteration}" pass="${pass}">
+\u2705 VERIFICATION (loop-review, pass ${pass}). First run local validation for the changed surface (tests, typecheck, lint, build) and make it GREEN \u2014 the gate must never pass while validation is red.
+Then spawn a FRESH, context-isolated reviewer subagent (Task/Agent) that has NOT seen your reasoning. Give it this request-id and the diff scope. The reviewer inspects the change for correctness, regressions, security, and missing high-value tests, and returns a score from 1\u201310. It must emit \u2014 in ITS OWN final output, replacing N.N with its actual score \u2014 exactly one of:
+  ${okTag}   (score \u2265 9.5 on green validation), or
+  ${noFindingsTag}   (no actionable findings remain).
+If the reviewer scores below 9.5 with actionable findings, fix them and a NEW reviewer runs next pass. The gate is accepted only from the reviewer subagent's output, never your own text.
 ${CANCEL_HINT}
 </nikoflow-continuation>`;
 }
@@ -19963,7 +19990,14 @@ function detectNikoflowGate(text, opts) {
       const rid = extractAttribute(attributes, "request-id");
       if (rid !== opts.requestId) continue;
     }
-    const result = { matched: true };
+    const result = { matched: true, payload };
+    const scoreAttr = extractAttribute(attributes, "score");
+    if (scoreAttr !== void 0) {
+      const parsed = Number.parseFloat(scoreAttr);
+      if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 10) {
+        result.score = parsed;
+      }
+    }
     if (opts.phase === "depth") {
       const depthAttr = extractAttribute(attributes, "depth")?.toLowerCase();
       if (!depthAttr || !NIKOFLOW_DEPTHS.includes(depthAttr)) {
@@ -19989,7 +20023,7 @@ var init_gates = __esm({
       // execute advances per-ticket via dynamic "execute:TSK-NNN" gates (payload
       // TICKET_DONE, passed explicitly) and auto-advances when all tickets are done —
       // there is no phase-level "execute" gate.
-      verify: ["VERIFIED"]
+      verify: ["VERIFIED", "NO_ACTIONABLE_FINDINGS"]
     };
     HUMAN_GATE_PHASES = /* @__PURE__ */ new Set([
       "depth",
@@ -20214,6 +20248,8 @@ __export(nikoflow_exports, {
   NIKOFLOW_DEPTHS: () => NIKOFLOW_DEPTHS,
   NIKOFLOW_GATE_PAYLOADS: () => NIKOFLOW_GATE_PAYLOADS,
   NIKOFLOW_PHASES: () => NIKOFLOW_PHASES,
+  NIKOFLOW_VERIFY_MAX_PASSES: () => NIKOFLOW_VERIFY_MAX_PASSES,
+  NIKOFLOW_VERIFY_SCORE_THRESHOLD: () => NIKOFLOW_VERIFY_SCORE_THRESHOLD,
   advanceNikoflowPhase: () => advanceNikoflowPhase,
   allTicketsDone: () => allTicketsDone,
   clearGateRequest: () => clearGateRequest,
@@ -20227,6 +20263,7 @@ __export(nikoflow_exports, {
   getExecuteTicketPrompt: () => getExecuteTicketPrompt,
   getNextTicket: () => getNextTicket,
   getPhasePrompt: () => getPhasePrompt2,
+  getVerifyPrompt: () => getVerifyPrompt,
   incrementNikoflowIteration: () => incrementNikoflowIteration,
   isNikoflowComplete: () => isNikoflowComplete,
   isTicketDeadlock: () => isTicketDeadlock,
@@ -20239,6 +20276,7 @@ __export(nikoflow_exports, {
   readNikoflowState: () => readNikoflowState,
   readTickets: () => readTickets,
   recordNikoflowUserPrompt: () => recordNikoflowUserPrompt,
+  recordVerifyPass: () => recordVerifyPass,
   rotateGateRequest: () => rotateGateRequest,
   setNikoflowDepth: () => setNikoflowDepth,
   stripNikoflowFlags: () => stripNikoflowFlags,
@@ -20283,6 +20321,7 @@ __export(persistent_mode_exports, {
   getIdleNotificationCooldownSeconds: () => getIdleNotificationCooldownSeconds,
   getToolErrorRetryGuidance: () => getToolErrorRetryGuidance,
   handleNikoflowExecute: () => handleNikoflowExecute,
+  handleNikoflowVerify: () => handleNikoflowVerify,
   hasPendingOwnedAsyncWork: () => hasPendingOwnedAsyncWork,
   readLastToolError: () => readLastToolError,
   recordIdleNotificationSent: () => recordIdleNotificationSent,
@@ -20852,7 +20891,7 @@ function readNikoflowGateText(transcriptPath) {
   }
   return parts.join("\n");
 }
-function nikoflowReviewerAuthoredTicketDone(transcriptPath, ticketGate, requestId) {
+function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expectedPayloads) {
   const reviewerToolUses = /* @__PURE__ */ new Set();
   for (const line of readTranscriptTailLines(transcriptPath)) {
     if (!line.trim()) continue;
@@ -20874,16 +20913,12 @@ function nikoflowReviewerAuthoredTicketDone(transcriptPath, ticketGate, requestI
       if (block?.type !== "tool_result" || !block.tool_use_id) continue;
       if (!reviewerToolUses.has(block.tool_use_id)) continue;
       const reviewerOutput = extractTranscriptText(block.content);
-      if (reviewerOutput && detectNikoflowGate(reviewerOutput, {
-        phase: ticketGate,
-        requestId,
-        expectedPayloads: ["TICKET_DONE"]
-      }).matched) {
-        return true;
-      }
+      if (!reviewerOutput) continue;
+      const match = detectNikoflowGate(reviewerOutput, { phase, requestId, expectedPayloads });
+      if (match.matched) return match;
     }
   }
-  return false;
+  return { matched: false };
 }
 function nikoflowCompleteResult(iteration) {
   return {
@@ -20911,6 +20946,9 @@ function nikoflowAdvanceFromExecute(workingDir, sessionId, current) {
   if (isNikoflowComplete(next)) return nikoflowCompleteResult(next.iteration);
   const nextPhase = getCurrentPhase(next);
   const nextRid = mintGateRequest(workingDir, nextPhase ?? "depth", sessionId) ?? void 0;
+  if (nextPhase === "verify") {
+    return { shouldBlock: true, message: getVerifyPrompt(next, nextRid, (next.verify_pass ?? 0) + 1), mode: "nikoflow" };
+  }
   return {
     shouldBlock: true,
     message: nextPhase ? getPhasePrompt2(nextPhase, next, nextRid) : getDepthSelectionPrompt(next, nextRid),
@@ -20939,7 +20977,8 @@ function handleNikoflowExecute(workingDir, sessionId, current, transcriptPath) {
   const ticket = getNextTicket(tickets);
   const gate = `execute:${ticket.id}`;
   const requestId = mintGateRequest(workingDir, gate, sessionId) ?? void 0;
-  if (transcriptPath && (0, import_fs56.existsSync)(transcriptPath) && nikoflowReviewerAuthoredTicketDone(transcriptPath, gate, requestId)) {
+  if (requestId && // fail closed: no correlation id → don't accept any tag
+  transcriptPath && (0, import_fs56.existsSync)(transcriptPath) && nikoflowReviewerAuthoredGate(transcriptPath, gate, requestId, ["TICKET_DONE"]).matched) {
     if (!markTicketStatus(workingDir, ticket.id, "done", sessionId)) {
       return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
     }
@@ -20957,6 +20996,54 @@ function handleNikoflowExecute(workingDir, sessionId, current, transcriptPath) {
   }
   return { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId), mode: "nikoflow" };
 }
+function nikoflowVerifyEscalation(current, passes) {
+  return {
+    shouldBlock: true,
+    message: `<nikoflow-continuation phase="verify" iteration="${current.iteration}">
+Verification did not converge after ${passes} reviewer passes (score stayed below ${NIKOFLOW_VERIFY_SCORE_THRESHOLD}). Stop auto-looping: summarize the outstanding findings for the user and ask them to decide \u2014 accept as-is (get a genuine passing review), keep iterating, or \`/oh-my-claudecode:cancel\`. A real reviewer pass \u2265 9.5 still completes.
+</nikoflow-continuation>`,
+    mode: "nikoflow"
+  };
+}
+function handleNikoflowVerify(workingDir, sessionId, current, transcriptPath) {
+  const passSoFar = current.verify_pass ?? 0;
+  const atCap = passSoFar >= NIKOFLOW_VERIFY_MAX_PASSES;
+  const requestId = mintGateRequest(workingDir, "verify", sessionId) ?? void 0;
+  if (!requestId) {
+    return atCap ? nikoflowVerifyEscalation(current, passSoFar) : { shouldBlock: true, message: getVerifyPrompt(current, void 0, passSoFar + 1), mode: "nikoflow" };
+  }
+  if (transcriptPath && (0, import_fs56.existsSync)(transcriptPath)) {
+    const match = nikoflowReviewerAuthoredGate(
+      transcriptPath,
+      "verify",
+      requestId,
+      ["VERIFIED", "NO_ACTIONABLE_FINDINGS"]
+    );
+    if (match.matched) {
+      const passed = match.payload === "NO_ACTIONABLE_FINDINGS" || match.score !== void 0 && match.score >= NIKOFLOW_VERIFY_SCORE_THRESHOLD;
+      if (passed) {
+        advanceNikoflowPhase(workingDir, sessionId);
+        clearGateRequest(workingDir, sessionId);
+        const next = readNikoflowState(workingDir, sessionId) ?? current;
+        return nikoflowCompleteResult(next.iteration);
+      }
+      if (atCap) {
+        return nikoflowVerifyEscalation(current, passSoFar);
+      }
+      const passes = recordVerifyPass(workingDir, sessionId);
+      rotateGateRequest(workingDir, "verify", sessionId);
+      if (passes >= NIKOFLOW_VERIFY_MAX_PASSES) {
+        return nikoflowVerifyEscalation(current, passes);
+      }
+      const freshRid = readNikoflowState(workingDir, sessionId)?.request_id;
+      return { shouldBlock: true, message: getVerifyPrompt(current, freshRid, passes + 1), mode: "nikoflow" };
+    }
+  }
+  if (atCap) {
+    return nikoflowVerifyEscalation(current, passSoFar);
+  }
+  return { shouldBlock: true, message: getVerifyPrompt(current, requestId, passSoFar + 1), mode: "nikoflow" };
+}
 async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcriptPath) {
   const workingDir = resolveToWorktreeRoot(directory);
   const state = readNikoflowState(workingDir, sessionId);
@@ -20973,6 +21060,9 @@ async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcr
   const phase = getCurrentPhase(current);
   if (phase === "execute") {
     return handleNikoflowExecute(workingDir, sessionId, current, transcriptPath);
+  }
+  if (phase === "verify") {
+    return handleNikoflowVerify(workingDir, sessionId, current, transcriptPath);
   }
   const gate = phase ?? "depth";
   const requestId = mintGateRequest(workingDir, gate, sessionId) ?? void 0;

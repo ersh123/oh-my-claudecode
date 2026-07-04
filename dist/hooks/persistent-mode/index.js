@@ -19,7 +19,7 @@ import { readUltraworkState, writeUltraworkState, incrementReinforcement, deacti
 import { resolveToWorktreeRoot, resolveSessionStatePath, resolveStatePath, getOmcRoot } from '../../lib/worktree-paths.js';
 import { readModeState, writeModeState } from '../../lib/mode-state-io.js';
 import { readRalphState, writeRalphState, incrementRalphIteration, clearRalphState, findPrdPath, getPrdCompletionStatus, getRalphContext, getStory, markStoryIncomplete, markStoryArchitectVerified, readVerificationState, startVerification, recordArchitectFeedback, getArchitectVerificationPrompt, getArchitectRejectionContinuationPrompt, detectArchitectApproval, detectArchitectRejection, clearVerificationState, } from '../ralph/index.js';
-import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, advanceNikoflowPhase, mintGateRequest, rotateGateRequest, clearGateRequest, userRepliedAfterMint, detectNikoflowGate, HUMAN_GATE_PHASES, readTickets, validateTicketDag, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, } from '../nikoflow/index.js';
+import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, advanceNikoflowPhase, mintGateRequest, rotateGateRequest, clearGateRequest, userRepliedAfterMint, detectNikoflowGate, HUMAN_GATE_PHASES, readTickets, validateTicketDag, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, getVerifyPrompt, recordVerifyPass, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
 import { isAutopilotActive } from '../autopilot/index.js';
@@ -766,13 +766,14 @@ function readNikoflowGateText(transcriptPath) {
     return parts.join('\n');
 }
 /**
- * Detect a ticket-done gate that was authored by an INDEPENDENT reviewer, not
- * the main thread: the TICKET_DONE tag must appear inside the tool_result of a
- * Task/Agent (reviewer subagent) tool_use, correlated by the ticket-scoped
- * request-id. Mirrors ralph's checkReviewerAuthoredApprovalInMessages so the
- * model cannot self-approve its own ticket by echoing the tag.
+ * Detect a nikoflow gate that was authored by an INDEPENDENT reviewer, not the
+ * main thread: the tag must appear inside the tool_result of a Task/Agent
+ * (reviewer subagent) tool_use, correlated by request-id. Mirrors ralph's
+ * checkReviewerAuthoredApprovalInMessages so the model cannot self-approve by
+ * echoing the tag. Returns the matched GateMatch (with payload/score) or a
+ * non-match.
  */
-function nikoflowReviewerAuthoredTicketDone(transcriptPath, ticketGate, requestId) {
+function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expectedPayloads) {
     const reviewerToolUses = new Set();
     for (const line of readTranscriptTailLines(transcriptPath)) {
         if (!line.trim())
@@ -799,17 +800,14 @@ function nikoflowReviewerAuthoredTicketDone(transcriptPath, ticketGate, requestI
             if (!reviewerToolUses.has(block.tool_use_id))
                 continue;
             const reviewerOutput = extractTranscriptText(block.content);
-            if (reviewerOutput &&
-                detectNikoflowGate(reviewerOutput, {
-                    phase: ticketGate,
-                    requestId,
-                    expectedPayloads: ['TICKET_DONE'],
-                }).matched) {
-                return true;
-            }
+            if (!reviewerOutput)
+                continue;
+            const match = detectNikoflowGate(reviewerOutput, { phase, requestId, expectedPayloads });
+            if (match.matched)
+                return match;
         }
     }
-    return false;
+    return { matched: false };
 }
 function nikoflowCompleteResult(iteration) {
     return {
@@ -844,6 +842,10 @@ function nikoflowAdvanceFromExecute(workingDir, sessionId, current) {
         return nikoflowCompleteResult(next.iteration);
     const nextPhase = getCurrentPhase(next);
     const nextRid = mintGateRequest(workingDir, nextPhase ?? 'depth', sessionId) ?? undefined;
+    // Verify needs its score-bearing loop-review prompt, not the generic phase body.
+    if (nextPhase === 'verify') {
+        return { shouldBlock: true, message: getVerifyPrompt(next, nextRid, (next.verify_pass ?? 0) + 1), mode: 'nikoflow' };
+    }
     return {
         shouldBlock: true,
         message: nextPhase
@@ -882,9 +884,10 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
     const gate = `execute:${ticket.id}`;
     const requestId = mintGateRequest(workingDir, gate, sessionId) ?? undefined;
     // The ticket advances ONLY on a reviewer-subagent-authored TICKET_DONE tag.
-    if (transcriptPath &&
+    if (requestId && // fail closed: no correlation id → don't accept any tag
+        transcriptPath &&
         existsSync(transcriptPath) &&
-        nikoflowReviewerAuthoredTicketDone(transcriptPath, gate, requestId)) {
+        nikoflowReviewerAuthoredGate(transcriptPath, gate, requestId, ['TICKET_DONE']).matched) {
         if (!markTicketStatus(workingDir, ticket.id, 'done', sessionId)) {
             // Persistence failed — surface it instead of silently re-looping forever.
             return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
@@ -903,6 +906,66 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
         return nikoflowExecuteError(current, 'ticket deadlock after completing a ticket — check blocked_by.');
     }
     return { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId), mode: 'nikoflow' };
+}
+/**
+ * Verify phase: loop-review convergence. Each pass requires a fresh, independent
+ * reviewer subagent to emit VERIFIED (score ≥ threshold) or NO_ACTIONABLE_FINDINGS
+ * from its own tool_result. A sub-threshold review rotates the request-id (fresh
+ * reviewer next pass) and, after a cap, escalates to the user rather than looping.
+ */
+/** Verify cap reached: escalate to the user (idempotent, no reviewer re-loop). */
+function nikoflowVerifyEscalation(current, passes) {
+    return {
+        shouldBlock: true,
+        message: `<nikoflow-continuation phase="verify" iteration="${current.iteration}">\n` +
+            `Verification did not converge after ${passes} reviewer passes (score stayed below ` +
+            `${NIKOFLOW_VERIFY_SCORE_THRESHOLD}). Stop auto-looping: summarize the outstanding findings ` +
+            `for the user and ask them to decide — accept as-is (get a genuine passing review), keep ` +
+            `iterating, or \`/oh-my-claudecode:cancel\`. A real reviewer pass ≥ 9.5 still completes.\n` +
+            `</nikoflow-continuation>`,
+        mode: 'nikoflow',
+    };
+}
+export function handleNikoflowVerify(workingDir, sessionId, current, transcriptPath) {
+    const passSoFar = current.verify_pass ?? 0;
+    const atCap = passSoFar >= NIKOFLOW_VERIFY_MAX_PASSES;
+    const requestId = mintGateRequest(workingDir, 'verify', sessionId) ?? undefined;
+    // Fail closed: without a correlation id we cannot safely accept any tag.
+    if (!requestId) {
+        return atCap
+            ? nikoflowVerifyEscalation(current, passSoFar)
+            : { shouldBlock: true, message: getVerifyPrompt(current, undefined, passSoFar + 1), mode: 'nikoflow' };
+    }
+    if (transcriptPath && existsSync(transcriptPath)) {
+        const match = nikoflowReviewerAuthoredGate(transcriptPath, 'verify', requestId, ['VERIFIED', 'NO_ACTIONABLE_FINDINGS']);
+        if (match.matched) {
+            const passed = match.payload === 'NO_ACTIONABLE_FINDINGS' ||
+                (match.score !== undefined && match.score >= NIKOFLOW_VERIFY_SCORE_THRESHOLD);
+            if (passed) {
+                // A genuine passing review completes the flow even past the cap.
+                advanceNikoflowPhase(workingDir, sessionId); // verify is last → complete
+                clearGateRequest(workingDir, sessionId);
+                const next = readNikoflowState(workingDir, sessionId) ?? current;
+                return nikoflowCompleteResult(next.iteration);
+            }
+            // Sub-threshold with actionable findings. Past the cap, stop counting/looping.
+            if (atCap) {
+                return nikoflowVerifyEscalation(current, passSoFar);
+            }
+            const passes = recordVerifyPass(workingDir, sessionId);
+            rotateGateRequest(workingDir, 'verify', sessionId); // fresh reviewer next pass
+            if (passes >= NIKOFLOW_VERIFY_MAX_PASSES) {
+                return nikoflowVerifyEscalation(current, passes);
+            }
+            const freshRid = readNikoflowState(workingDir, sessionId)?.request_id;
+            return { shouldBlock: true, message: getVerifyPrompt(current, freshRid, passes + 1), mode: 'nikoflow' };
+        }
+    }
+    // No reviewer verdict yet.
+    if (atCap) {
+        return nikoflowVerifyEscalation(current, passSoFar);
+    }
+    return { shouldBlock: true, message: getVerifyPrompt(current, requestId, passSoFar + 1), mode: 'nikoflow' };
 }
 async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcriptPath) {
     const workingDir = resolveToWorktreeRoot(directory);
@@ -927,6 +990,10 @@ async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcr
     // Execute phase runs its own per-ticket loop (red→green→review→done).
     if (phase === 'execute') {
         return handleNikoflowExecute(workingDir, sessionId, current, transcriptPath);
+    }
+    // Verify phase runs the loop-review convergence gate.
+    if (phase === 'verify') {
+        return handleNikoflowVerify(workingDir, sessionId, current, transcriptPath);
     }
     const gate = phase ?? 'depth';
     const requestId = mintGateRequest(workingDir, gate, sessionId) ?? undefined;
