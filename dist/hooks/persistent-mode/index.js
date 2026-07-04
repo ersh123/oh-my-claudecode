@@ -19,7 +19,7 @@ import { readUltraworkState, writeUltraworkState, incrementReinforcement, deacti
 import { resolveToWorktreeRoot, resolveSessionStatePath, resolveStatePath, getOmcRoot } from '../../lib/worktree-paths.js';
 import { readModeState, writeModeState } from '../../lib/mode-state-io.js';
 import { readRalphState, writeRalphState, incrementRalphIteration, clearRalphState, findPrdPath, getPrdCompletionStatus, getRalphContext, getStory, markStoryIncomplete, markStoryArchitectVerified, readVerificationState, startVerification, recordArchitectFeedback, getArchitectVerificationPrompt, getArchitectRejectionContinuationPrompt, detectArchitectApproval, detectArchitectRejection, clearVerificationState, } from '../ralph/index.js';
-import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, advanceNikoflowPhase, mintGateRequest, rotateGateRequest, clearGateRequest, userRepliedAfterMint, detectNikoflowGate, HUMAN_GATE_PHASES, readTickets, validateTicketDag, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, getVerifyPrompt, pbtObligation, recordVerifyPass, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, } from '../nikoflow/index.js';
+import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, advanceNikoflowPhase, mintGateRequest, rotateGateRequest, clearGateRequest, userRepliedAfterMint, isNikoflowUserTurnFresh, detectNikoflowGate, HUMAN_GATE_PHASES, readTickets, validateTicketDag, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, getVerifyPrompt, pbtObligation, recordVerifyPass, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
 import { isAutopilotActive } from '../autopilot/index.js';
@@ -971,9 +971,14 @@ export function handleNikoflowVerify(workingDir, sessionId, current, transcriptP
 export async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcriptPath) {
     const workingDir = resolveToWorktreeRoot(directory);
     const state = readNikoflowState(workingDir, sessionId);
-    // Ignore inactive or stale (crashed/legacy) state so it can't hard-block
-    // Stop forever in later sessions. Mirrors checkRalphLoop.
-    if (!state || !state.active || isStaleState(state)) {
+    // Ignore inactive or stale (crashed/legacy) state so it can't hard-block Stop
+    // forever. A recent real user turn (sidecar) keeps a flow parked at a human
+    // gate alive past the timer (Fable QA R4), since last_checked_at only advances
+    // on Stop iterations.
+    if (!state ||
+        !state.active ||
+        (isStaleState(state) &&
+            !isNikoflowUserTurnFresh(workingDir, sessionId, STALE_STATE_THRESHOLD_MS))) {
         return null;
     }
     // Respect an in-flight cancel: let the Stop through so cleanup can settle.
@@ -1013,7 +1018,7 @@ export async function checkNikoflowLoop(sessionId, directory, cancelInProgress, 
         }
         const match = detectNikoflowGate(gateText, { phase: gate, requestId });
         const isHumanGate = HUMAN_GATE_PHASES.has(gate);
-        const humanOk = !isHumanGate || userRepliedAfterMint(current);
+        const humanOk = !isHumanGate || userRepliedAfterMint(current, workingDir, sessionId);
         if (match.matched && humanOk) {
             // Gate confirmed by the user, but some gates also need a valid artifact
             // (e.g. tickets.json). If missing/invalid, block with the error instead of

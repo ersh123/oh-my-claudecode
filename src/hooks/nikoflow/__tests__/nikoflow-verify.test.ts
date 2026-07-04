@@ -51,6 +51,23 @@ describe("nikoflow verify convergence (TSK-006)", () => {
     expect(isNikoflowComplete(readNikoflowState(dir, sid)!)).toBe(true);
   });
 
+  it("completes at exactly the 9.5 boundary", () => {
+    run();
+    const rid = readNikoflowState(dir, sid)!.request_id!;
+    writeEntries(transcript, reviewerResult("tu-1", `<nikoflow-gate phase="verify" score="9.5" request-id="${rid}">VERIFIED</nikoflow-gate>`));
+    run();
+    expect(isNikoflowComplete(readNikoflowState(dir, sid)!)).toBe(true);
+  });
+
+  it("does NOT complete on an out-of-range score (99) — clamp prevents a forced pass", () => {
+    run();
+    const rid = readNikoflowState(dir, sid)!.request_id!;
+    writeEntries(transcript, reviewerResult("tu-1", `<nikoflow-gate phase="verify" score="99" request-id="${rid}">VERIFIED</nikoflow-gate>`));
+    run();
+    expect(getCurrentPhase(readNikoflowState(dir, sid)!)).toBe("verify");
+    expect(isNikoflowComplete(readNikoflowState(dir, sid)!)).toBe(false);
+  });
+
   it("completes on NO_ACTIONABLE_FINDINGS regardless of score", () => {
     run();
     const rid = readNikoflowState(dir, sid)!.request_id!;

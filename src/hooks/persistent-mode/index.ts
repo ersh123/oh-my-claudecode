@@ -60,6 +60,7 @@ import {
   rotateGateRequest,
   clearGateRequest,
   userRepliedAfterMint,
+  isNikoflowUserTurnFresh,
   detectNikoflowGate,
   HUMAN_GATE_PHASES,
   readTickets,
@@ -1272,9 +1273,16 @@ export async function checkNikoflowLoop(
   const workingDir = resolveToWorktreeRoot(directory);
   const state = readNikoflowState(workingDir, sessionId);
 
-  // Ignore inactive or stale (crashed/legacy) state so it can't hard-block
-  // Stop forever in later sessions. Mirrors checkRalphLoop.
-  if (!state || !state.active || isStaleState(state)) {
+  // Ignore inactive or stale (crashed/legacy) state so it can't hard-block Stop
+  // forever. A recent real user turn (sidecar) keeps a flow parked at a human
+  // gate alive past the timer (Fable QA R4), since last_checked_at only advances
+  // on Stop iterations.
+  if (
+    !state ||
+    !state.active ||
+    (isStaleState(state) &&
+      !isNikoflowUserTurnFresh(workingDir, sessionId, STALE_STATE_THRESHOLD_MS))
+  ) {
     return null;
   }
 
@@ -1323,7 +1331,7 @@ export async function checkNikoflowLoop(
     }
     const match = detectNikoflowGate(gateText, { phase: gate, requestId });
     const isHumanGate = HUMAN_GATE_PHASES.has(gate);
-    const humanOk = !isHumanGate || userRepliedAfterMint(current);
+    const humanOk = !isHumanGate || userRepliedAfterMint(current, workingDir, sessionId);
 
     if (match.matched && humanOk) {
       // Gate confirmed by the user, but some gates also need a valid artifact

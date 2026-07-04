@@ -8,7 +8,8 @@
  * the Execute phase (TSK-005).
  */
 
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
+import { existsSync, readFileSync, unlinkSync } from "fs";
+import { atomicWriteJsonSync } from "../../lib/atomic-write.js";
 import {
   resolveSessionStatePath,
   ensureSessionStateDir,
@@ -189,7 +190,9 @@ export function writeTickets(
     if (sessionId) {
       ensureSessionStateDir(sessionId, directory);
     }
-    writeFileSync(path, JSON.stringify(file, null, 2));
+    // Atomic write (temp + rename) so a hook killed mid-write can't leave a torn
+    // tickets.json that fails the next lint/DAG gate (Fable QA R5).
+    atomicWriteJsonSync(path, file);
     return true;
   } catch {
     return false;

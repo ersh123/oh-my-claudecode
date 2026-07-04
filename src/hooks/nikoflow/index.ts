@@ -30,7 +30,9 @@ export {
   rotateGateRequest,
   clearGateRequest,
   recordNikoflowUserPrompt,
+  readNikoflowUserTurnAt,
   userRepliedAfterMint,
+  isNikoflowUserTurnFresh,
 
   // Verify convergence (TSK-006)
   recordVerifyPass,

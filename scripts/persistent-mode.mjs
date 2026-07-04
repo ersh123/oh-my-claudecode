@@ -1101,9 +1101,10 @@ async function main() {
     );
     if (
       isAuthoritativeModeActive(stateDir, "nikoflow", nikoflow, sessionId) &&
-      !isStaleState(nikoflow.state) &&
       isStateForCurrentProject(nikoflow.state, directory, nikoflow.isGlobal)
     ) {
+      // Staleness is decided by the TS engine (it also honors the user-turn
+      // sidecar so a flow parked at a human gate overnight isn't killed).
       const nfSessionMatches = hasValidSessionId
         ? nikoflow.state.session_id === sessionId
         : !nikoflow.state.session_id || nikoflow.state.session_id === sessionId;

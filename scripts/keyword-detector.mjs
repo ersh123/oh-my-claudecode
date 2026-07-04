@@ -1226,17 +1226,20 @@ async function main() {
     const sessionId = data.session_id || data.sessionId || '';
     const omcRoot = await resolveOmcStateRoot(directory);
 
-    // Nikoflow anti-self-approval: stamp every real user turn so human gates can
-    // require a user reply AFTER the gate was requested (mirrors the TS engine).
+    // Nikoflow anti-self-approval: stamp every real user turn to a DEDICATED
+    // sidecar (never RMW the shared nikoflow-state.json — that races the Stop
+    // hook's request-id rotation and could resurrect a rotated id, Fable QA R2).
+    // Atomic write; only when a nikoflow flow is active in this session.
     if (sessionId) {
       try {
-        const nfPath = join(omcRoot, 'state', 'sessions', sessionId, 'nikoflow-state.json');
-        if (existsSync(nfPath)) {
-          const nf = JSON.parse(readFileSync(nfPath, 'utf-8'));
-          if (nf && nf.active) {
-            nf.last_user_prompt_at = new Date().toISOString();
-            writeFileSync(nfPath, JSON.stringify(nf, null, 2), { mode: 0o600 });
-          }
+        const sessDir = join(omcRoot, 'state', 'sessions', sessionId);
+        if (existsSync(join(sessDir, 'nikoflow-state.json'))) {
+          // Filename must match TS resolveSessionStatePath('nikoflow-userturn') →
+          // it appends "-state.json", so the sidecar is nikoflow-userturn-state.json.
+          atomicWriteFileSync(
+            join(sessDir, 'nikoflow-userturn-state.json'),
+            JSON.stringify({ at: new Date().toISOString() }),
+          );
         }
       } catch { /* best-effort */ }
     }

@@ -11,11 +11,14 @@
  */
 
 import { randomUUID } from "crypto";
+import { existsSync, readFileSync, unlinkSync } from "fs";
 import {
   writeModeState,
   readModeState,
   clearModeStateFile,
 } from "../../lib/mode-state-io.js";
+import { atomicWriteJsonSync } from "../../lib/atomic-write.js";
+import { resolveSessionStatePath } from "../../lib/worktree-paths.js";
 
 export const NIKOFLOW_DEPTHS = ["tactical", "standard", "deep"] as const;
 export type NikoflowDepth = (typeof NIKOFLOW_DEPTHS)[number];
@@ -121,6 +124,15 @@ export function clearNikoflowState(
   directory: string,
   sessionId?: string,
 ): boolean {
+  // Also drop the user-turn sidecar so a later flow can't read a stale stamp.
+  const turn = userTurnPath(directory, sessionId);
+  if (turn && existsSync(turn)) {
+    try {
+      unlinkSync(turn);
+    } catch {
+      /* best-effort */
+    }
+  }
   return clearModeStateFile(MODE, directory, sessionId);
 }
 
@@ -307,28 +319,103 @@ export function recordVerifyPass(
   return state.verify_pass;
 }
 
-/** Record a real UserPromptSubmit timestamp (anti-self-approval evidence). */
+const USER_TURN_KEY = "nikoflow-userturn";
+
+function userTurnPath(directory: string, sessionId?: string): string | null {
+  if (!sessionId) return null;
+  return resolveSessionStatePath(USER_TURN_KEY, sessionId, directory);
+}
+
+/** ISO timestamp of the most recent real user turn, from the sidecar (or null). */
+export function readNikoflowUserTurnAt(
+  directory: string,
+  sessionId?: string,
+): string | null {
+  const p = userTurnPath(directory, sessionId);
+  if (!p || !existsSync(p)) return null;
+  try {
+    const obj = JSON.parse(readFileSync(p, "utf-8")) as { at?: unknown };
+    return typeof obj.at === "string" ? obj.at : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Record a real UserPromptSubmit turn. Written to a DEDICATED sidecar file, not
+ * the mode state, so the every-prompt stamp never read-modify-writes the shared
+ * nikoflow-state.json — a RMW there races the Stop hook's request-id rotation and
+ * could resurrect a rotated id, defeating anti-self-approval (Fable QA R2).
+ */
 export function recordNikoflowUserPrompt(
   directory: string,
   sessionId?: string,
 ): boolean {
-  const state = readNikoflowState(directory, sessionId);
-  if (!state || !state.active) return false;
-  state.last_user_prompt_at = new Date().toISOString();
-  return writeNikoflowState(directory, state, sessionId);
+  const p = userTurnPath(directory, sessionId);
+  if (!p) {
+    // No session scope → single-process, no cross-process race; fall back to state.
+    const state = readNikoflowState(directory, sessionId);
+    if (!state || !state.active) return false;
+    state.last_user_prompt_at = new Date().toISOString();
+    return writeNikoflowState(directory, state, sessionId);
+  }
+  try {
+    atomicWriteJsonSync(p, { at: new Date().toISOString() });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Effective last-user-turn ms: sidecar preferred, state as fallback. */
+function effectiveUserTurnAt(
+  state: NikoflowState,
+  directory?: string,
+  sessionId?: string,
+): number | null {
+  const candidates: number[] = [];
+  if (directory) {
+    const side = readNikoflowUserTurnAt(directory, sessionId);
+    if (side) {
+      const t = new Date(side).getTime();
+      if (Number.isFinite(t)) candidates.push(t);
+    }
+  }
+  if (state.last_user_prompt_at) {
+    const t = new Date(state.last_user_prompt_at).getTime();
+    if (Number.isFinite(t)) candidates.push(t);
+  }
+  return candidates.length ? Math.max(...candidates) : null;
 }
 
 /**
  * Whether a real user prompt arrived AFTER the current gate request was minted.
- * This is the load-bearing anti-self-approval check for human gates: the model
- * cannot satisfy a human gate without an actual user turn in between.
+ * The load-bearing anti-self-approval check for human gates: the model cannot
+ * satisfy a human gate without an actual user turn in between.
  */
-export function userRepliedAfterMint(state: NikoflowState): boolean {
-  if (!state.gate_request_minted_at || !state.last_user_prompt_at) return false;
+export function userRepliedAfterMint(
+  state: NikoflowState,
+  directory?: string,
+  sessionId?: string,
+): boolean {
+  if (!state.gate_request_minted_at) return false;
   const minted = new Date(state.gate_request_minted_at).getTime();
-  const replied = new Date(state.last_user_prompt_at).getTime();
-  if (!Number.isFinite(minted) || !Number.isFinite(replied)) return false;
+  const replied = effectiveUserTurnAt(state, directory, sessionId);
+  if (!Number.isFinite(minted) || replied === null) return false;
   return replied > minted;
+}
+
+/** Whether a user turn happened within thresholdMs — a liveness signal so a flow
+ *  parked at a human gate overnight isn't killed by the stale timer (Fable QA R4). */
+export function isNikoflowUserTurnFresh(
+  directory: string,
+  sessionId: string | undefined,
+  thresholdMs: number,
+): boolean {
+  const at = readNikoflowUserTurnAt(directory, sessionId);
+  if (!at) return false;
+  const t = new Date(at).getTime();
+  return Number.isFinite(t) && Date.now() - t < thresholdMs;
 }
 
 /** Create a Nikoflow loop hook instance bound to a working directory. */

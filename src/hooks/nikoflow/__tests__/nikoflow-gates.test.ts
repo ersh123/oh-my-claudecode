@@ -96,10 +96,10 @@ describe("nikoflow anti-self-approval (TSK-003)", () => {
 
   it("userRepliedAfterMint is false until a user turn arrives after the mint", async () => {
     mintGateRequest(dir, "depth", sid);
-    expect(userRepliedAfterMint(readNikoflowState(dir, sid)!)).toBe(false);
+    expect(userRepliedAfterMint(readNikoflowState(dir, sid)!, dir, sid)).toBe(false);
     await new Promise((r) => setTimeout(r, 3)); // ensure a strictly-later reply timestamp
     recordNikoflowUserPrompt(dir, sid);
-    expect(userRepliedAfterMint(readNikoflowState(dir, sid)!)).toBe(true);
+    expect(userRepliedAfterMint(readNikoflowState(dir, sid)!, dir, sid)).toBe(true);
   });
 
   it("rotateGateRequest invalidates a premature tag's request-id (F1)", () => {
@@ -112,17 +112,12 @@ describe("nikoflow anti-self-approval (TSK-003)", () => {
     expect(detectNikoflowGate(staleTag, { phase: "depth", requestId: rotated! }).matched).toBe(false);
   });
 
-  it("a user turn BEFORE the mint does not satisfy the check (no self-approval via stale reply)", () => {
-    recordNikoflowUserPrompt(dir, sid); // user talked earlier
-    // ensure a strictly later mint timestamp
-    const before = readNikoflowState(dir, sid)!;
+  it("a user turn BEFORE the mint does not satisfy the check (no self-approval via stale reply)", async () => {
+    recordNikoflowUserPrompt(dir, sid); // user talked earlier (sidecar stamp)
+    await new Promise((r) => setTimeout(r, 3)); // mint strictly after the earlier turn
     mintGateRequest(dir, "depth", sid);
     const after = readNikoflowState(dir, sid)!;
-    // mint time is >= the earlier user prompt; replied strictly-after is required
-    expect(new Date(after.gate_request_minted_at!).getTime()).toBeGreaterThanOrEqual(
-      new Date(before.last_user_prompt_at!).getTime(),
-    );
-    expect(userRepliedAfterMint(after)).toBe(false);
+    expect(userRepliedAfterMint(after, dir, sid)).toBe(false);
   });
 
   it("clearGateRequest wipes the correlation", () => {
