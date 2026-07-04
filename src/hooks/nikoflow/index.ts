@@ -20,6 +20,16 @@ export {
   detectDepthFlag,
   stripNikoflowFlags,
   materializePhases,
+
+  // Role → model routing (TSK-010)
+  detectRoleFlags,
+  resolveRoles,
+  isCodexRoleSpec,
+  NIKOFLOW_DEFAULT_ROLES,
+  NIKOFLOW_NATIVE_MODELS,
+  NIKOFLOW_CODEX_SPECS,
+  NIKOFLOW_MODEL_FALLBACK,
+  type NikoflowRoles,
   getCurrentPhase,
   isNikoflowComplete,
   setNikoflowDepth,
@@ -88,7 +98,12 @@ export {
   type DagValidation,
 } from "./tickets.js";
 
-export { getExecuteTicketPrompt, getVerifyPrompt } from "./prompts.js";
+export {
+  getExecuteTicketPrompt,
+  getVerifyPrompt,
+  renderReviewerSpawn,
+  renderPanel,
+} from "./prompts.js";
 
 export {
   detectPbtFramework,

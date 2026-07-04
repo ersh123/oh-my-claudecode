@@ -7,8 +7,38 @@
  * gate logic enforces (TSK-003+), so the prose and the machine agree.
  */
 
+import { isCodexRoleSpec, NIKOFLOW_MODEL_FALLBACK } from "./loop.js";
 import type { NikoflowState } from "./loop.js";
 import type { PbtObligation } from "./pbt.js";
+
+/**
+ * Render a "spawn this reviewer as a Task subagent" instruction for a model
+ * spec. Native models run as a Task on that model; a codex/gpt-5.5 spec routes
+ * through a Codex-backed Task agent — so the reviewer is ALWAYS a Task subagent
+ * the gate detector accepts (never a raw shell command).
+ */
+export function renderReviewerSpawn(spec: string): string {
+  if (isCodexRoleSpec(spec)) {
+    return (
+      `a Codex-backed reviewer Task subagent (GPT-5.5 xhigh) — e.g. ` +
+      `Task(subagent_type="codex:codex-rescue") given a REVIEW task. Run it FOREGROUND ` +
+      `(--wait; NEVER --background — a backgrounded run returns a job id, not the verdict, ` +
+      `and the gate would stall). The reviewer must emit the gate tag as a plain line, not inside a code block`
+    );
+  }
+  const fb = NIKOFLOW_MODEL_FALLBACK[spec];
+  const fbNote = fb ? ` (if ${spec} is unavailable, use ${fb})` : "";
+  return `a fresh reviewer Task subagent on model "${spec}"${fbNote} — e.g. Task(subagent_type="code-reviewer", model="${spec}")`;
+}
+
+/** Render the grilling panel (divergent-opinion models) as Task subagents. */
+export function renderPanel(panel: string[]): string {
+  if (!panel || panel.length === 0) return "";
+  const parts = panel.map((m) =>
+    isCodexRoleSpec(m) ? "a Codex/GPT-5.5 xhigh Task subagent" : `a Task subagent on "${m}"`,
+  );
+  return parts.join(" and ");
+}
 
 const CANCEL_HINT =
   "When the whole task is FULLY complete and the Verification gate has passed, " +
@@ -47,6 +77,10 @@ export function getDepthSelectionPrompt(
     `- 🟡 standard — a new feature (Grilling → ADR → PRD → Ticketization → TDD → Verification).\n` +
     `- 🔴 deep — an architectural change (full cycle + property-based tests + evidence).\n` +
     `Propose the smallest tier that fits, with a one-line justification, and confirm it with the user.\n` +
+    (state.roles?.panel && state.roles.panel.length > 1
+      ? `For standard/deep work, consult a divergent-opinion panel — ${renderPanel(state.roles.panel)} — ` +
+        `on approach/risks/alternatives BEFORE committing, and surface where they disagree.\n`
+      : "") +
     `Once the user agrees, record it by emitting on its own line:\n` +
     `${gateTag}\n` +
     `(the tag is only accepted after the user has actually replied — do not self-confirm).\n` +
@@ -140,8 +174,11 @@ export function getExecuteTicketPrompt(
     `(minimum code to pass) → then review. Do not start another ticket until this one is done.` +
     `${pbtLine}\n` +
     (ticket.self_verify ? `Self-verify: ${ticket.self_verify}\n` : "") +
-    `When the slice is green, spawn a FRESH, context-isolated reviewer subagent (Task/Agent) to ` +
-    `check it against the acceptance criteria and repo standards.${reviewerPbt} Pass the reviewer this ` +
+    `Preferred implementation model: ${state.roles?.executor ?? "sonnet"} — if you are not already ` +
+    `running it, delegate the coding to a Task(model="${state.roles?.executor ?? "sonnet"}") subagent.\n` +
+    `When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} — a ` +
+    `FRESH, context-isolated reviewer that has NOT seen your reasoning — to check it against the ` +
+    `acceptance criteria and repo standards.${reviewerPbt} Pass the reviewer this ` +
     `request-id and instruct it to emit — in ITS OWN final output — the ticket gate on its own ` +
     `line ONLY if it approves on green validation:\n` +
     `${gateTag}\n` +
@@ -178,7 +215,7 @@ export function getVerifyPrompt(
     `✅ VERIFICATION (loop-review, pass ${pass}). First run local validation for the changed ` +
     `surface (tests, typecheck, lint, build) and make it GREEN — the gate must never pass while ` +
     `validation is red.\n` +
-    `Then spawn a FRESH, context-isolated reviewer subagent (Task/Agent) that has NOT seen your ` +
+    `Then spawn ${renderReviewerSpawn(state.roles?.verifier ?? "fable")} that has NOT seen your ` +
     `reasoning. Give it this request-id and the diff scope. The reviewer inspects the change for ` +
     `correctness, regressions, security, and missing high-value tests, and returns a score from ` +
     `1–10. It must emit — in ITS OWN final output, replacing N.N with its actual score — exactly one of:\n` +
@@ -197,7 +234,13 @@ export function getPhasePrompt(
   state: NikoflowState,
   requestId?: string,
 ): string {
-  const rawBody = PHASE_BODIES[phase] ?? `Phase "${phase}". Continue the methodology.`;
+  let rawBody = PHASE_BODIES[phase] ?? `Phase "${phase}". Continue the methodology.`;
+  // ADR: consult the architect-role model for the decision.
+  if (phase === "adr" && state.roles?.architect) {
+    rawBody +=
+      `\nArchitect model: ${state.roles.architect} — for a non-trivial trade-off, consult it via a ` +
+      `Task(model="${state.roles.architect}") subagent before recording the decision.`;
+  }
   const body = injectRequestId(rawBody, requestId);
   const depth = state.depth ?? "undecided";
   return (

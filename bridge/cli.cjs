@@ -19745,7 +19745,43 @@ function detectDepthFlag(prompt) {
   return null;
 }
 function stripNikoflowFlags(prompt) {
-  return prompt.replace(/nikoflow\s*:\s*(tactical|standard|deep)/gi, "").replace(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/gi, "").replace(/--(?:deep|tactical|standard)\b/gi, "").replace(/\s+/g, " ").trim();
+  return prompt.replace(/nikoflow\s*:\s*(tactical|standard|deep)/gi, "").replace(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/gi, "").replace(/--(?:deep|tactical|standard)\b/gi, "").replace(/--(?:exec|executor|architect|arch|qa|reviewer|verifier|panel)(?:=|\s+)[^\s]+/gi, "").replace(/\s+/g, " ").trim();
+}
+function detectRoleFlags(prompt) {
+  const out = {};
+  const val = (re) => {
+    const m = prompt.match(re)?.[1]?.toLowerCase();
+    return m && isValidModelSpec(m) ? m : void 0;
+  };
+  const exec4 = val(/--(?:exec|executor)(?:=|\s+)([^\s]+)/i);
+  if (exec4) out.executor = exec4;
+  const arch = val(/--(?:architect|arch)(?:=|\s+)([^\s]+)/i);
+  if (arch) out.architect = arch;
+  const qa = val(/--qa(?:=|\s+)([^\s]+)/i);
+  if (qa) {
+    out.reviewer = qa;
+    out.verifier = qa;
+  }
+  const rev = val(/--reviewer(?:=|\s+)([^\s]+)/i);
+  if (rev) out.reviewer = rev;
+  const ver = val(/--verifier(?:=|\s+)([^\s]+)/i);
+  if (ver) out.verifier = ver;
+  const panelRaw = prompt.match(/--panel(?:=|\s+)([^\s]+)/i)?.[1]?.toLowerCase();
+  if (panelRaw) {
+    const panel = panelRaw.split("+").filter((m) => m && isValidModelSpec(m));
+    if (panel.length > 0) out.panel = panel;
+  }
+  return out;
+}
+function resolveRoles(overrides) {
+  return { ...NIKOFLOW_DEFAULT_ROLES, ...overrides ?? {} };
+}
+function isCodexRoleSpec(spec) {
+  return NIKOFLOW_CODEX_SPECS.includes(spec.toLowerCase());
+}
+function isValidModelSpec(spec) {
+  const s = spec.toLowerCase();
+  return NIKOFLOW_NATIVE_MODELS.includes(s) || NIKOFLOW_CODEX_SPECS.includes(s);
 }
 function materializePhases(depth) {
   return [...NIKOFLOW_PHASES[depth]];
@@ -19925,7 +19961,8 @@ function createNikoflowLoopHook(directory) {
       depth,
       phases: depth ? materializePhases(depth) : [],
       phase_index: 0,
-      pbt_enabled: depth === "deep"
+      pbt_enabled: depth === "deep",
+      roles: resolveRoles(detectRoleFlags(prompt))
     };
     return writeNikoflowState(directory, state, sessionId);
   };
@@ -19941,7 +19978,7 @@ function createNikoflowLoopHook(directory) {
   };
   return { startLoop, cancelLoop, getState };
 }
-var import_crypto11, import_fs55, NIKOFLOW_DEPTHS, NIKOFLOW_PHASES, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, MODE, USER_TURN_KEY;
+var import_crypto11, import_fs55, NIKOFLOW_DEPTHS, NIKOFLOW_NATIVE_MODELS, NIKOFLOW_CODEX_SPECS, NIKOFLOW_MODEL_FALLBACK, NIKOFLOW_DEFAULT_ROLES, NIKOFLOW_PHASES, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, MODE, USER_TURN_KEY;
 var init_loop2 = __esm({
   "src/hooks/nikoflow/loop.ts"() {
     "use strict";
@@ -19951,6 +19988,16 @@ var init_loop2 = __esm({
     init_atomic_write();
     init_worktree_paths();
     NIKOFLOW_DEPTHS = ["tactical", "standard", "deep"];
+    NIKOFLOW_NATIVE_MODELS = ["sonnet", "opus", "haiku", "fable"];
+    NIKOFLOW_CODEX_SPECS = ["codex", "gpt-5.5", "gpt5.5"];
+    NIKOFLOW_MODEL_FALLBACK = { fable: "opus" };
+    NIKOFLOW_DEFAULT_ROLES = {
+      executor: "sonnet",
+      architect: "fable",
+      reviewer: "fable",
+      verifier: "fable",
+      panel: ["fable", "gpt-5.5"]
+    };
     NIKOFLOW_PHASES = {
       tactical: ["interview", "execute", "verify"],
       standard: ["interview", "adr", "prd", "tickets", "execute", "verify"],
@@ -19966,6 +20013,21 @@ var init_loop2 = __esm({
 });
 
 // src/hooks/nikoflow/prompts.ts
+function renderReviewerSpawn(spec) {
+  if (isCodexRoleSpec(spec)) {
+    return `a Codex-backed reviewer Task subagent (GPT-5.5 xhigh) \u2014 e.g. Task(subagent_type="codex:codex-rescue") given a REVIEW task. Run it FOREGROUND (--wait; NEVER --background \u2014 a backgrounded run returns a job id, not the verdict, and the gate would stall). The reviewer must emit the gate tag as a plain line, not inside a code block`;
+  }
+  const fb = NIKOFLOW_MODEL_FALLBACK[spec];
+  const fbNote = fb ? ` (if ${spec} is unavailable, use ${fb})` : "";
+  return `a fresh reviewer Task subagent on model "${spec}"${fbNote} \u2014 e.g. Task(subagent_type="code-reviewer", model="${spec}")`;
+}
+function renderPanel(panel) {
+  if (!panel || panel.length === 0) return "";
+  const parts = panel.map(
+    (m) => isCodexRoleSpec(m) ? "a Codex/GPT-5.5 xhigh Task subagent" : `a Task subagent on "${m}"`
+  );
+  return parts.join(" and ");
+}
 function injectRequestId(body, requestId) {
   if (!requestId) return body;
   return body.replace(
@@ -19984,7 +20046,8 @@ NIKOFLOW \u2014 depth not yet chosen. Begin Grilling by sizing the task:
 - \u{1F7E1} standard \u2014 a new feature (Grilling \u2192 ADR \u2192 PRD \u2192 Ticketization \u2192 TDD \u2192 Verification).
 - \u{1F534} deep \u2014 an architectural change (full cycle + property-based tests + evidence).
 Propose the smallest tier that fits, with a one-line justification, and confirm it with the user.
-Once the user agrees, record it by emitting on its own line:
+` + (state.roles?.panel && state.roles.panel.length > 1 ? `For standard/deep work, consult a divergent-opinion panel \u2014 ${renderPanel(state.roles.panel)} \u2014 on approach/risks/alternatives BEFORE committing, and surface where they disagree.
+` : "") + `Once the user agrees, record it by emitting on its own line:
 ${gateTag}
 (the tag is only accepted after the user has actually replied \u2014 do not self-confirm).
 ${CANCEL_HINT}
@@ -20017,7 +20080,8 @@ Acceptance criteria:
 ${ac}
 Work this ONE vertical slice: RED (a failing test at a pre-agreed seam) \u2192 GREEN (minimum code to pass) \u2192 then review. Do not start another ticket until this one is done.${pbtLine}
 ` + (ticket.self_verify ? `Self-verify: ${ticket.self_verify}
-` : "") + `When the slice is green, spawn a FRESH, context-isolated reviewer subagent (Task/Agent) to check it against the acceptance criteria and repo standards.${reviewerPbt} Pass the reviewer this request-id and instruct it to emit \u2014 in ITS OWN final output \u2014 the ticket gate on its own line ONLY if it approves on green validation:
+` : "") + `Preferred implementation model: ${state.roles?.executor ?? "sonnet"} \u2014 if you are not already running it, delegate the coding to a Task(model="${state.roles?.executor ?? "sonnet"}") subagent.
+When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} \u2014 a FRESH, context-isolated reviewer that has NOT seen your reasoning \u2014 to check it against the acceptance criteria and repo standards.${reviewerPbt} Pass the reviewer this request-id and instruct it to emit \u2014 in ITS OWN final output \u2014 the ticket gate on its own line ONLY if it approves on green validation:
 ${gateTag}
 The gate is accepted only from the reviewer subagent's output, never from your own text \u2014 emitting it yourself will not advance the ticket.
 ${CANCEL_HINT}
@@ -20034,7 +20098,7 @@ function getVerifyPrompt(state, requestId, pass) {
   );
   return `<nikoflow-continuation phase="verify" iteration="${state.iteration}" pass="${pass}">
 \u2705 VERIFICATION (loop-review, pass ${pass}). First run local validation for the changed surface (tests, typecheck, lint, build) and make it GREEN \u2014 the gate must never pass while validation is red.
-Then spawn a FRESH, context-isolated reviewer subagent (Task/Agent) that has NOT seen your reasoning. Give it this request-id and the diff scope. The reviewer inspects the change for correctness, regressions, security, and missing high-value tests, and returns a score from 1\u201310. It must emit \u2014 in ITS OWN final output, replacing N.N with its actual score \u2014 exactly one of:
+Then spawn ${renderReviewerSpawn(state.roles?.verifier ?? "fable")} that has NOT seen your reasoning. Give it this request-id and the diff scope. The reviewer inspects the change for correctness, regressions, security, and missing high-value tests, and returns a score from 1\u201310. It must emit \u2014 in ITS OWN final output, replacing N.N with its actual score \u2014 exactly one of:
   ${okTag}   (score \u2265 9.5 on green validation), or
   ${noFindingsTag}   (no actionable findings remain).
 If the reviewer scores below 9.5 with actionable findings, fix them and a NEW reviewer runs next pass. The gate is accepted only from the reviewer subagent's output, never your own text.
@@ -20042,7 +20106,11 @@ ${CANCEL_HINT}
 </nikoflow-continuation>`;
 }
 function getPhasePrompt2(phase, state, requestId) {
-  const rawBody = PHASE_BODIES[phase] ?? `Phase "${phase}". Continue the methodology.`;
+  let rawBody = PHASE_BODIES[phase] ?? `Phase "${phase}". Continue the methodology.`;
+  if (phase === "adr" && state.roles?.architect) {
+    rawBody += `
+Architect model: ${state.roles.architect} \u2014 for a non-trivial trade-off, consult it via a Task(model="${state.roles.architect}") subagent before recording the decision.`;
+  }
   const body = injectRequestId(rawBody, requestId);
   const depth = state.depth ?? "undecided";
   return `<nikoflow-continuation phase="${phase}" depth="${depth}" iteration="${state.iteration}">
@@ -20054,6 +20122,7 @@ var CANCEL_HINT, PHASE_BODIES;
 var init_prompts2 = __esm({
   "src/hooks/nikoflow/prompts.ts"() {
     "use strict";
+    init_loop2();
     CANCEL_HINT = "When the whole task is FULLY complete and the Verification gate has passed, run `/oh-my-claudecode:cancel` to exit. If cancel fails, retry with `/oh-my-claudecode:cancel --force`.";
     PHASE_BODIES = {
       interview: `Phase \u{1F525} GRILLING. Interrogate the task one question at a time: why, why this way, what alternatives, what risks. If a question can be answered by reading the code, read instead of asking. Do not write any implementation until the user confirms shared understanding. GATE \u2014 emit after the user confirms:
@@ -20433,9 +20502,13 @@ var init_pbt = __esm({
 var nikoflow_exports = {};
 __export(nikoflow_exports, {
   HUMAN_GATE_PHASES: () => HUMAN_GATE_PHASES,
+  NIKOFLOW_CODEX_SPECS: () => NIKOFLOW_CODEX_SPECS,
+  NIKOFLOW_DEFAULT_ROLES: () => NIKOFLOW_DEFAULT_ROLES,
   NIKOFLOW_DEPTHS: () => NIKOFLOW_DEPTHS,
   NIKOFLOW_EXECUTE_MAX_STALL: () => NIKOFLOW_EXECUTE_MAX_STALL,
   NIKOFLOW_GATE_PAYLOADS: () => NIKOFLOW_GATE_PAYLOADS,
+  NIKOFLOW_MODEL_FALLBACK: () => NIKOFLOW_MODEL_FALLBACK,
+  NIKOFLOW_NATIVE_MODELS: () => NIKOFLOW_NATIVE_MODELS,
   NIKOFLOW_PHASES: () => NIKOFLOW_PHASES,
   NIKOFLOW_VERIFY_MAX_NO_VERDICT: () => NIKOFLOW_VERIFY_MAX_NO_VERDICT,
   NIKOFLOW_VERIFY_MAX_PASSES: () => NIKOFLOW_VERIFY_MAX_PASSES,
@@ -20451,6 +20524,7 @@ __export(nikoflow_exports, {
   detectDepthFlag: () => detectDepthFlag,
   detectNikoflowGate: () => detectNikoflowGate,
   detectPbtFramework: () => detectPbtFramework,
+  detectRoleFlags: () => detectRoleFlags,
   getCurrentPhase: () => getCurrentPhase,
   getDepthSelectionPrompt: () => getDepthSelectionPrompt,
   getExecuteTicketPrompt: () => getExecuteTicketPrompt,
@@ -20458,6 +20532,7 @@ __export(nikoflow_exports, {
   getPhasePrompt: () => getPhasePrompt2,
   getVerifyPrompt: () => getVerifyPrompt,
   incrementNikoflowIteration: () => incrementNikoflowIteration,
+  isCodexRoleSpec: () => isCodexRoleSpec,
   isNikoflowComplete: () => isNikoflowComplete,
   isNikoflowUserTurnFresh: () => isNikoflowUserTurnFresh,
   isTicketDeadlock: () => isTicketDeadlock,
@@ -20473,8 +20548,11 @@ __export(nikoflow_exports, {
   readTickets: () => readTickets,
   recordNikoflowUserPrompt: () => recordNikoflowUserPrompt,
   recordVerifyPass: () => recordVerifyPass,
+  renderPanel: () => renderPanel,
+  renderReviewerSpawn: () => renderReviewerSpawn,
   resetExecuteStall: () => resetExecuteStall,
   resetVerifyNoVerdict: () => resetVerifyNoVerdict,
+  resolveRoles: () => resolveRoles,
   rotateGateRequest: () => rotateGateRequest,
   setNikoflowDepth: () => setNikoflowDepth,
   stripNikoflowFlags: () => stripNikoflowFlags,

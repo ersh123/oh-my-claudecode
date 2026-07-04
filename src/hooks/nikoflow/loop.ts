@@ -24,6 +24,43 @@ export const NIKOFLOW_DEPTHS = ["tactical", "standard", "deep"] as const;
 export type NikoflowDepth = (typeof NIKOFLOW_DEPTHS)[number];
 
 /**
+ * Per-role model routing. Each value is a model spec that the prompts render
+ * into a Task/Agent subagent invocation — so the reviewer is ALWAYS a Task
+ * subagent (the gate detector already accepts those), and GPT-5.5 rides in via
+ * a Codex-backed agent rather than a raw shell command.
+ */
+export interface NikoflowRoles {
+  /** Who writes prod code during Execute. */
+  executor: string;
+  /** Who advises on ADR / architecture. */
+  architect: string;
+  /** Independent reviewer for the per-ticket Execute gate. */
+  reviewer: string;
+  /** Independent reviewer for the Verify convergence gate. */
+  verifier: string;
+  /** Divergent-opinion panel consulted during Grilling (design dueling). */
+  panel: string[];
+}
+
+/** Native Anthropic models usable directly as Task `model=`. */
+export const NIKOFLOW_NATIVE_MODELS = ["sonnet", "opus", "haiku", "fable"] as const;
+/** Model specs that route through a Codex-backed Task agent (GPT-5.5 xhigh). */
+export const NIKOFLOW_CODEX_SPECS = ["codex", "gpt-5.5", "gpt5.5"] as const;
+
+/** Fallback chain when a preferred model is unavailable. */
+export const NIKOFLOW_MODEL_FALLBACK: Record<string, string> = { fable: "opus" };
+
+/** Default routing (user spec): Sonnet 5 executes, Fable 5 architects+reviews
+ *  (→ Opus 4.8 fallback), GPT-5.5 xhigh joins QA + the grilling panel. */
+export const NIKOFLOW_DEFAULT_ROLES: NikoflowRoles = {
+  executor: "sonnet",
+  architect: "fable",
+  reviewer: "fable",
+  verifier: "fable",
+  panel: ["fable", "gpt-5.5"],
+};
+
+/**
  * Phase lists per depth tier — data, not code. The Stop-hook state machine
  * iterates `phases[]` by index; the tier only selects which phases fire.
  */
@@ -57,6 +94,8 @@ export interface NikoflowState {
   phase_index: number;
   /** Whether deep-tier property-based-testing obligation applies */
   pbt_enabled?: boolean;
+  /** Per-role model routing (executor/architect/reviewer/verifier/panel). */
+  roles?: NikoflowRoles;
 
   // --- Gate correlation (TSK-003) ---
   /** Correlation id the current gate's confirmation tag must carry. */
@@ -181,8 +220,60 @@ export function stripNikoflowFlags(prompt: string): string {
     .replace(/nikoflow\s*:\s*(tactical|standard|deep)/gi, "")
     .replace(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/gi, "")
     .replace(/--(?:deep|tactical|standard)\b/gi, "")
+    .replace(/--(?:exec|executor|architect|arch|qa|reviewer|verifier|panel)(?:=|\s+)[^\s]+/gi, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Parse per-role model overrides from the prompt. `--qa=X` sets both reviewer
+ *  and verifier; `--panel=a+b` sets the grilling panel. Returns a partial to
+ *  merge over the defaults. */
+export function detectRoleFlags(prompt: string): Partial<NikoflowRoles> {
+  const out: Partial<NikoflowRoles> = {};
+  // Only accept recognized specs so a typo can't reach a Task `model=`.
+  const val = (re: RegExp): string | undefined => {
+    const m = prompt.match(re)?.[1]?.toLowerCase();
+    return m && isValidModelSpec(m) ? m : undefined;
+  };
+  const exec = val(/--(?:exec|executor)(?:=|\s+)([^\s]+)/i);
+  if (exec) out.executor = exec;
+  const arch = val(/--(?:architect|arch)(?:=|\s+)([^\s]+)/i);
+  if (arch) out.architect = arch;
+  const qa = val(/--qa(?:=|\s+)([^\s]+)/i);
+  if (qa) {
+    out.reviewer = qa;
+    out.verifier = qa;
+  }
+  const rev = val(/--reviewer(?:=|\s+)([^\s]+)/i);
+  if (rev) out.reviewer = rev;
+  const ver = val(/--verifier(?:=|\s+)([^\s]+)/i);
+  if (ver) out.verifier = ver;
+  const panelRaw = prompt.match(/--panel(?:=|\s+)([^\s]+)/i)?.[1]?.toLowerCase();
+  if (panelRaw) {
+    const panel = panelRaw.split("+").filter((m) => m && isValidModelSpec(m));
+    if (panel.length > 0) out.panel = panel;
+  }
+  return out;
+}
+
+/** Merge role overrides over the defaults. */
+export function resolveRoles(overrides?: Partial<NikoflowRoles>): NikoflowRoles {
+  return { ...NIKOFLOW_DEFAULT_ROLES, ...(overrides ?? {}) };
+}
+
+/** Whether a model spec routes through a Codex-backed agent (GPT-5.5). */
+export function isCodexRoleSpec(spec: string): boolean {
+  return (NIKOFLOW_CODEX_SPECS as readonly string[]).includes(spec.toLowerCase());
+}
+
+/** Whether a model spec is a recognized native model or Codex spec. Unknown
+ *  specs (typos like "sonet") are ignored so they can't reach a Task `model=`. */
+export function isValidModelSpec(spec: string): boolean {
+  const s = spec.toLowerCase();
+  return (
+    (NIKOFLOW_NATIVE_MODELS as readonly string[]).includes(s) ||
+    (NIKOFLOW_CODEX_SPECS as readonly string[]).includes(s)
+  );
 }
 
 /** Materialize the phase list for a depth tier. */
@@ -500,6 +591,7 @@ export function createNikoflowLoopHook(directory: string): NikoflowLoopHook {
       phases: depth ? materializePhases(depth) : [],
       phase_index: 0,
       pbt_enabled: depth === "deep",
+      roles: resolveRoles(detectRoleFlags(prompt)),
     };
 
     return writeNikoflowState(directory, state, sessionId);

@@ -904,19 +904,50 @@ function activateState(directory, prompt, stateName, sessionId, omcRoot) {
     // Nikoflow skeleton state; the compiled TS engine (dist) drives the phase
     // machine on Stop. Depth starts null → the flow opens with depth-selection
     // during Grilling. Shape must match NikoflowState in src/hooks/nikoflow/loop.ts.
+    // Must mirror the TS engine: NIKOFLOW_DEFAULT_ROLES, detectRoleFlags,
+    // detectDepthFlag, NIKOFLOW_PHASES, stripNikoflowFlags (src/hooks/nikoflow/loop.ts).
+    const NF_VALID = ['sonnet', 'opus', 'haiku', 'fable', 'codex', 'gpt-5.5', 'gpt5.5'];
+    const NF_PHASES = {
+      tactical: ['interview', 'execute', 'verify'],
+      standard: ['interview', 'adr', 'prd', 'tickets', 'execute', 'verify'],
+      deep: ['interview', 'adr', 'prd', 'tickets', 'execute', 'verify'],
+    };
+    const roles = { executor: 'sonnet', architect: 'fable', reviewer: 'fable', verifier: 'fable', panel: ['fable', 'gpt-5.5'] };
+    const rf = (re) => { const m = prompt.match(re); const v = m && m[1] ? m[1].toLowerCase() : null; return v && NF_VALID.includes(v) ? v : null; };
+    const _ex = rf(/--(?:exec|executor)(?:=|\s+)(\S+)/i); if (_ex) roles.executor = _ex;
+    const _ar = rf(/--(?:architect|arch)(?:=|\s+)(\S+)/i); if (_ar) roles.architect = _ar;
+    const _qa = rf(/--qa(?:=|\s+)(\S+)/i); if (_qa) { roles.reviewer = _qa; roles.verifier = _qa; }
+    const _rv = rf(/--reviewer(?:=|\s+)(\S+)/i); if (_rv) roles.reviewer = _rv;
+    const _vf = rf(/--verifier(?:=|\s+)(\S+)/i); if (_vf) roles.verifier = _vf;
+    const _pnRaw = prompt.match(/--panel(?:=|\s+)(\S+)/i); if (_pnRaw && _pnRaw[1]) { const p = _pnRaw[1].toLowerCase().split('+').filter(m => NF_VALID.includes(m)); if (p.length) roles.panel = p; }
+    // Depth flag
+    let depth = null;
+    const _dc = prompt.match(/nikoflow\s*:\s*(tactical|standard|deep)/i) || prompt.match(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/i);
+    if (_dc) depth = _dc[1].toLowerCase();
+    else if (/--deep\b/i.test(prompt)) depth = 'deep';
+    else if (/--tactical\b/i.test(prompt)) depth = 'tactical';
+    else if (/--standard\b/i.test(prompt)) depth = 'standard';
+    // Strip control flags from the stored prompt
+    const cleanPrompt = safePrompt
+      .replace(/nikoflow\s*:\s*(tactical|standard|deep)/gi, '')
+      .replace(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/gi, '')
+      .replace(/--(?:deep|tactical|standard)\b/gi, '')
+      .replace(/--(?:exec|executor|architect|arch|qa|reviewer|verifier|panel)(?:=|\s+)\S+/gi, '')
+      .replace(/\s+/g, ' ').trim();
     state = {
       active: true,
       iteration: 1,
       started_at: now,
       last_checked_at: now,
       last_user_prompt_at: now,
-      prompt: safePrompt,
+      prompt: cleanPrompt,
       session_id: sessionId || undefined,
       project_path: directory,
-      depth: null,
-      phases: [],
+      depth,
+      phases: depth ? NF_PHASES[depth] : [],
       phase_index: 0,
-      pbt_enabled: false
+      pbt_enabled: depth === 'deep',
+      roles
     };
   } else if (stateName === 'ralplan') {
     // Ralplan needs active + session_id for stop-hook enforcement

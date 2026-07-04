@@ -1,7 +1,7 @@
 ---
 name: nikoflow
 description: Phase-gated Niko Flow v2.1 methodology loop (Grilling → ADR → PRD → Ticketization → TDD → Verification) with Tactical/Standard/Deep depth tiers and hard quality gates
-argument-hint: "[nikoflow:tactical|standard|deep] <task description>"
+argument-hint: "[nikoflow:tactical|standard|deep] [--exec=sonnet] [--qa=fable|codex] [--panel=fable+gpt-5.5] <task description>"
 level: 4
 ---
 
@@ -83,6 +83,20 @@ blocked_by, valid shape) before APPROVED is accepted:
 Verify convergence caps at 6 failed reviewer passes, then escalates to the user (a genuine
 reviewer pass ≥ 9.5 still completes at any time).
 </Gates_and_tags>
+
+<Role_Model_Routing>
+Each role can run on a different model; the reviewer is ALWAYS spawned as a Task/Agent
+subagent (native model) or a Codex-backed Task agent (GPT-5.5 xhigh) — never a raw shell
+command, so the gate detector accepts it. Defaults:
+- Executor (writes code): sonnet
+- Architect (ADR) + Reviewer (execute gate) + Verifier (verify gate): fable (advisory fallback: opus — prompted, not auto-enforced)
+- Grilling panel (divergent opinions): fable + gpt-5.5
+
+Override at activation: `--exec=sonnet`, `--architect=fable`, `--qa=codex` (sets reviewer+verifier),
+`--reviewer=…`, `--verifier=…`, `--panel=fable+gpt-5.5`. `gpt-5.5`/`codex` route through a
+Codex-backed Task agent (your Codex subscription). Example:
+`nikoflow:deep --exec=sonnet --qa=codex build the parser`
+</Role_Model_Routing>
 
 <Completion>
 When the task is FULLY complete and the Verification gate has passed, run
