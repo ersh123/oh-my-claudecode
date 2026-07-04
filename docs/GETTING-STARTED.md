@@ -139,13 +139,26 @@ omc --plugin-dir /path/to/oh-my-claudecode setup --plugin-dir-mode
 
 This loads agents, skills, and commands directly from your checkout without copying them to `~/.claude/`. For detailed instructions and alternative flows, see [LOCAL_PLUGIN_INSTALL.md](./LOCAL_PLUGIN_INSTALL.md). For a complete decision matrix of plugin-dir flags and modes, see the [Plugin directory flags section in REFERENCE.md](./REFERENCE.md#plugin-directory-flags).
 
+### Recovery anchor for local dogfood
+
+If your checkout runs autonomous dogfood gates, keep a verified git anchor named `loop-last-good` and move it only after the live checkout passes build, typecheck, focused tests, and `npm run test:baseline`.
+
+OMC dogfood keeps both `refs/heads/loop-last-good` and `refs/tags/loop-last-good` pointing at the same verified commit. To inspect the current anchor or branch from it without rewriting your current work:
+
+```bash
+git rev-parse HEAD refs/heads/loop-last-good refs/tags/loop-last-good
+git switch -c recover-loop loop-last-good
+```
+
 ### Platform support
 
 | Platform | Installation | Hook type |
 |----------|--------------|-----------|
-| macOS | Claude Code Plugin | Bash (.sh) |
-| Linux | Claude Code Plugin | Bash (.sh) |
-| Windows | WSL2 recommended | Node.js (.mjs) |
+| macOS | Claude Code Plugin | Node.js (.mjs via run.cjs) |
+| Linux | Claude Code Plugin | Node.js (.mjs via run.cjs) |
+| Windows | WSL2 recommended | Node.js (.mjs via run.cjs) |
+
+> ℹ️ **Note:** OMC hook scripts are Node.js `.mjs` files. Published macOS/Linux plugin caches may wrap them with `find-node.sh` so nvm/fnm installs can find Node in non-interactive hook shells.
 
 > ℹ️ **Note:** Native Windows support is experimental. For tmux-backed Team workers, OMC checks for a tmux-compatible binary first; native [psmux](https://github.com/psmux/psmux) is supported for PowerShell 7+ users who want visible Claude Code teammate panes in interactive team workflows. WSL2 remains the fallback when no compatible tmux is available or native Windows behavior is insufficient. psmux does not force worktree agents, non-interactive/print-mode agents, or model-selected in-process agents into visible panes.
 
