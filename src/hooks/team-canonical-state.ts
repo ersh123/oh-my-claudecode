@@ -34,6 +34,12 @@ function isTerminalCanonicalPhase(phase: string): boolean {
 
 function mapCanonicalPhaseToStage(phase: string): TeamPipelinePhase | null {
   switch (phase) {
+    case 'team-plan':
+    case 'team-prd':
+    case 'team-exec':
+    case 'team-verify':
+    case 'team-fix':
+      return phase;
     case 'initializing':
     case 'planning':
       return 'team-plan';

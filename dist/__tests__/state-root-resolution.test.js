@@ -91,6 +91,20 @@ function writeWorkflowTombstone(omcRoot, sessionId, mode) {
         },
     }, null, 2));
 }
+function writeCanonicalTeamState(omcRoot, sessionId, teamName, currentPhase) {
+    const teamDir = join(omcRoot, 'state', 'team', teamName);
+    mkdirSync(teamDir, { recursive: true });
+    writeFileSync(join(teamDir, 'manifest.json'), JSON.stringify({
+        name: teamName,
+        task: `${teamName} task`,
+        leader: { session_id: sessionId },
+        created_at: new Date().toISOString(),
+    }, null, 2));
+    writeFileSync(join(teamDir, 'phase-state.json'), JSON.stringify({
+        current_phase: currentPhase,
+        updated_at: new Date().toISOString(),
+    }, null, 2));
+}
 describe('OMC_STATE_DIR state-root resolution (issue #2532)', () => {
     let tempDir;
     let fakeProject;
@@ -381,6 +395,22 @@ describe('OMC_STATE_DIR state-root resolution (issue #2532)', () => {
             .hookSpecificOutput?.additionalContext ?? '';
         expect(context).toContain('[TEAM ROUTING REQUIRED]');
         expect(context).toContain('beta');
+    });
+    it('pre-tool-enforcer injects routing when canonical team state is already in team-verify phase', () => {
+        const sessionId = 'test-pte-team-canonical-verify';
+        const centralizedOmcRoot = getCentralizedOmcRoot(fakeProject, fakeStateDir);
+        writeCanonicalTeamState(centralizedOmcRoot, sessionId, 'verify-team', 'team-verify');
+        const output = runHook(PRE_TOOL_ENFORCER, {
+            hook_event_name: 'PreToolUse',
+            tool_name: 'Task',
+            tool_input: { subagent_type: 'executor', description: 'sample task' },
+            session_id: sessionId,
+            cwd: fakeProject,
+        }, { OMC_STATE_DIR: fakeStateDir });
+        const context = output
+            .hookSpecificOutput?.additionalContext ?? '';
+        expect(context).toContain('[TEAM ROUTING REQUIRED]');
+        expect(context).toContain('verify-team');
     });
     it('pre-tool-enforcer ignores stale team-state in default .omc when OMC_STATE_DIR is set', () => {
         const sessionId = 'test-pte-team-mismatch';

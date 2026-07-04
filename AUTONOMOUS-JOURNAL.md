@@ -187,3 +187,42 @@ Reviewer verdict (manual Codex-only local diff review):
 
 Remaining risk:
 - Area statuses are intentionally conservative; most rows stay `Unchecked` or `In progress` until backed by later discovery or tests.
+
+## 2026-07-05 — dogfood/mjs-parity-audit
+
+Candidates + WSJF:
+- TAKE: canonical team phase parity fallback. Value 8, risk reduction 8, urgency 7, complexity 2 => 11.5. A live canonical `team-verify` state was ignored by both TS stop enforcement fallback and PreToolUse `.mjs` routing fallback.
+- DEFER: systematic broader `.mjs`/TS parity audit. Value 8, risk reduction 8, urgency 6, complexity 6 => 3.7. This iteration closes one proven drift, not the whole row.
+- DEFER: nikoflow cancel-path worktree cleanup. Value 6, risk reduction 6, urgency 5, complexity 5 => 3.4. Separate repro needed.
+
+Changed:
+- `src/hooks/team-canonical-state.ts` now accepts already-canonical active team phases: `team-plan`, `team-prd`, `team-exec`, `team-verify`, and `team-fix`.
+- `scripts/pre-tool-enforcer.mjs` maps the same canonical active phases for PreToolUse fallback routing.
+- Added regression tests for stop enforcement and PreToolUse routing when canonical `phase-state.json` is already in `team-verify`.
+- Updated generated runtime artifacts from `npm run build`, including `bridge/cli.cjs` and `dist/**`.
+- Updated `ROADMAP.md` `.mjs parity` evidence without marking the area complete.
+
+Evidence:
+- RED: targeted canonical `team-verify` tests failed before the fix. PreToolUse output lacked `[TEAM ROUTING REQUIRED]`; stop enforcement returned `shouldBlock=false`.
+- GREEN targeted: `npx vitest run src/hooks/persistent-mode/__tests__/team-ralplan-stop.test.ts src/__tests__/state-root-resolution.test.ts -t 'canonical team state is already in team-verify phase' --reporter=verbose` passed 2/2.
+- GREEN affected suites: `npx vitest run src/hooks/persistent-mode/__tests__/team-ralplan-stop.test.ts src/__tests__/state-root-resolution.test.ts --reporter=verbose` passed 62/62.
+- Build: `npm run build` exited 0.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 0 failing test(s) match test-baseline.json`.
+- Baseline JSON confirms `numTotalTests=10233`, `numPassedTests=10226`, `numFailedTests=0`, and no failed assertions.
+- Dogfood PreToolUse probe: `BLOCK pre-tool unnamed: true quote="[TEAM ROUTING REQUIRED] Team \"verify-team\" is active but you are spawning an unnamed subagent. Claude Code 2.1.178+ uses"`.
+- Dogfood PreToolUse named probe: `PASS pre-tool named: true quote="Spawning agent: executor (inherit) | Task: dogfood task"`.
+- Dogfood stop probe: `BLOCK stop team-verify: true quote="<team-pipeline-continuation>\n\n[TEAM PIPELINE - PHASE: TEAM-VERIFY | REINFORCEMENT 1/20]\n\nThe team pipeline is active in phase \"team-verify\"."`.
+- Dogfood completed probe: `PASS stop completed: true mode=team`.
+- Generated truth: `git status --porcelain dist/ bridge/cli.cjs bridge/mcp-server.cjs bridge/team-mcp.cjs bridge/runtime-cli.cjs bridge/team.js` showed only the expected `bridge/cli.cjs` and `dist/**` rebuild outputs.
+- Format scan: `git diff --check` produced no output.
+- Secret scan: `git diff | rg -i '(api[_-]?key|token|password|secret|credential)[[:space:]]*[:=]' || true` produced no output.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> Runtime anti-self-approval code is untouched. No assertions were removed or weakened. The fix is the smallest root-cause mapping change in the shared canonical phase fallback and matching `.mjs` hook fallback.
+> The tests pin both affected runtime paths, generated artifacts are rebuilt in the same commit, and the full baseline remains at 0 failures.
+
+Remaining risk:
+- Broader `.mjs` defaults/parsers parity remains open; this iteration only closes canonical team phase fallback drift.
+- Real tmux Claude session dogfood was not run; direct runtime hook BLOCK/PASS probes covered the changed paths.
