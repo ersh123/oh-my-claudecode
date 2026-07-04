@@ -766,3 +766,36 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Broader command/gate docs accuracy remains open after this recovery-focused slice.
 - Live merge will repeat focused docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/mjs-uninstall-parity
+
+Candidates + WSJF:
+- TAKE: align uninstall cleanup with current `.mjs` hook artifacts and current manual settings hook names. Value 6, risk reduction 7, urgency 5, complexity 2 => 9.0. The script still removed only a few legacy `.sh` hooks, so stale manual OMC hooks could survive uninstall.
+- TAKE: pin `docs/REFERENCE.md` hook count and Stop script name against the current manifest. Value 5, risk reduction 5, urgency 4, complexity 1 => 14.0. The previous docs guard covered `HOOKS.md` but let `REFERENCE.md` keep `21` and `persistent-mode.cjs`.
+- DEFER: broad command/gate docs audit. Value 7, risk reduction 6, urgency 4, complexity 5 => 3.4. Still useful, but this slice is `.mjs` cleanup plus manifest drift.
+
+Changed:
+- `scripts/uninstall.sh` now deletes current standalone `.mjs` hook templates plus legacy `.sh` hook aliases.
+- `scripts/uninstall.sh` now filters manual settings hook entries across all hook events using current manifest hook script names, while preserving third-party hooks.
+- `docs/REFERENCE.md` now matches the 25-hook manifest rows, wiki/rules-injector hooks, and `persistent-mode.mjs` Stop hook.
+- `src/__tests__/uninstall-mjs-parity.test.ts` pins uninstall `.mjs` cleanup and jq settings filtering behavior.
+- `src/__tests__/tier0-docs-consistency.test.ts` now checks `REFERENCE.md` hook count and Stop script name, not only `HOOKS.md`.
+- `ROADMAP.md` records this evidence while keeping broader `.mjs` parity and docs work open.
+
+Evidence:
+- RED docs/uninstall: `npx vitest run src/__tests__/uninstall-mjs-parity.test.ts src/__tests__/tier0-docs-consistency.test.ts --reporter=verbose` failed on missing `hooks/code-simplifier.mjs` cleanup and stale `REFERENCE.md` 25-hook text.
+- RED jq regression: after the first jq filter change, `npx vitest run src/__tests__/uninstall-mjs-parity.test.ts --reporter=verbose` failed because the filter deleted the third-party hook too.
+- GREEN affected: `npx vitest run src/__tests__/uninstall-mjs-parity.test.ts src/__tests__/tier0-docs-consistency.test.ts --reporter=verbose` passed 19/19.
+- Direct temp uninstall smoke: real `scripts/uninstall.sh` removed temp `.mjs`/`.sh` OMC hook files and OMC settings entries while preserving a temp third-party hook.
+- Build: `npm run build` exited 0 and generated compiled test artifacts.
+- Typecheck/syntax: `npx tsc` exited 0; `bash -n scripts/uninstall.sh` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and baseline JSON confirms `numTotalTests=10264`, `numPassedTests=10257`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The behavior change is scoped to uninstall cleanup and settings filtering. The regression test covers the risky part: OMC hook entries are removed, third-party hook commands survive.
+
+Remaining risk:
+- `.mjs` parity remains open; this slice covers uninstall/settings cleanup, not every template/runtime default.
+- Broader command/gate docs accuracy remains open.
+- Live merge will repeat build, typecheck, focused tests, temp uninstall smoke, baseline, diff scans, and `loop-last-good` movement.
