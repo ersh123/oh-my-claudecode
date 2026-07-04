@@ -674,3 +674,36 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Team model-routing remains open beyond the explicit Claude worker `--model` normalization already landed.
 - Live merge will repeat build, typecheck, focused affected tests, built-code dogfood, and baseline before moving `loop-last-good`.
+
+## 2026-07-05 — dogfood/team-provider-model-flag-normalization
+
+Candidates + WSJF:
+- TAKE: normalize duplicate/conflicting worker `--model` flags for all model-flag providers. Value 7, risk reduction 7, urgency 5, complexity 2 => 9.5. The previous slice fixed Claude, but Codex/Gemini/Grok/Antigravity still emitted conflicting model flags when a resolved model and explicit launch flags both supplied `--model`.
+- DEFER: broader `.mjs` parity audit. Value 7, risk reduction 6, urgency 4, complexity 5 => 3.4. Still open, but team had one unchecked exit criterion left.
+- DROP: rely on call sites never passing `extraFlags`. Value 2, risk reduction 1, urgency 2, complexity 1 => 5.0. That would keep the public launch contract nondeterministic and fail the roadmap criterion.
+
+Changed:
+- `src/team/model-contract.ts` now uses one shared model-flag normalizer for Claude, Codex, Gemini, Grok, and Antigravity.
+- Explicit launch `--model <value>` and `--model=<value>` are extracted from `extraFlags`; the last explicit value wins over resolved env/model input; one canonical `--model <value>` is emitted; unrelated flags keep order.
+- Claude still normalizes non-provider-specific IDs to Claude Code aliases and preserves Bedrock/Vertex IDs.
+- `src/team/__tests__/model-contract.test.ts` pins provider-wide duplicate/conflicting model flag normalization.
+- `ROADMAP.md` marks the team area done with current evidence.
+
+Evidence:
+- RED: `npx vitest run src/team/__tests__/model-contract.test.ts -t "gives explicit worker launch --model flags precedence" --reporter=verbose` failed for Codex, Gemini, Grok, and Antigravity because each emitted two `--model` flags.
+- GREEN focused: the same selector passed 5/5 after the fix.
+- Model contract suite: `npx vitest run src/team/__tests__/model-contract.test.ts --reporter=verbose` passed 71/71.
+- Build: `npm run build` exited 0 and regenerated bridge/dist artifacts.
+- Focused affected run: `npx vitest run src/team/__tests__/model-contract.test.ts src/team/__tests__/runtime-prompt-mode.test.ts src/team/__tests__/runtime-v2.dispatch.test.ts src/team/__tests__/resolved-routing-snapshot.test.ts src/team/__tests__/stage-router.test.ts --reporter=verbose` passed 165/165.
+- Direct built-code dogfood: `.omc/dogfood/team-provider-model-flag-normalization-1783204307/output.json` shows Claude, Codex, Gemini, Grok, and Antigravity each have `modelFlagCount=1`, `selectedModel="last-model"`, no `--model=...`, no stale resolved model, and unrelated flags preserved.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and baseline JSON confirms `numTotalTests=10259`, `numPassedTests=10252`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; added-line sensitive/path scan reported `0` hits.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The fix is scoped to launch argument construction and preserves provider-specific base flags, Claude alias/provider-id handling, prompt-mode behavior, and existing routing snapshots. It removes the last known nondeterministic worker launch/model routing path without touching provider/account configuration.
+
+Remaining risk:
+- Live merge will repeat build, typecheck, focused affected tests, built-code dogfood, baseline, diff scans, and `loop-last-good` movement.
+- `.mjs` parity, state IO, docs, and livelock coverage remain roadmap work; team exit criteria are now closed in this worktree.

@@ -327,6 +327,28 @@ describe('model-contract', () => {
                 '--verbose',
             ]);
         });
+        it.each([
+            ['codex', '--dangerously-bypass-approvals-and-sandbox'],
+            ['gemini', '--approval-mode'],
+            ['grok', '--always-approve'],
+            ['antigravity', '--dangerously-skip-permissions'],
+        ])('%s gives explicit worker launch --model flags precedence and normalizes duplicates', (agentType, expectedBaseFlag) => {
+            const args = buildLaunchArgs(agentType, {
+                teamName: 't',
+                workerName: 'w',
+                cwd: '/tmp',
+                model: 'env-resolved-model',
+                extraFlags: ['--label', 'worker-1', '--model', 'explicit-model', '--model=last-model', '--verbose'],
+            });
+            expect(args).toContain(expectedBaseFlag);
+            expect(countArg(args, '--model')).toBe(1);
+            expect(args).toContain('last-model');
+            expect(args).not.toContain('env-resolved-model');
+            expect(args).not.toContain('explicit-model');
+            expect(args).not.toContain('--model=last-model');
+            expect(args.indexOf('last-model')).toBeLessThan(args.indexOf('--label'));
+            expect(args.slice(args.indexOf('--label'))).toEqual(['--label', 'worker-1', '--verbose']);
+        });
         it('codex includes --dangerously-bypass-approvals-and-sandbox', () => {
             const args = buildLaunchArgs('codex', { teamName: 't', workerName: 'w', cwd: '/tmp' });
             expect(args).not.toContain('exec');
