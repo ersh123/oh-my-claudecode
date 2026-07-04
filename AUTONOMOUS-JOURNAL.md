@@ -476,3 +476,28 @@ Reviewer verdict (manual Codex-only local diff review):
 
 Remaining risk:
 - Human-gate approval is still content-blind: a user turn containing "no" still lets the model emit a gate tag. This is outside the closed roadmap criterion and remains a product/semantics decision.
+
+## 2026-07-05 — dogfood/gate-detection-nonniko
+
+Candidates + WSJF:
+- TAKE: scan and harden non-nikoflow reviewer gates. Value 8, risk reduction 8, urgency 5, complexity 2 => 10.5. The prior nikoflow slice found a real reviewer-channel bug, so the adjacent ralph approval path was the next highest-risk surface.
+- DEFER: full ralph livelock proof. Value 8, risk reduction 7, urgency 5, complexity 5 => 4.0. It needs a separate phase-machine slice and live dogfood evidence.
+- DROP: broaden the ralph reviewer allow-list beyond architect/critic/codex. Value 2, risk reduction 1, urgency 1, complexity 3 => 1.33. No evidence showed another reviewer role belongs in this gate.
+
+Changed:
+- Ralph reviewer approval now reads native Task role identity through the shared `subagent_type ?? agent_type` helper.
+- Ralph verification tests now pin both acceptance of reviewer `agent_type` and rejection of non-reviewer `agent_type="executor"`.
+- `ROADMAP.md` marks the transcript gate-detection area Done and marks ralph anti-self-approval covered while leaving livelock/live dogfood open.
+
+Evidence:
+- RED: `npx vitest run src/hooks/persistent-mode/__tests__/ralph-verification-flow.test.ts --reporter=verbose` failed on `accepts reviewer-authored approval when native Task records agent_type instead of subagent_type` with `expected true to be false`.
+- GREEN: same focused suite passed 9/9 after the fix.
+- Build: `npm run build` passed and regenerated runtime artifacts.
+- Scan: `rg` found transcript reviewer gate paths only for ralph (`ralph-approved`) and nikoflow (`nikoflow-gate`) in runtime; SocratiCode search returned a connection error, so this slice used `rg` plus Serena symbol reads.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The fix narrows to a field-name fidelity bug. It does not accept arbitrary Task output: ralph still requires reviewer path match, tool_result correlation, request-id match, and approval payload.
+
+Remaining risk:
+- Ralph livelock behavior and live dogfood BLOCK->PASS evidence remain open on the roadmap.

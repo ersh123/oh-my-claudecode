@@ -5,11 +5,11 @@ This is the steering artifact required by the autonomous mandate. Mark an area d
 | Area | Exit criteria | Status | Evidence / next action |
 | --- | --- | --- | --- |
 | nikoflow | [x] Human gates require a post-request real user turn. [x] Execute/verify gates require independent reviewer tool results. [x] Stale request ids fail closed. [x] Request-id fidelity is pinned. | Done | Fresh focused nikoflow evidence covers post-mint user turns, no-user/self-confirm rejection, request-id rotation, stale-id rejection, prompt injection, reviewer role fidelity, and property mismatch checks. |
-| ralph | [ ] Cannot self-approve. [ ] Phase machine cannot livelock on recoverable failures. [ ] Live dogfood has BLOCK->PASS evidence. | Unchecked | Discovery pass needed. |
+| ralph | [x] Cannot self-approve. [ ] Phase machine cannot livelock on recoverable failures. [ ] Live dogfood has BLOCK->PASS evidence. | In progress | Ralph verification rejects ordinary copied approval text, stale request ids, and non-reviewer native Task `agent_type` while accepting reviewer `agent_type`. Next: phase-livelock and live dogfood BLOCK->PASS evidence. |
 | team | [ ] Team phases reach terminal states. [ ] Worker launch/model routing is deterministic. [x] Worktree cleanup is covered. | In progress | Spawn env baseline fixed; cleanup now removes safe clean worktrees even when unrelated backup blockers keep team state. Next: audit terminal phase/model-routing gaps. |
 | persistent-mode | [x] Runtime hook cannot silently skip active nikoflow missing-engine enforcement. [x] Runtime/template missing-engine parity is checked. [x] Failure mode is explicit in tests. [x] Live plugin Stop manifest smoke covers real hook config. | Done | Runtime and installed template both fail closed for missing TS engine; live manifest-shaped Stop command blocks active nikoflow state in a temp git project/state. Broader template/runtime parity stays under `.mjs` parity. |
 | state IO | [ ] Cross-process writes are atomic where needed. [ ] RMW order is designed for nikoflow F1. [ ] No user work is lost on crash/retry. | Escalation-gated | F1 is design-then-STOP before production edits. |
-| gate detection | [x] Reviewer channel accepts only review-capable Task/proxy_Task/Agent tool results. [x] Main-thread text never passes review gates. [x] Tests pin negative cases. | In progress | Nikoflow execute/verify rejects Bash, main-thread text, and non-reviewer `executor` Task tool results while preserving `code-reviewer` approvals. Next: scan non-nikoflow review gates for comparable role-fidelity gaps. |
+| gate detection | [x] Reviewer channel accepts only review-capable Task/proxy_Task/Agent tool results. [x] Main-thread text never passes review gates. [x] Tests pin negative cases. | Done | Transcript reviewer gates are nikoflow and ralph. Nikoflow rejects Bash/main-thread/non-reviewer Task laundering; ralph rejects copied text, stale ids, and non-reviewer native Task `agent_type` while preserving reviewer `subagent_type` and `agent_type`. |
 | transcript scan | [ ] Transcript parsing handles hook noise. [ ] Required BLOCK and PASS quotes are extracted without leaking secrets. [ ] Session/profile paths are redacted in committed artifacts. | Unchecked | Discovery pass needed before live-dogfood automation. |
 | `.mjs` parity | [ ] Hook/runtime `.mjs` defaults match TS engine. [ ] Build scripts keep generated runtime in the same commit as source changes. [ ] Drift checks are mechanical. | In progress | Canonical `team-*` phase fallback fixed in TS helper/PreToolUse `.mjs`; installed template keyword hook now matches runtime `/ask` provider suppression; installed post-tool failure hook now matches runtime startup/noisy-scan suppression. Next: continue systematic `.mjs`/TS default audit. |
 | docs | [ ] User docs match current commands, gates, and recovery path. [ ] Mandate-required roadmap and journal are committed. [ ] Recovery via `loop-last-good` is documented. | In progress | This roadmap closes the missing steering artifact. Next: docs accuracy discovery. |
@@ -19,7 +19,7 @@ This is the steering artifact required by the autonomous mandate. Mark an area d
 - Design nikoflow F1 write ordering and stop before production edits.
 - Audit team terminal phase/model-routing gaps now that cleanup orphan path is covered.
 - Audit `.mjs` defaults and parsers against TS runtime.
-- Extend livelock and anti-self-approval coverage across ralph, team, and persistent-mode.
+- Extend livelock coverage across ralph, team, and persistent-mode.
 
 ## Cadence
 

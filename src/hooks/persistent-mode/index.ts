@@ -849,7 +849,7 @@ function checkReviewerAuthoredApprovalInMessages(
     for (const block of content) {
       if (block?.type === 'tool_use' && block.id && block.name) {
         if (REVIEWER_TASK_TOOL_NAMES.has(block.name)) {
-          const reviewerPath = normalizeReviewerPath((block.input as Record<string, unknown> | undefined)?.subagent_type);
+          const reviewerPath = normalizeReviewerPath(getToolUseSubagentType(block.input));
           if (reviewerPath && matchesVerificationReviewerPath(reviewerPath, verificationState)) {
             reviewerToolUses.set(block.id, reviewerPath);
           }
