@@ -122,6 +122,8 @@ ${'- preserve this startup guidance\n'.repeat(400)}
         expect(output.continue).toBe(true);
         expect(context).toContain('[ULTRAWORK MODE RESTORED]');
         expect(context).toContain('Resume me');
+        expect(context).toContain("Prioritize the user's newest request");
+        expect(context).not.toContain('Continue working in ultrawork mode until all tasks are complete.');
         expect(context).not.toContain('[PARALLEL SESSION WARNING]');
     });
     it('does not warn for global fallback state from a different normalized project path', () => {
