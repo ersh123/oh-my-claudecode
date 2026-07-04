@@ -14,7 +14,7 @@ Complete reference for oh-my-claudecode. For quick start, see the main [README.m
 - [Legacy MCP Team Runtime Tools (Deprecated)](#legacy-mcp-team-runtime-tools-deprecated-opt-in-only)
 - [Agents (29 Total)](#agents-29-total)
 - [Goal Workflow UX: `/goal`, Ralph, Team, UltraQA, Ultragoal](#goal-workflow-ux-goal-ralph-team-ultraqa-ultragoal)
-- [Skills (38 Total)](#skills-38-total)
+- [Skills (40 Total)](#skills-40-total)
 - [Slash Commands](#slash-commands)
 - [Claude Code `/goal` Adapter Design](#claude-code-goal-adapter-design)
 - [Hooks System](#hooks-system)
@@ -762,7 +762,7 @@ When multiple loops could apply, use this deterministic policy:
 
 For the shorter user-facing chooser, see [Mode Selection Guide](./shared/mode-selection-guide.md#goal-oriented-workflow-selection).
 
-## Skills (38 Total)
+## Skills (40 Total)
 
 Includes bundled workflow, utility, domain, and compatibility skills. Runtime truth comes from the builtin skill loader scanning `skills/*/SKILL.md` and expanding aliases declared in frontmatter.
 
@@ -777,6 +777,7 @@ Marketplace/plugin installs compact the native plugin `skills/*/SKILL.md` files 
 | `autoresearch`            | Stateful single-mission evaluator-driven improvement loop           | `/oh-my-claudecode:autoresearch`            |
 | `autopilot`               | Full autonomous execution from idea to working code              | `/oh-my-claudecode:autopilot`               |
 | `cancel`                  | Unified cancellation for active modes                            | `/oh-my-claudecode:cancel`                  |
+| `cancel-ralph`            | **Deprecated** compatibility alias for `cancel`                   | `/oh-my-claudecode:cancel-ralph`            |
 | `ccg`                     | Tri-model workflow via `ask codex` + `ask antigravity`, then Claude synthesis | `/oh-my-claudecode:ccg`                     |
 | `configure-notifications` | Configure notification integrations (Telegram, Discord, Slack) via natural language | `/oh-my-claudecode:configure-notifications` |
 | `deep-dive`               | Two-stage trace → deep-interview pipeline with context handoff   | `/oh-my-claudecode:deep-dive`               |
@@ -786,7 +787,9 @@ Marketplace/plugin installs compact the native plugin `skills/*/SKILL.md` files 
 | `hud`                     | Configure HUD/statusline                                         | `/oh-my-claudecode:hud`                     |
 | `skillify`                | Extract reusable skill from session                              | `/oh-my-claudecode:skillify`                |
 | `learner`                 | **Deprecated** compatibility alias for `skillify`                | `/oh-my-claudecode:learner`                 |
+| `local-build-reminder`    | Reminder to rebuild `dist/` after editing TypeScript in a local OMC fork | `/oh-my-claudecode:local-build-reminder`    |
 | `mcp-setup`               | Configure MCP servers                                            | `/oh-my-claudecode:mcp-setup`               |
+| `nikoflow`                | Phase-gated methodology loop from grilling through verification  | `/oh-my-claudecode:nikoflow`                |
 | `omc-doctor`              | Diagnose and fix installation issues                             | `/oh-my-claudecode:omc-doctor`              |
 | `omc-plan`                | Planning workflow (`/plan` safe alias; bundled directory ID is `plan`) | `/oh-my-claudecode:plan`                    |
 | `omc-reference`           | Detailed OMC agent/tools/team/commit reference skill             | Auto-loaded reference only                  |
@@ -803,6 +806,7 @@ Marketplace/plugin installs compact the native plugin `skills/*/SKILL.md` files 
 | `skill`                   | Manage local skills (list/add/remove/search/edit)                | `/oh-my-claudecode:skill`                   |
 | `team`                    | Coordinated multi-agent workflow                                 | `/oh-my-claudecode:team`                    |
 | `trace`                   | Evidence-driven tracing lane with parallel tracer hypotheses     | `/oh-my-claudecode:trace`                   |
+| `ultragoal`               | Durable multi-goal ledger with Claude `/goal` handoff artifacts  | `/oh-my-claudecode:ultragoal`               |
 | `ultraqa`                 | QA cycle until goal is met                                       | `/oh-my-claudecode:ultraqa`                 |
 | `ultrawork`               | Maximum parallel throughput mode                                 | `/oh-my-claudecode:ultrawork`               |
 | `visual-verdict`          | Structured visual QA verdict for screenshot/reference comparisons | `/oh-my-claudecode:visual-verdict`          |

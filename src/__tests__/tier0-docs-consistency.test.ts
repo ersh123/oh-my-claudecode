@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { listBuiltinSkillNames } from '../features/builtin-skills/skills.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -9,6 +10,24 @@ const PROJECT_ROOT = join(__dirname, '../..');
 
 function readProjectFile(...segments: string[]): string {
   return readFileSync(join(PROJECT_ROOT, ...segments), 'utf-8');
+}
+
+function extractReferenceSkillNames(referenceDoc: string): string[] {
+  const heading = referenceDoc.match(/^## Skills \(\d+ Total\)$/m);
+  expect(heading?.index).toBeGreaterThanOrEqual(0);
+
+  const sectionStart = heading?.index ?? 0;
+  const sectionAndRest = referenceDoc.slice(sectionStart);
+  const nextSection = sectionAndRest.slice(1).search(/^## /m);
+  const section = nextSection >= 0 ? sectionAndRest.slice(0, nextSection + 1) : sectionAndRest;
+  const table = section.match(
+    /^\| Skill\s*\| Description\s*\| Manual Command\s*\|\n^\|[-\s|]+\|\n([\s\S]*?)(?=\n\n)/m,
+  );
+  expect(table).not.toBeNull();
+
+  return [...(table?.[1] ?? '').matchAll(/^\| `([^`]+)`\s*\|/gm)]
+    .map((match) => match[1])
+    .sort();
 }
 
 describe('Tier-0 contract docs consistency', () => {
@@ -28,6 +47,17 @@ describe('Tier-0 contract docs consistency', () => {
 
     expect(tocAgents?.[1]).toBe(headingAgents?.[1]);
     expect(tocSkills?.[1]).toBe(headingSkills?.[1]);
+  });
+
+  it('keeps REFERENCE.md skill count and table aligned with bundled skills', () => {
+    const skillNames = listBuiltinSkillNames({ includeAliases: true }).sort();
+    const documentedSkillNames = extractReferenceSkillNames(referenceDoc);
+    const tocCount = referenceDoc.match(/\[Skills \((\d+) Total\)\]\(#skills-\d+-total\)/);
+    const headingCount = referenceDoc.match(/^## Skills \((\d+) Total\)$/m);
+
+    expect(tocCount?.[1]).toBe(String(skillNames.length));
+    expect(headingCount?.[1]).toBe(String(skillNames.length));
+    expect(documentedSkillNames).toEqual(skillNames);
   });
 
   it('documents all Tier-0 slash commands in REFERENCE.md', () => {
