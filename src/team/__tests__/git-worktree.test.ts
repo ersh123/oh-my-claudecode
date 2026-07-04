@@ -316,6 +316,22 @@ describe('git-worktree', () => {
       expect(listTeamWorktrees(teamName, repoDir)).toHaveLength(1);
     });
 
+    it('removes clean worktrees even when dirty siblings are preserved', () => {
+      const clean = createWorkerWorktree(teamName, 'worker-clean', repoDir);
+      const dirty = createWorkerWorktree(teamName, 'worker-dirty', repoDir);
+      writeFileSync(join(dirty.path, 'dirty.txt'), 'dirty');
+
+      const result = cleanupTeamWorktrees(teamName, repoDir);
+
+      expect(result.removed).toEqual(['worker-clean']);
+      expect(result.preserved).toHaveLength(1);
+      expect(result.preserved[0]?.workerName).toBe('worker-dirty');
+      expect(result.preserved[0]?.reason).toContain('worktree_dirty');
+      expect(existsSync(clean.path)).toBe(false);
+      expect(existsSync(dirty.path)).toBe(true);
+      expect(listTeamWorktrees(teamName, repoDir).map(w => w.workerName)).toEqual(['worker-dirty']);
+    });
+
     it('restores a pre-existing worktree-root AGENTS.md before removing a clean worktree', () => {
       const info = createWorkerWorktree(teamName, 'worker-agents', repoDir);
       const agentsPath = join(info.path, 'AGENTS.md');
@@ -384,6 +400,29 @@ describe('git-worktree', () => {
       expect(result.preserved[0]?.path).toBe(backupPath);
       expect(result.preserved[0]?.reason).toContain('orphaned_worktree_root_agents_backup');
       expect(existsSync(backupPath)).toBe(true);
+    });
+
+    it('removes clean worktrees even when unrelated backup blockers preserve team state', () => {
+      const clean = createWorkerWorktree(teamName, 'worker-clean', repoDir);
+      const backupPath = join(repoDir, '.omc', 'state', 'team', teamName, 'workers', 'worker-orphan-backup', 'worktree-root-agents.json');
+      mkdirSync(join(repoDir, '.omc', 'state', 'team', teamName, 'workers', 'worker-orphan-backup'), { recursive: true });
+      writeFileSync(backupPath, JSON.stringify({
+        worktreePath: join(repoDir, '.omc', 'team', teamName, 'worktrees', 'worker-orphan-backup'),
+        hadOriginal: true,
+        originalContent: 'original',
+        installedContent: 'managed',
+        installedAt: new Date().toISOString(),
+      }), 'utf-8');
+
+      const result = cleanupTeamWorktrees(teamName, repoDir);
+
+      expect(result.removed).toEqual(['worker-clean']);
+      expect(result.preserved).toHaveLength(1);
+      expect(result.preserved[0]?.path).toBe(backupPath);
+      expect(result.preserved[0]?.reason).toContain('orphaned_worktree_root_agents_backup');
+      expect(existsSync(clean.path)).toBe(false);
+      expect(existsSync(backupPath)).toBe(true);
+      expect(listTeamWorktrees(teamName, repoDir)).toHaveLength(0);
     });
 
     it('preserves team state cleanup when worktree metadata is corrupt', () => {

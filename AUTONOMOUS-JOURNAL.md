@@ -297,3 +297,36 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Broader `.mjs`/template parity remains open; this iteration only closes post-tool failure noise suppression in the installed template.
 - Real Claude hook install smoke was not run; direct template hook probes covered the changed executable path.
+
+## 2026-07-05 — dogfood/team-cancel-cleanup
+
+Candidates + WSJF:
+- TAKE: team cleanup orphan backup blocker. Value 6, risk reduction 7, urgency 5, complexity 2 => 9.0. A pre-existing `worktree-root-agents.json` blocker short-circuited `cleanupTeamWorktrees` before it could remove unrelated clean worker worktrees.
+- DEFER: team terminal phase/model-routing audit. Value 7, risk reduction 6, urgency 4, complexity 4 => 4.25. Useful, but this cleanup slice had a smaller reversible proof path and direct mandate backlog link.
+- DROP: broad team cleanup rewrite. Value 7, risk reduction 6, urgency 4, complexity 8 => 2.125. Too much behavior surface for one dogfood pass; existing dirty/corrupt safeguards should stay intact.
+
+Changed:
+- `src/team/git-worktree.ts` no longer returns before cleanup just because state-level blockers exist.
+- `cleanupTeamWorktrees` now skips only entries whose own root `AGENTS.md` backup is already blocked, while still removing unrelated safe clean worktrees.
+- `src/team/__tests__/git-worktree.test.ts` pins dirty sibling cleanup and unrelated orphan backup cleanup behavior.
+- Rebuilt generated `dist/team/*` and bridge bundles with the same source change.
+- Updated `ROADMAP.md` team cleanup evidence and backlog.
+
+Evidence:
+- RED: `npx vitest run src/team/__tests__/git-worktree.test.ts -t 'removes clean worktrees even when unrelated backup blockers preserve team state' --reporter=verbose` failed before the fix with `expected [] to deeply equal [ 'worker-clean' ]`.
+- GREEN targeted: the same command passed after the source fix.
+- GREEN focused suite: `npx vitest run src/team/__tests__/git-worktree.test.ts --reporter=verbose` passed 29/29.
+- GREEN caller suites: `npx vitest run src/team/__tests__/runtime-v2.shutdown.test.ts --reporter=verbose` passed 9/9; `npx vitest run src/mcp/__tests__/team-server-artifact-convergence.test.ts --reporter=verbose` passed 9/9.
+- Build: `npm run build` exited 0.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 0 failing test(s) match test-baseline.json`.
+- Baseline JSON confirms `numTotalTests=10240`, `numPassedTests=10233`, `numFailedTests=0`, and no failed assertions.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The fix removes the global blocker short-circuit without force-removing dirty or corrupt worker state. Entry-level backup blockers still preserve their own worker, and existing corrupt-backup/metadata tests remain green.
+> Generated bridge/dist output matches the source change; no credential, provider, or production state paths were touched.
+
+Remaining risk:
+- Team terminal phase and model-routing exit criteria remain open.
+- Real tmux team cancellation dogfood was not run; unit and MCP cleanup callers covered the changed cleanup path.
