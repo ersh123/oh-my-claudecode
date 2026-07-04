@@ -20202,11 +20202,11 @@ var init_prompts2 = __esm({
 
 // src/hooks/nikoflow/gates.ts
 function extractAttribute(attributes, name) {
-  const match = new RegExp(`(?<![\\w-])${name}=(["'])(.*?)\\1`, "i").exec(attributes);
-  return match?.[2];
+  const re = ATTR_REGEXES[name] ?? new RegExp(`(?<![\\w-])${name}=(["'])(.*?)\\1`, "i");
+  return re.exec(attributes)?.[2];
 }
 function stripInjectedExamples(text) {
-  return text.replace(/<nikoflow-continuation\b[\s\S]*?<\/nikoflow-continuation>/gi, " ").replace(/```[\s\S]*?```/g, " ").replace(/~~~[\s\S]*?~~~/g, " ").replace(/`<nikoflow-gate\b[\s\S]*?<\/nikoflow-gate>`/gi, " ");
+  return text.replace(STRIP_CONTINUATION, " ").replace(STRIP_FENCE_BACKTICK, " ").replace(STRIP_FENCE_TILDE, " ").replace(STRIP_INLINE_TAG, " ");
 }
 function detectNikoflowGate(text, opts) {
   const expectedPayloads = opts.expectedPayloads ?? NIKOFLOW_GATE_PAYLOADS[opts.phase];
@@ -20242,7 +20242,7 @@ function detectNikoflowGate(text, opts) {
   }
   return { matched: false };
 }
-var NIKOFLOW_GATE_PAYLOADS, HUMAN_GATE_PHASES;
+var NIKOFLOW_GATE_PAYLOADS, HUMAN_GATE_PHASES, ATTR_REGEXES, STRIP_CONTINUATION, STRIP_FENCE_BACKTICK, STRIP_FENCE_TILDE, STRIP_INLINE_TAG;
 var init_gates = __esm({
   "src/hooks/nikoflow/gates.ts"() {
     "use strict";
@@ -20264,6 +20264,16 @@ var init_gates = __esm({
       "prd",
       "tickets"
     ]);
+    ATTR_REGEXES = {
+      phase: /(?<![\w-])phase=(["'])(.*?)\1/i,
+      "request-id": /(?<![\w-])request-id=(["'])(.*?)\1/i,
+      score: /(?<![\w-])score=(["'])(.*?)\1/i,
+      depth: /(?<![\w-])depth=(["'])(.*?)\1/i
+    };
+    STRIP_CONTINUATION = /<nikoflow-continuation\b[\s\S]*?<\/nikoflow-continuation>/gi;
+    STRIP_FENCE_BACKTICK = /```[\s\S]*?```/g;
+    STRIP_FENCE_TILDE = /~~~[\s\S]*?~~~/g;
+    STRIP_INLINE_TAG = /`<nikoflow-gate\b[\s\S]*?<\/nikoflow-gate>`/gi;
   }
 });
 
@@ -21236,8 +21246,16 @@ function readNikoflowGateText(transcriptPath) {
   return parts.join("\n");
 }
 function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expectedPayloads) {
+  let tail;
+  try {
+    tail = readTranscriptTail(transcriptPath, NIKOFLOW_REVIEWER_TAIL_BYTES);
+  } catch {
+    return { matched: false };
+  }
+  if (!tail.includes("nikoflow-gate")) return { matched: false };
+  if (requestId && !tail.includes(requestId)) return { matched: false };
   const reviewerToolUses = /* @__PURE__ */ new Set();
-  for (const line of readTranscriptTailLines(transcriptPath, NIKOFLOW_REVIEWER_TAIL_BYTES)) {
+  for (const line of tail.split("\n")) {
     if (!line.trim()) continue;
     let entry;
     try {

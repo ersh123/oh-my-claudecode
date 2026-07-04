@@ -44,12 +44,28 @@ export interface GateMatch {
   score?: number;
 }
 
+// Precompiled attribute matchers for the known gate attributes — avoids a fresh
+// RegExp compile per attribute per tag per Stop (perf F4). (?<![\w-]) not \b so a
+// hyphen-prefixed lookalike (data-phase, x-request-id) can't shadow the real one.
+const ATTR_REGEXES: Record<string, RegExp> = {
+  phase: /(?<![\w-])phase=(["'])(.*?)\1/i,
+  "request-id": /(?<![\w-])request-id=(["'])(.*?)\1/i,
+  score: /(?<![\w-])score=(["'])(.*?)\1/i,
+  depth: /(?<![\w-])depth=(["'])(.*?)\1/i,
+};
+
 function extractAttribute(attributes: string, name: string): string | undefined {
-  // (?<![\w-]) not \b: `-` is a non-word char, so \b would let a hyphen-prefixed
-  // lookalike (data-phase, x-request-id) shadow the real attribute (audit F2).
-  const match = new RegExp(`(?<![\\w-])${name}=(["'])(.*?)\\1`, "i").exec(attributes);
-  return match?.[2];
+  // No `g` flag → exec always starts at 0, so a shared precompiled regex is safe.
+  const re = ATTR_REGEXES[name] ?? new RegExp(`(?<![\\w-])${name}=(["'])(.*?)\\1`, "i");
+  return re.exec(attributes)?.[2];
 }
+
+// Module-level strip patterns (perf F4) — .replace() ignores/rewinds lastIndex,
+// so reusing these `g`-flagged regexes across calls is safe.
+const STRIP_CONTINUATION = /<nikoflow-continuation\b[\s\S]*?<\/nikoflow-continuation>/gi;
+const STRIP_FENCE_BACKTICK = /```[\s\S]*?```/g;
+const STRIP_FENCE_TILDE = /~~~[\s\S]*?~~~/g;
+const STRIP_INLINE_TAG = /`<nikoflow-gate\b[\s\S]*?<\/nikoflow-gate>`/gi;
 
 /**
  * Remove text that legitimately CONTAINS example gate tags so they cannot be
@@ -58,12 +74,10 @@ function extractAttribute(attributes: string, name: string): string | undefined 
  */
 function stripInjectedExamples(text: string): string {
   return text
-    .replace(/<nikoflow-continuation\b[\s\S]*?<\/nikoflow-continuation>/gi, " ")
-    // fenced code blocks (```...``` and ~~~...~~~) hold examples, not real gates
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/~~~[\s\S]*?~~~/g, " ")
-    // inline code-spanned example tag
-    .replace(/`<nikoflow-gate\b[\s\S]*?<\/nikoflow-gate>`/gi, " ");
+    .replace(STRIP_CONTINUATION, " ")
+    .replace(STRIP_FENCE_BACKTICK, " ")
+    .replace(STRIP_FENCE_TILDE, " ")
+    .replace(STRIP_INLINE_TAG, " ");
 }
 
 /**

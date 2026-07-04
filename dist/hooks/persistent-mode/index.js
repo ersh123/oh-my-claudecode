@@ -778,8 +778,26 @@ function readNikoflowGateText(transcriptPath) {
  * non-match.
  */
 function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expectedPayloads) {
+    let tail;
+    try {
+        tail = readTranscriptTail(transcriptPath, NIKOFLOW_REVIEWER_TAIL_BYTES);
+    }
+    catch {
+        return { matched: false };
+    }
+    // Cheap pre-filter (perf F3): a reviewer-authored gate can only match if the raw
+    // tail carries the gate tag AND the correlating request-id. In the common case
+    // (model still working the ticket, no reviewer tag yet) this short-circuits the
+    // full 512KB per-line JSON parse. Gate on the request-id — the exact token the
+    // parse requires — so a real gate is never skipped. Reading the raw tail also
+    // drops the second statSync that readTranscriptTailLines did (perf F2). The
+    // partial first line (if truncated) simply fails JSON.parse below.
+    if (!tail.includes('nikoflow-gate'))
+        return { matched: false };
+    if (requestId && !tail.includes(requestId))
+        return { matched: false };
     const reviewerToolUses = new Set();
-    for (const line of readTranscriptTailLines(transcriptPath, NIKOFLOW_REVIEWER_TAIL_BYTES)) {
+    for (const line of tail.split('\n')) {
         if (!line.trim())
             continue;
         let entry;
