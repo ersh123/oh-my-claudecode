@@ -1125,8 +1125,22 @@ async function main() {
             console.log(JSON.stringify({ decision: "block", reason: result.message }));
             return;
           }
-        } catch {
-          // Engine unavailable (dist not built) → fall through; never hard-fail Stop.
+        } catch (error) {
+          const detail = error?.message || String(error);
+          try {
+            process.stderr.write(`[persistent-mode] nikoflow engine unavailable: ${detail}\n`);
+          } catch {
+            // Best-effort diagnostic only; the block decision below is the safety path.
+          }
+          console.log(
+            JSON.stringify({
+              continue: false,
+              decision: "block",
+              reason:
+                "[NIKOFLOW ENFORCEMENT ERROR] Active nikoflow state is present, but the Stop hook could not load CLAUDE_PLUGIN_ROOT/dist/hooks/persistent-mode/index.js. Rebuild/reinstall OMC so the TS engine can enforce nikoflow gates, or run /oh-my-claudecode:cancel --force if this nikoflow run should be abandoned.",
+            }),
+          );
+          return;
         }
       }
     }

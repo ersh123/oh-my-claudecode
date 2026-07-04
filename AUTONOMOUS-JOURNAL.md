@@ -330,3 +330,34 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Team terminal phase and model-routing exit criteria remain open.
 - Real tmux team cancellation dogfood was not run; unit and MCP cleanup callers covered the changed cleanup path.
+
+## 2026-07-05 — dogfood/persistent-mode-audit
+
+Candidates + WSJF:
+- TAKE: active nikoflow TS engine import fail-closed. Value 7, risk reduction 8, urgency 6, complexity 2 => 10.5. `scripts/persistent-mode.mjs` had an active nikoflow branch that delegated enforcement to the compiled TS engine, but swallowed import failure and released Stop.
+- DEFER: installed persistent-mode template nikoflow parity. Value 7, risk reduction 7, urgency 5, complexity 4 => 4.75. The template lacks the nikoflow branch, but changing installed hook semantics needs a separate template parity slice.
+- DROP: broad global persistent-mode fail-closed rewrite. Value 8, risk reduction 7, urgency 5, complexity 8 => 2.5. Too much Stop-hook behavior surface for one reversible dogfood pass.
+
+Changed:
+- `scripts/persistent-mode.mjs` now blocks with an explicit `NIKOFLOW ENFORCEMENT ERROR` when active nikoflow state exists but `CLAUDE_PLUGIN_ROOT/dist/hooks/persistent-mode/index.js` cannot load.
+- `src/__tests__/issue-2652-runtime-wiring-and-output-contract.test.ts` pins the missing-engine path with a real active session-scoped nikoflow state file.
+- Updated generated `dist/__tests__/issue-2652-runtime-wiring-and-output-contract.test.js` and map from `npm run build`.
+- Updated `ROADMAP.md` persistent-mode evidence without marking the area complete.
+
+Evidence:
+- RED: `npx vitest run src/__tests__/issue-2652-runtime-wiring-and-output-contract.test.ts -t "fails closed when active nikoflow cannot load its TS engine" --reporter=verbose` failed before the fix with `expected undefined to be 'block'`.
+- GREEN targeted: the same command passed after the runtime fix.
+- GREEN affected suite: `npx vitest run src/__tests__/issue-2652-runtime-wiring-and-output-contract.test.ts --reporter=verbose` passed 4/4.
+- Build: `npm run build` exited 0.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 0 failing test(s) match test-baseline.json`.
+- Baseline JSON confirms `numTotalTests=10241`, `numPassedTests=10234`, `numFailedTests=0`, and no failed assertions.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The runtime path is now fail-closed only when active nikoflow state is already present and its required compiled enforcement engine cannot load.
+> The normal non-nikoflow Stop path still falls through to existing persistent-mode behavior, so this does not hard-fail ordinary sessions without active state.
+
+Remaining risk:
+- Installed `templates/hooks/persistent-mode.mjs` still lacks nikoflow parity and needs its own audit slice.
+- Real live Claude hook smoke was not run; direct runtime hook execution covered the changed executable path.
