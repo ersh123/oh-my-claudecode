@@ -242,7 +242,7 @@ A phase-gated methodology loop is now active. Each phase is a hard quality gate 
 do not advance until the current gate passes.
 
 ### Depth tiers
-- 🟢 Tactical (1-file bugfix): Grilling → Verification
+- 🟢 Tactical (1-file bugfix): Grilling → Execute → Verification
 - 🟡 Standard (new feature): Grilling → ADR → PRD → Ticketization → TDD → Verification
 - 🔴 Deep (architectural): full cycle + property-based tests + evidence
 If depth was not given explicitly, propose one during Grilling and confirm with the user.

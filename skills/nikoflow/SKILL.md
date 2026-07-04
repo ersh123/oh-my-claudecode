@@ -50,6 +50,40 @@ Grilling and confirm with the user.
    reports no actionable findings. Never accept a passing score while validation is red.
 </Phases>
 
+<Gates_and_tags>
+Each phase advances only when the Stop hook sees the exact gate tag it is waiting for, carrying
+the `request-id` that the phase prompt gives you. Emit each tag on its own line.
+
+- Depth (during Grilling): `<nikoflow-gate phase="depth" depth="tactical|standard|deep" request-id="…">CONFIRMED</nikoflow-gate>`
+- Interview: `<nikoflow-gate phase="interview" request-id="…">CONFIRMED</nikoflow-gate>`
+- ADR: `<nikoflow-gate phase="adr" decision="docs/adr/NNNN-slug.md" request-id="…">RECORDED</nikoflow-gate>` or `<nikoflow-gate phase="adr" skip="reason" request-id="…">SKIPPED</nikoflow-gate>`
+- PRD: `<nikoflow-gate phase="prd" request-id="…">SEAMS_CONFIRMED</nikoflow-gate>`
+- Tickets: `<nikoflow-gate phase="tickets" request-id="…">APPROVED</nikoflow-gate>` — also requires a valid `tickets.json` (see below).
+- Execute (per ticket): the reviewer emits `<nikoflow-gate phase="execute:TSK-NNN" request-id="…">TICKET_DONE</nikoflow-gate>`.
+- Verify: the reviewer emits `<nikoflow-gate phase="verify" score="9.6" request-id="…">VERIFIED</nikoflow-gate>` (a real numeric `score` in 0–10, ≥ 9.5 to pass) or `<nikoflow-gate phase="verify" request-id="…">NO_ACTIONABLE_FINDINGS</nikoflow-gate>`. A VERIFIED without a valid numeric score is treated as a failed pass.
+
+Anti-self-approval — the gates are enforced, not honour-system:
+- Human gates (depth, interview, prd, tickets) are accepted only after a REAL user turn occurs
+  after the gate was requested. You cannot self-confirm; a tag emitted before the user replies is
+  invalidated (the request-id rotates).
+- Execute and Verify gates are accepted ONLY from an independent reviewer subagent's (Task/Agent)
+  tool_result — never from your own message text. Emitting these tags yourself does nothing.
+- A tag carrying a stale/mismatched request-id is ignored. Tags shown inside these instructions or
+  in code fences do not count.
+
+tickets.json (session state) shape — the Tickets gate validates it (no cycles, no dangling
+blocked_by, valid shape) before APPROVED is accepted:
+```json
+{ "version": 1, "tickets": [
+  { "id": "TSK-001", "story_id": "US-1", "title": "…",
+    "acceptance": ["…"], "blocked_by": [], "self_verify": "…",
+    "pbt_required": false, "status": "todo" }
+] }
+```
+Verify convergence caps at 6 failed reviewer passes, then escalates to the user (a genuine
+reviewer pass ≥ 9.5 still completes at any time).
+</Gates_and_tags>
+
 <Completion>
 When the task is FULLY complete and the Verification gate has passed, run
 `/oh-my-claudecode:cancel` to cleanly exit and clean up state. If cancel fails, retry with
