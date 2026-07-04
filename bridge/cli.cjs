@@ -13659,6 +13659,12 @@ function readJson(path22) {
 }
 function mapCanonicalPhaseToStage(phase) {
   switch (phase) {
+    case "team-plan":
+    case "team-prd":
+    case "team-exec":
+    case "team-verify":
+    case "team-fix":
+      return phase;
     case "initializing":
     case "planning":
       return "team-plan";

@@ -146,6 +146,21 @@ describe('team pipeline standalone stop enforcement', () => {
             rmSync(tempDir, { recursive: true, force: true });
         }
     });
+    it('blocks stop when canonical team state is already in team-verify phase', async () => {
+        const sessionId = 'session-team-canonical-verify-1';
+        const tempDir = makeTempProject();
+        try {
+            writeCanonicalTeamState(tempDir, sessionId, 'canonical-team', 'team-verify');
+            const result = await checkPersistentModes(sessionId, tempDir);
+            expect(result.shouldBlock).toBe(true);
+            expect(result.mode).toBe('team');
+            expect(result.message).toContain('team-pipeline-continuation');
+            expect(result.message).toContain('team-verify');
+        }
+        finally {
+            rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
     it('allows stop when team pipeline uses canonical current_phase terminal state', async () => {
         const sessionId = 'session-team-current-phase-terminal-1';
         const tempDir = makeTempProject();
