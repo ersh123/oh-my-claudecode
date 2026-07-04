@@ -8,6 +8,11 @@
  */
 
 import { isCodexRoleSpec, NIKOFLOW_MODEL_FALLBACK } from "./loop.js";
+import {
+  ticketWorktreeRelPath,
+  ticketWorktreeCreateCmd,
+  ticketWorktreeMergeCmd,
+} from "./worktree.js";
 import type { NikoflowState } from "./loop.js";
 import type { PbtObligation } from "./pbt.js";
 
@@ -166,24 +171,35 @@ export function getExecuteTicketPrompt(
   } else if (pbt?.status === "waived" && pbt.reason !== "not deep tier") {
     pbtLine = `\nDeep tier: property-based tests waived (${pbt.reason}).`;
   }
+  const dir = state.project_path ?? ".";
+  const executor = state.roles?.executor ?? "sonnet";
+  const wtRel = ticketWorktreeRelPath(ticket.id);
+  const createCmd = ticketWorktreeCreateCmd(dir, ticket.id);
+  const mergeCmd = ticketWorktreeMergeCmd(dir, ticket.id);
+  const execIsCodex = isCodexRoleSpec(executor);
+  const execSpawn = execIsCodex
+    ? `a Codex-backed executor Task subagent (GPT-5.5 xhigh, foreground/--wait)`
+    : `an executor Task subagent — Task(subagent_type="executor", model="${executor}")`;
   return (
     `<nikoflow-continuation phase="execute" ticket="${ticket.id}" iteration="${state.iteration}">\n` +
     `🔴🟢♻️ TDD on ticket ${ticket.id} — ${ticket.title}.\n` +
     `Acceptance criteria:\n${ac}\n` +
-    `Work this ONE vertical slice: RED (a failing test at a pre-agreed seam) → GREEN ` +
-    `(minimum code to pass) → then review. Do not start another ticket until this one is done.` +
-    `${pbtLine}\n` +
+    `BASE RULE — DELEGATE + ISOLATE: you (this thread) ORCHESTRATE only; you do NOT write code ` +
+    `(keep your context clean). The code is written by a subagent inside a DEDICATED worktree and is ` +
+    `quarantined there until QA approves it — nothing lands on the branch unreviewed.\n` +
+    `1. Create the ticket worktree once:\n   ${createCmd}\n` +
+    `2. Spawn ${execSpawn} whose working directory is "${wtRel}". It does RED→GREEN for this ONE ` +
+    `vertical slice (a failing test at a pre-agreed seam → the minimum code to pass) INSIDE that ` +
+    `worktree and returns a summary + the diff. Do NOT edit files in the main tree yourself.${pbtLine}\n` +
     (ticket.self_verify ? `Self-verify: ${ticket.self_verify}\n` : "") +
-    `Preferred implementation model: ${state.roles?.executor ?? "sonnet"} — if you are not already ` +
-    `running it, delegate the coding to a Task(model="${state.roles?.executor ?? "sonnet"}") subagent.\n` +
-    `When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} — a ` +
-    `FRESH, context-isolated reviewer that has NOT seen your reasoning — to check it against the ` +
-    `acceptance criteria and repo standards.${reviewerPbt} Pass the reviewer this ` +
-    `request-id and instruct it to emit — in ITS OWN final output — the ticket gate on its own ` +
-    `line ONLY if it approves on green validation:\n` +
+    `3. When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} — a ` +
+    `FRESH reviewer that has NOT seen your reasoning — to review the worktree DIFF against the ` +
+    `acceptance criteria and repo standards.${reviewerPbt} Pass it this request-id; it emits, in ITS ` +
+    `OWN final output, the ticket gate on its own line ONLY if it approves on green validation:\n` +
     `${gateTag}\n` +
-    `The gate is accepted only from the reviewer subagent's output, never from your own text — ` +
-    `emitting it yourself will not advance the ticket.\n` +
+    `4. ONLY after that reviewer approval, merge the worktree into the branch:\n   ${mergeCmd}\n` +
+    `The gate is accepted only from the reviewer subagent's output, never your own text. Do not merge ` +
+    `unreviewed code, and do not start another ticket until this one is merged.\n` +
     `${CANCEL_HINT}\n` +
     `</nikoflow-continuation>`
   );

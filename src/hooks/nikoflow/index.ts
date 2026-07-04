@@ -113,3 +113,12 @@ export {
   type PbtDetection,
   type PbtObligation,
 } from "./pbt.js";
+
+export {
+  ticketWorktreeRelPath,
+  ticketWorktreePath,
+  ticketWorktreeBranch,
+  ticketWorktreeCreateCmd,
+  ticketWorktreeMergeCmd,
+  ticketWorktreeRemoveCmd,
+} from "./worktree.js";
