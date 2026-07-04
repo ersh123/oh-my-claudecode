@@ -20024,20 +20024,30 @@ function ticketWorktreeBranch(ticketId) {
   const safe2 = ticketId.replace(/[^A-Za-z0-9_/-]/g, "-");
   return `nikoflow/${safe2}`;
 }
+function shq(value) {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
 function ticketWorktreeCreateCmd(directory, ticketId) {
   const path22 = ticketWorktreeRelPath(ticketId);
   const branch = ticketWorktreeBranch(ticketId);
-  return `git -C "${directory}" worktree add -q -B ${branch} "${path22}" HEAD 2>/dev/null || git -C "${directory}" worktree add -q "${path22}" ${branch}`;
+  const d = shq(directory);
+  const p = shq(path22);
+  return `git -C ${d} worktree prune; if [ -d ${shq((0, import_path64.join)(directory, path22))} ]; then :; elif git -C ${d} show-ref --verify --quiet refs/heads/${branch}; then git -C ${d} worktree add -q ${p} ${branch}; else git -C ${d} worktree add -q -b ${branch} ${p} HEAD; fi`;
 }
 function ticketWorktreeMergeCmd(directory, ticketId) {
-  const branch = ticketWorktreeBranch(ticketId);
   const path22 = ticketWorktreeRelPath(ticketId);
-  return `git -C "${(0, import_path64.join)(directory, path22)}" add -A && git -C "${(0, import_path64.join)(directory, path22)}" commit -q -m "nikoflow ${ticketId}" 2>/dev/null; git -C "${directory}" merge --no-ff -q ${branch} -m "nikoflow: merge ${ticketId}" && git -C "${directory}" worktree remove --force "${path22}"`;
+  const branch = ticketWorktreeBranch(ticketId);
+  const d = shq(directory);
+  const w = shq((0, import_path64.join)(directory, path22));
+  const p = shq(path22);
+  const msg = shq(`nikoflow: ${branch}`);
+  return `git -C ${w} add -A && { git -C ${w} diff --cached --quiet || git -C ${w} commit -q -m ${msg}; } && git -C ${d} merge --no-ff -q ${branch} -m ${msg} && [ -z "$(git -C ${w} status --porcelain)" ] && git -C ${d} worktree remove ${p} && git -C ${d} branch -d ${branch}`;
 }
 function ticketWorktreeRemoveCmd(directory, ticketId) {
   const path22 = ticketWorktreeRelPath(ticketId);
   const branch = ticketWorktreeBranch(ticketId);
-  return `git -C "${directory}" worktree remove --force "${path22}" 2>/dev/null; git -C "${directory}" branch -D ${branch} 2>/dev/null || true`;
+  const d = shq(directory);
+  return `git -C ${d} worktree remove --force ${shq(path22)} 2>/dev/null; git -C ${d} branch -D ${branch} 2>/dev/null; git -C ${d} worktree prune; true`;
 }
 var import_path64;
 var init_worktree = __esm({
@@ -20125,11 +20135,13 @@ BASE RULE \u2014 DELEGATE + ISOLATE: you (this thread) ORCHESTRATE only; you do 
    ${createCmd}
 2. Spawn ${execSpawn} whose working directory is "${wtRel}". It does RED\u2192GREEN for this ONE vertical slice (a failing test at a pre-agreed seam \u2192 the minimum code to pass) INSIDE that worktree and returns a summary + the diff. Do NOT edit files in the main tree yourself.${pbtLine}
 ` + (ticket.self_verify ? `Self-verify: ${ticket.self_verify}
-` : "") + `3. When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} \u2014 a FRESH reviewer that has NOT seen your reasoning \u2014 to review the worktree DIFF against the acceptance criteria and repo standards.${reviewerPbt} Pass it this request-id; it emits, in ITS OWN final output, the ticket gate on its own line ONLY if it approves on green validation:
+` : "") + `3. When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} \u2014 a FRESH reviewer that has NOT seen your reasoning \u2014 to review the worktree DIFF against the acceptance criteria and repo standards.${reviewerPbt} Tell it to REJECT if the change leaked outside the worktree (\`git -C "${dir}" status --porcelain\` shows ticket edits in the main tree). Pass it this request-id; it emits, in ITS OWN final output, the ticket gate on its own line ONLY if it approves on green validation:
 ${gateTag}
 4. ONLY after that reviewer approval, merge the worktree into the branch:
    ${mergeCmd}
+   If the merge conflicts, resolve it or run \`git -C "${dir}" merge --abort\` and re-review \u2014 the worktree is preserved, nothing is lost.
 The gate is accepted only from the reviewer subagent's output, never your own text. Do not merge unreviewed code, and do not start another ticket until this one is merged.
+Note: isolation is enforced by YOU following this flow (Stop hooks do not run git) \u2014 keep edits inside the worktree so nothing lands unreviewed.
 ${CANCEL_HINT}
 </nikoflow-continuation>`;
 }

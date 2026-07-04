@@ -45,11 +45,12 @@ Grilling and confirm with the user.
 5. 🔴🟢♻️ TDD — test only at pre-agreed seams; RED before GREEN (a failing test first, then the minimum
    code to pass); one vertical slice at a time. Refactoring belongs to the review step, not the loop.
    Deep tier: add property-based tests (invariants/round-trips/metamorphic) per ticket touching pure logic.
-   BASE RULE — delegate + isolate: the main thread ORCHESTRATES, it does NOT write code. Each ticket's
+   BASE RULE — delegate + isolate (convention, prompt-enforced — the Stop hook does not run git, so the
+   flow depends on you following it): the main thread ORCHESTRATES, it does NOT write code. Each ticket's
    code is written by an executor subagent (on the executor model, e.g. sonnet or gpt-5.5) inside a
-   DEDICATED worktree (`.omc/worktrees/<ticket>`), quarantined there until the reviewer/QA gate approves
-   the diff — only then is the worktree merged into the branch. Keeps the main context clean and nothing
-   lands unreviewed.
+   DEDICATED worktree (`.omc/worktrees/<ticket>`); keep edits inside that worktree so the diff is held
+   off the branch until the reviewer/QA gate approves it — only then merge the worktree into the branch.
+   Keeps the main context clean and unreviewed code off the branch.
 6. ✅ Verification — spawn a fresh, context-isolated independent reviewer; iterate fix → re-review until
    local validation (tests/lint/build) is green AND the reviewer scores the changed surface ≥ 9.5/10 or
    reports no actionable findings. Never accept a passing score while validation is red.

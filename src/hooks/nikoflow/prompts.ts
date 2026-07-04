@@ -194,12 +194,18 @@ export function getExecuteTicketPrompt(
     (ticket.self_verify ? `Self-verify: ${ticket.self_verify}\n` : "") +
     `3. When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} — a ` +
     `FRESH reviewer that has NOT seen your reasoning — to review the worktree DIFF against the ` +
-    `acceptance criteria and repo standards.${reviewerPbt} Pass it this request-id; it emits, in ITS ` +
-    `OWN final output, the ticket gate on its own line ONLY if it approves on green validation:\n` +
+    `acceptance criteria and repo standards.${reviewerPbt} Tell it to REJECT if the change leaked ` +
+    `outside the worktree (\`git -C "${dir}" status --porcelain\` shows ticket edits in the main tree). ` +
+    `Pass it this request-id; it emits, in ITS OWN final output, the ticket gate on its own line ONLY ` +
+    `if it approves on green validation:\n` +
     `${gateTag}\n` +
     `4. ONLY after that reviewer approval, merge the worktree into the branch:\n   ${mergeCmd}\n` +
+    `   If the merge conflicts, resolve it or run \`git -C "${dir}" merge --abort\` and re-review — the ` +
+    `worktree is preserved, nothing is lost.\n` +
     `The gate is accepted only from the reviewer subagent's output, never your own text. Do not merge ` +
     `unreviewed code, and do not start another ticket until this one is merged.\n` +
+    `Note: isolation is enforced by YOU following this flow (Stop hooks do not run git) — keep edits ` +
+    `inside the worktree so nothing lands unreviewed.\n` +
     `${CANCEL_HINT}\n` +
     `</nikoflow-continuation>`
   );

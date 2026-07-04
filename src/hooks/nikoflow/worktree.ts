@@ -31,25 +31,51 @@ export function ticketWorktreeBranch(ticketId: string): string {
   return `nikoflow/${safe}`;
 }
 
-/** Shell to create the ticket worktree off the current HEAD (idempotent-ish). */
+/** Single-quote a value for safe shell interpolation (handles embedded quotes). */
+function shq(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * Shell to create the ticket worktree. Prunes stale metadata first, reuses the
+ * ticket branch if it already exists (preserves WIP — retry-safe), and only
+ * creates a fresh branch off HEAD when there is none. No -B (which would discard
+ * committed WIP on a retry).
+ */
 export function ticketWorktreeCreateCmd(directory: string, ticketId: string): string {
   const path = ticketWorktreeRelPath(ticketId);
   const branch = ticketWorktreeBranch(ticketId);
-  // -B resets the branch to HEAD if it already exists; harmless on a fresh ticket.
-  return `git -C "${directory}" worktree add -q -B ${branch} "${path}" HEAD 2>/dev/null || git -C "${directory}" worktree add -q "${path}" ${branch}`;
+  const d = shq(directory);
+  const p = shq(path);
+  return (
+    `git -C ${d} worktree prune; ` +
+    `if [ -d ${shq(join(directory, path))} ]; then :; ` +
+    `elif git -C ${d} show-ref --verify --quiet refs/heads/${branch}; then git -C ${d} worktree add -q ${p} ${branch}; ` +
+    `else git -C ${d} worktree add -q -b ${branch} ${p} HEAD; fi`
+  );
 }
 
-/** Shell to merge an APPROVED ticket worktree's branch into the current branch. */
+/**
+ * Shell to merge an APPROVED ticket worktree into the current branch. Commits WIP
+ * only when there is something to commit (a commit *failure* — gpg/hooks/identity
+ * — breaks the chain and is NOT swallowed), merges --no-ff, and removes the
+ * worktree WITHOUT --force so a still-dirty tree refuses removal rather than
+ * silently destroying an unmerged diff (audit F1). Deletes the merged branch.
+ */
 export function ticketWorktreeMergeCmd(directory: string, ticketId: string): string {
-  const branch = ticketWorktreeBranch(ticketId);
-  // Commit any WIP in the worktree first, then merge its branch (no-ff so the
-  // ticket is a visible unit), then remove the worktree.
   const path = ticketWorktreeRelPath(ticketId);
+  const branch = ticketWorktreeBranch(ticketId);
+  const d = shq(directory);
+  const w = shq(join(directory, path));
+  const p = shq(path);
+  const msg = shq(`nikoflow: ${branch}`);
   return (
-    `git -C "${join(directory, path)}" add -A && ` +
-    `git -C "${join(directory, path)}" commit -q -m "nikoflow ${ticketId}" 2>/dev/null; ` +
-    `git -C "${directory}" merge --no-ff -q ${branch} -m "nikoflow: merge ${ticketId}" && ` +
-    `git -C "${directory}" worktree remove --force "${path}"`
+    `git -C ${w} add -A && ` +
+    `{ git -C ${w} diff --cached --quiet || git -C ${w} commit -q -m ${msg}; } && ` +
+    `git -C ${d} merge --no-ff -q ${branch} -m ${msg} && ` +
+    `[ -z "$(git -C ${w} status --porcelain)" ] && ` +
+    `git -C ${d} worktree remove ${p} && ` +
+    `git -C ${d} branch -d ${branch}`
   );
 }
 
@@ -57,8 +83,9 @@ export function ticketWorktreeMergeCmd(directory: string, ticketId: string): str
 export function ticketWorktreeRemoveCmd(directory: string, ticketId: string): string {
   const path = ticketWorktreeRelPath(ticketId);
   const branch = ticketWorktreeBranch(ticketId);
+  const d = shq(directory);
   return (
-    `git -C "${directory}" worktree remove --force "${path}" 2>/dev/null; ` +
-    `git -C "${directory}" branch -D ${branch} 2>/dev/null || true`
+    `git -C ${d} worktree remove --force ${shq(path)} 2>/dev/null; ` +
+    `git -C ${d} branch -D ${branch} 2>/dev/null; git -C ${d} worktree prune; true`
   );
 }
