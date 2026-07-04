@@ -48,15 +48,23 @@ export function extractDogfoodTranscriptEvidence(transcript: string): DogfoodTra
   let blockQuote: string | undefined;
   let passQuote: string | undefined;
 
-  for (const line of lines.flatMap((entry) => entry.split(/\r?\n/))) {
-    const clean = redactTranscriptEvidence(line.trim());
-    if (!clean) continue;
-    if (!blockQuote && /\bBLOCK\b/i.test(clean)) {
-      blockQuote = clean;
-      continue;
+  for (const entry of lines) {
+    let entryStartedBlock = false;
+
+    for (const line of entry.split(/\r?\n/)) {
+      const clean = redactTranscriptEvidence(line.trim());
+      if (!clean) continue;
+      if (!blockQuote && /\bBLOCK\b/i.test(clean)) {
+        blockQuote = clean;
+        entryStartedBlock = true;
+        break;
+      }
+      if (blockQuote && !passQuote && /\bPASS\b/i.test(clean)) passQuote = clean;
+      if (blockQuote && passQuote) break;
     }
-    if (blockQuote && !passQuote && /\bPASS\b/i.test(clean)) passQuote = clean;
+
     if (blockQuote && passQuote) break;
+    if (entryStartedBlock) continue;
   }
 
   return {
