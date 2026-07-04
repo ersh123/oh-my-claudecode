@@ -31,6 +31,8 @@ import {
   readWorkerHeartbeat,
   readMonitorSnapshot,
   writeMonitorSnapshot,
+  readTeamPhaseState,
+  writeTeamPhaseState,
   writeShutdownRequest,
   readShutdownAck,
   writeWorkerInbox,
@@ -130,6 +132,29 @@ const CURSOR_EXECUTOR_CONTEXT_INTENTS = new Set<LaneIntent>([
   'cleanup',
   'verification',
 ]);
+
+async function persistTeamPhaseSnapshot(teamName: string, phase: TeamPhase, cwd: string): Promise<void> {
+  const previous = await readTeamPhaseState(teamName, cwd);
+  const updatedAt = new Date().toISOString();
+  const transitions = [...(previous?.transitions ?? [])];
+
+  if (previous && previous.current_phase !== phase) {
+    transitions.push({
+      from: previous.current_phase,
+      to: phase,
+      at: updatedAt,
+      reason: 'monitor-team-v2',
+    });
+  }
+
+  await writeTeamPhaseState(teamName, {
+    current_phase: phase,
+    max_fix_attempts: previous?.max_fix_attempts ?? 3,
+    current_fix_attempt: previous?.current_fix_attempt ?? 0,
+    transitions,
+    updated_at: updatedAt,
+  }, cwd);
+}
 
 function isCursorExecutorContextTask(task: { subject: string; description: string }): boolean {
   const text = `${task.subject} ${task.description}`.trim();
@@ -1942,10 +1967,12 @@ export async function monitorTeamV2(
   }
 
   // Infer phase from task distribution
-  const phase = inferPhase(allTasks.map((t) => ({
+  const inferredPhase = inferPhase(allTasks.map((t) => ({
     status: t.status,
     metadata: undefined,
   })));
+  const phase: TeamPhase = allTasksTerminal && taskCounts.failed > 0 ? 'failed' : inferredPhase;
+  await persistTeamPhaseSnapshot(sanitized, phase, cwd);
 
   // Emit monitor-derived events (task completions, worker state changes)
   await emitMonitorDerivedEvents(

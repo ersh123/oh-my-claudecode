@@ -6533,6 +6533,27 @@ async function readMonitorSnapshot(teamName, cwd) {
 async function writeMonitorSnapshot(teamName, snapshot, cwd) {
   await writeAtomic(absPath(cwd, TeamPaths.monitorSnapshot(teamName)), JSON.stringify(snapshot, null, 2));
 }
+async function readTeamPhaseState(teamName, cwd) {
+  const p = absPath(cwd, TeamPaths.phaseState(teamName));
+  if (!(0, import_fs16.existsSync)(p)) return null;
+  try {
+    const raw = await (0, import_promises5.readFile)(p, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      current_phase: parsed.current_phase ?? "executing",
+      max_fix_attempts: typeof parsed.max_fix_attempts === "number" ? parsed.max_fix_attempts : 3,
+      current_fix_attempt: typeof parsed.current_fix_attempt === "number" ? parsed.current_fix_attempt : 0,
+      transitions: Array.isArray(parsed.transitions) ? parsed.transitions : [],
+      updated_at: typeof parsed.updated_at === "string" ? parsed.updated_at : (/* @__PURE__ */ new Date()).toISOString()
+    };
+  } catch {
+    return null;
+  }
+}
+async function writeTeamPhaseState(teamName, phaseState, cwd) {
+  await writeAtomic(absPath(cwd, TeamPaths.phaseState(teamName)), JSON.stringify(phaseState, null, 2));
+}
 async function writeShutdownRequest(teamName, workerName2, fromWorker, cwd) {
   const data = {
     from: fromWorker,
@@ -8363,6 +8384,26 @@ var CURSOR_EXECUTOR_CONTEXT_INTENTS = /* @__PURE__ */ new Set([
   "cleanup",
   "verification"
 ]);
+async function persistTeamPhaseSnapshot(teamName, phase, cwd) {
+  const previous = await readTeamPhaseState(teamName, cwd);
+  const updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const transitions = [...previous?.transitions ?? []];
+  if (previous && previous.current_phase !== phase) {
+    transitions.push({
+      from: previous.current_phase,
+      to: phase,
+      at: updatedAt,
+      reason: "monitor-team-v2"
+    });
+  }
+  await writeTeamPhaseState(teamName, {
+    current_phase: phase,
+    max_fix_attempts: previous?.max_fix_attempts ?? 3,
+    current_fix_attempt: previous?.current_fix_attempt ?? 0,
+    transitions,
+    updated_at: updatedAt
+  }, cwd);
+}
 function isCursorExecutorContextTask(task) {
   const text = `${task.subject} ${task.description}`.trim();
   if (!text || CURSOR_UNSUPPORTED_REVIEW_INTENT_RE.test(text)) return false;
@@ -9508,10 +9549,12 @@ async function monitorTeamV2(teamName, cwd) {
       `Investigate task-${task.id}: depends on missing task ids [${missingDependencyIds.join(", ")}]`
     );
   }
-  const phase = inferPhase(allTasks.map((t) => ({
+  const inferredPhase = inferPhase(allTasks.map((t) => ({
     status: t.status,
     metadata: void 0
   })));
+  const phase = allTasksTerminal2 && taskCounts.failed > 0 ? "failed" : inferredPhase;
+  await persistTeamPhaseSnapshot(sanitized, phase, cwd);
   await emitMonitorDerivedEvents(
     sanitized,
     allTasks,
