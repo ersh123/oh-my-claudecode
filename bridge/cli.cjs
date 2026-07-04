@@ -19776,6 +19776,46 @@ function advanceNikoflowPhase(directory, sessionId) {
     complete
   };
 }
+function mintGateRequest(directory, gate, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return null;
+  if (state.awaiting_gate === gate && state.request_id) {
+    return state.request_id;
+  }
+  state.request_id = (0, import_crypto11.randomUUID)();
+  state.awaiting_gate = gate;
+  state.gate_request_minted_at = (/* @__PURE__ */ new Date()).toISOString();
+  return writeNikoflowState(directory, state, sessionId) ? state.request_id : null;
+}
+function rotateGateRequest(directory, gate, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return null;
+  state.request_id = (0, import_crypto11.randomUUID)();
+  state.awaiting_gate = gate;
+  state.gate_request_minted_at = (/* @__PURE__ */ new Date()).toISOString();
+  return writeNikoflowState(directory, state, sessionId) ? state.request_id : null;
+}
+function clearGateRequest(directory, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state) return false;
+  delete state.request_id;
+  delete state.awaiting_gate;
+  delete state.gate_request_minted_at;
+  return writeNikoflowState(directory, state, sessionId);
+}
+function recordNikoflowUserPrompt(directory, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return false;
+  state.last_user_prompt_at = (/* @__PURE__ */ new Date()).toISOString();
+  return writeNikoflowState(directory, state, sessionId);
+}
+function userRepliedAfterMint(state) {
+  if (!state.gate_request_minted_at || !state.last_user_prompt_at) return false;
+  const minted = new Date(state.gate_request_minted_at).getTime();
+  const replied = new Date(state.last_user_prompt_at).getTime();
+  if (!Number.isFinite(minted) || !Number.isFinite(replied)) return false;
+  return replied > minted;
+}
 function createNikoflowLoopHook(directory) {
   const startLoop = (sessionId, prompt, options) => {
     const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -19808,10 +19848,11 @@ function createNikoflowLoopHook(directory) {
   };
   return { startLoop, cancelLoop, getState };
 }
-var NIKOFLOW_DEPTHS, NIKOFLOW_PHASES, MODE;
+var import_crypto11, NIKOFLOW_DEPTHS, NIKOFLOW_PHASES, MODE;
 var init_loop2 = __esm({
   "src/hooks/nikoflow/loop.ts"() {
     "use strict";
+    import_crypto11 = require("crypto");
     init_mode_state_io();
     NIKOFLOW_DEPTHS = ["tactical", "standard", "deep"];
     NIKOFLOW_PHASES = {
@@ -19824,21 +19865,33 @@ var init_loop2 = __esm({
 });
 
 // src/hooks/nikoflow/prompts.ts
-function getDepthSelectionPrompt(state) {
+function injectRequestId(body, requestId) {
+  if (!requestId) return body;
+  return body.replace(
+    /(<nikoflow-gate\b)([^>]*?)(>)/gi,
+    (_full, open4, attrs, close) => `${open4}${attrs} request-id="${requestId}"${close}`
+  );
+}
+function getDepthSelectionPrompt(state, requestId) {
+  const gateTag = injectRequestId(
+    `<nikoflow-gate phase="depth" depth="tactical|standard|deep">CONFIRMED</nikoflow-gate>`,
+    requestId
+  );
   return `<nikoflow-continuation phase="grilling:depth" iteration="${state.iteration}">
 NIKOFLOW \u2014 depth not yet chosen. Begin Grilling by sizing the task:
 - \u{1F7E2} tactical \u2014 a 1-file bug fix or trivially-scoped change (Grilling \u2192 Execute \u2192 Verification).
 - \u{1F7E1} standard \u2014 a new feature (Grilling \u2192 ADR \u2192 PRD \u2192 Ticketization \u2192 TDD \u2192 Verification).
 - \u{1F534} deep \u2014 an architectural change (full cycle + property-based tests + evidence).
 Propose the smallest tier that fits, with a one-line justification, and confirm it with the user.
-Once agreed, record it by emitting on its own line:
-<nikoflow-gate phase="depth" depth="tactical|standard|deep">CONFIRMED</nikoflow-gate>
+Once the user agrees, record it by emitting on its own line:
+${gateTag}
 (the tag is only accepted after the user has actually replied \u2014 do not self-confirm).
 ${CANCEL_HINT}
 </nikoflow-continuation>`;
 }
-function getPhasePrompt2(phase, state) {
-  const body = PHASE_BODIES[phase] ?? `Phase "${phase}". Continue the methodology.`;
+function getPhasePrompt2(phase, state, requestId) {
+  const rawBody = PHASE_BODIES[phase] ?? `Phase "${phase}". Continue the methodology.`;
+  const body = injectRequestId(rawBody, requestId);
   const depth = state.depth ?? "undecided";
   return `<nikoflow-continuation phase="${phase}" depth="${depth}" iteration="${state.iteration}">
 ${body}
@@ -19868,24 +19921,90 @@ var init_prompts2 = __esm({
   }
 });
 
+// src/hooks/nikoflow/gates.ts
+function extractAttribute(attributes, name) {
+  const match = new RegExp(`\\b${name}=(["'])(.*?)\\1`, "i").exec(attributes);
+  return match?.[2];
+}
+function stripInjectedExamples(text) {
+  return text.replace(/<nikoflow-continuation\b[\s\S]*?<\/nikoflow-continuation>/gi, " ").replace(/```[\s\S]*?```/g, " ").replace(/~~~[\s\S]*?~~~/g, " ").replace(/`<nikoflow-gate\b[\s\S]*?<\/nikoflow-gate>`/gi, " ");
+}
+function detectNikoflowGate(text, opts) {
+  const expectedPayloads = NIKOFLOW_GATE_PAYLOADS[opts.phase];
+  if (!expectedPayloads) return { matched: false };
+  const sanitized = stripInjectedExamples(text);
+  const tagRe = /<nikoflow-gate\b([^>]*)>([\s\S]*?)<\/nikoflow-gate>/gi;
+  for (const m of sanitized.matchAll(tagRe)) {
+    const attributes = m[1] ?? "";
+    const payload = (m[2] ?? "").trim();
+    const phaseAttr = extractAttribute(attributes, "phase");
+    if (phaseAttr !== opts.phase) continue;
+    if (!expectedPayloads.includes(payload)) continue;
+    if (opts.requestId) {
+      const rid = extractAttribute(attributes, "request-id");
+      if (rid !== opts.requestId) continue;
+    }
+    const result = { matched: true };
+    if (opts.phase === "depth") {
+      const depthAttr = extractAttribute(attributes, "depth")?.toLowerCase();
+      if (!depthAttr || !NIKOFLOW_DEPTHS.includes(depthAttr)) {
+        continue;
+      }
+      result.depth = depthAttr;
+    }
+    return result;
+  }
+  return { matched: false };
+}
+var NIKOFLOW_GATE_PAYLOADS, HUMAN_GATE_PHASES;
+var init_gates = __esm({
+  "src/hooks/nikoflow/gates.ts"() {
+    "use strict";
+    init_loop2();
+    NIKOFLOW_GATE_PAYLOADS = {
+      depth: ["CONFIRMED"],
+      interview: ["CONFIRMED"],
+      adr: ["RECORDED", "SKIPPED"],
+      prd: ["SEAMS_CONFIRMED"],
+      tickets: ["APPROVED"],
+      execute: ["ALL_TICKETS_APPROVED"],
+      verify: ["VERIFIED"]
+    };
+    HUMAN_GATE_PHASES = /* @__PURE__ */ new Set([
+      "depth",
+      "interview",
+      "prd",
+      "tickets"
+    ]);
+  }
+});
+
 // src/hooks/nikoflow/index.ts
 var nikoflow_exports = {};
 __export(nikoflow_exports, {
+  HUMAN_GATE_PHASES: () => HUMAN_GATE_PHASES,
   NIKOFLOW_DEPTHS: () => NIKOFLOW_DEPTHS,
+  NIKOFLOW_GATE_PAYLOADS: () => NIKOFLOW_GATE_PAYLOADS,
   NIKOFLOW_PHASES: () => NIKOFLOW_PHASES,
   advanceNikoflowPhase: () => advanceNikoflowPhase,
+  clearGateRequest: () => clearGateRequest,
   clearNikoflowState: () => clearNikoflowState,
   createNikoflowLoopHook: () => createNikoflowLoopHook,
   detectDepthFlag: () => detectDepthFlag,
+  detectNikoflowGate: () => detectNikoflowGate,
   getCurrentPhase: () => getCurrentPhase,
   getDepthSelectionPrompt: () => getDepthSelectionPrompt,
   getPhasePrompt: () => getPhasePrompt2,
   incrementNikoflowIteration: () => incrementNikoflowIteration,
   isNikoflowComplete: () => isNikoflowComplete,
   materializePhases: () => materializePhases,
+  mintGateRequest: () => mintGateRequest,
   readNikoflowState: () => readNikoflowState,
+  recordNikoflowUserPrompt: () => recordNikoflowUserPrompt,
+  rotateGateRequest: () => rotateGateRequest,
   setNikoflowDepth: () => setNikoflowDepth,
   stripNikoflowFlags: () => stripNikoflowFlags,
+  userRepliedAfterMint: () => userRepliedAfterMint,
   writeNikoflowState: () => writeNikoflowState
 });
 var init_nikoflow = __esm({
@@ -19893,6 +20012,7 @@ var init_nikoflow = __esm({
     "use strict";
     init_loop2();
     init_prompts2();
+    init_gates();
   }
 });
 
@@ -20449,7 +20569,40 @@ function checkArchitectRejectionInTranscript(sessionId) {
   }
   return { rejected: false, feedback: "" };
 }
-async function checkNikoflowLoop(sessionId, directory, cancelInProgress) {
+function readNikoflowGateText(transcriptPath) {
+  const parts = [];
+  for (const line of readTranscriptTailLines(transcriptPath)) {
+    if (!line.trim()) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const content = entry?.message?.content;
+    if (typeof content === "string") {
+      parts.push(content);
+    } else if (Array.isArray(content)) {
+      for (const block of content) {
+        const b = block;
+        if (b?.type === "text" && typeof b.text === "string") {
+          parts.push(b.text);
+        }
+      }
+    }
+  }
+  return parts.join("\n");
+}
+function nikoflowCompleteResult(iteration) {
+  return {
+    shouldBlock: true,
+    message: `<nikoflow-continuation phase="complete" iteration="${iteration}">
+All Niko Flow phases have passed. Run \`/oh-my-claudecode:cancel\` to exit and clean up state.
+</nikoflow-continuation>`,
+    mode: "nikoflow"
+  };
+}
+async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcriptPath) {
   const workingDir = resolveToWorktreeRoot(directory);
   const state = readNikoflowState(workingDir, sessionId);
   if (!state || !state.active || isStaleState(state)) {
@@ -20460,19 +20613,52 @@ async function checkNikoflowLoop(sessionId, directory, cancelInProgress) {
   }
   const current = incrementNikoflowIteration(workingDir, sessionId) ?? state;
   if (isNikoflowComplete(current)) {
-    return {
-      shouldBlock: true,
-      message: `<nikoflow-continuation phase="complete" iteration="${current.iteration}">
-All Niko Flow phases have passed. Run \`/oh-my-claudecode:cancel\` to exit and clean up state.
-</nikoflow-continuation>`,
-      mode: "nikoflow"
-    };
+    return nikoflowCompleteResult(current.iteration);
   }
   const phase = getCurrentPhase(current);
-  const message = phase ? getPhasePrompt2(phase, current) : getDepthSelectionPrompt(current);
+  const gate = phase ?? "depth";
+  const requestId = mintGateRequest(workingDir, gate, sessionId) ?? void 0;
+  if (NIKOFLOW_ADVANCING_GATES.has(gate) && transcriptPath && (0, import_fs55.existsSync)(transcriptPath)) {
+    let gateText = "";
+    try {
+      gateText = readNikoflowGateText(transcriptPath);
+    } catch {
+      gateText = "";
+    }
+    const match = detectNikoflowGate(gateText, { phase: gate, requestId });
+    const isHumanGate = HUMAN_GATE_PHASES.has(gate);
+    const humanOk = !isHumanGate || userRepliedAfterMint(current);
+    if (match.matched && humanOk) {
+      if (gate === "depth") {
+        if (match.depth) {
+          setNikoflowDepth(workingDir, match.depth, sessionId);
+        }
+      } else {
+        advanceNikoflowPhase(workingDir, sessionId);
+      }
+      clearGateRequest(workingDir, sessionId);
+      const next = readNikoflowState(workingDir, sessionId) ?? current;
+      if (isNikoflowComplete(next)) {
+        return nikoflowCompleteResult(next.iteration);
+      }
+      const nextPhase = getCurrentPhase(next);
+      const nextGate = nextPhase ?? "depth";
+      const nextRid = mintGateRequest(workingDir, nextGate, sessionId) ?? void 0;
+      return {
+        shouldBlock: true,
+        message: nextPhase ? getPhasePrompt2(nextPhase, next, nextRid) : getDepthSelectionPrompt(next, nextRid),
+        mode: "nikoflow"
+      };
+    }
+    if (match.matched && isHumanGate && !humanOk) {
+      rotateGateRequest(workingDir, gate, sessionId);
+    }
+  }
+  const blockState = readNikoflowState(workingDir, sessionId) ?? current;
+  const blockRid = blockState.request_id;
   return {
     shouldBlock: true,
-    message,
+    message: phase ? getPhasePrompt2(phase, blockState, blockRid) : getDepthSelectionPrompt(blockState, blockRid),
     mode: "nikoflow"
   };
 }
@@ -21305,7 +21491,8 @@ async function resolvePersistentModeBlock(sessionId, directory, stopContext) {
     if (autopilotResult) return autopilotResult;
   }
   if (!tombstonedWorkflowModes.has("nikoflow") && isModeActive("nikoflow", workingDir, sessionId)) {
-    const nikoflowResult = await checkNikoflowLoop(sessionId, workingDir, cancelInProgress);
+    const nikoflowTranscript = stopContext?.transcript_path ?? stopContext?.transcriptPath;
+    const nikoflowResult = await checkNikoflowLoop(sessionId, workingDir, cancelInProgress, nikoflowTranscript);
     if (nikoflowResult) {
       return nikoflowResult;
     }
@@ -21360,7 +21547,7 @@ function createHookOutput(result) {
     message: result.message || void 0
   };
 }
-var import_fs55, import_path64, CANCEL_SIGNAL_TTL_MS2, STALE_STATE_THRESHOLD_MS, PENDING_ASYNC_STATE_STALE_MS, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_MAX, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_TTL_MS, TERMINAL_WORKFLOW_SLOT_MODES, TERMINAL_WORKFLOW_PHASES, todoContinuationAttempts, TRANSCRIPT_TAIL_BYTES, CRITICAL_CONTEXT_STOP_PERCENT, RALPLAN_TERMINAL_PHASES, REVIEWER_TASK_TOOL_NAMES, REVIEWER_COMMAND_TOOL_NAMES, AWAITING_CONFIRMATION_TTL_MS, THINKING_ONLY_STREAK_BREAKER, THINKING_ONLY_STREAK_MAX, THINKING_ONLY_STREAK_TTL_MS, THINKING_ONLY_STREAK_BAILOUT_MESSAGE, TEAM_PIPELINE_STOP_BLOCKER_MAX, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS, RALPLAN_STOP_BLOCKER_MAX, RALPLAN_STOP_BLOCKER_TTL_MS, RALPLAN_ACTIVE_AGENT_RECENCY_WINDOW_MS;
+var import_fs55, import_path64, CANCEL_SIGNAL_TTL_MS2, STALE_STATE_THRESHOLD_MS, PENDING_ASYNC_STATE_STALE_MS, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_MAX, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_TTL_MS, TERMINAL_WORKFLOW_SLOT_MODES, TERMINAL_WORKFLOW_PHASES, todoContinuationAttempts, TRANSCRIPT_TAIL_BYTES, CRITICAL_CONTEXT_STOP_PERCENT, RALPLAN_TERMINAL_PHASES, REVIEWER_TASK_TOOL_NAMES, REVIEWER_COMMAND_TOOL_NAMES, AWAITING_CONFIRMATION_TTL_MS, NIKOFLOW_ADVANCING_GATES, THINKING_ONLY_STREAK_BREAKER, THINKING_ONLY_STREAK_MAX, THINKING_ONLY_STREAK_TTL_MS, THINKING_ONLY_STREAK_BAILOUT_MESSAGE, TEAM_PIPELINE_STOP_BLOCKER_MAX, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS, RALPLAN_STOP_BLOCKER_MAX, RALPLAN_STOP_BLOCKER_TTL_MS, RALPLAN_ACTIVE_AGENT_RECENCY_WINDOW_MS;
 var init_persistent_mode = __esm({
   "src/hooks/persistent-mode/index.ts"() {
     "use strict";
@@ -21424,6 +21611,7 @@ var init_persistent_mode = __esm({
     REVIEWER_TASK_TOOL_NAMES = /* @__PURE__ */ new Set(["Task", "proxy_Task", "Agent"]);
     REVIEWER_COMMAND_TOOL_NAMES = /* @__PURE__ */ new Set(["Bash", "proxy_Bash"]);
     AWAITING_CONFIRMATION_TTL_MS = 2 * 60 * 1e3;
+    NIKOFLOW_ADVANCING_GATES = /* @__PURE__ */ new Set(["depth", "interview", "adr", "prd", "tickets"]);
     THINKING_ONLY_STREAK_BREAKER = "thinking-only-streak";
     THINKING_ONLY_STREAK_MAX = 3;
     THINKING_ONLY_STREAK_TTL_MS = 5 * 60 * 1e3;
@@ -24354,7 +24542,7 @@ function acquireRegistryLock() {
   const started = Date.now();
   while (Date.now() - started < LOCK_TIMEOUT_MS) {
     try {
-      const token = (0, import_crypto11.randomUUID)();
+      const token = (0, import_crypto12.randomUUID)();
       const fd = (0, import_fs58.openSync)(
         getLockPath(),
         import_fs58.constants.O_CREAT | import_fs58.constants.O_EXCL | import_fs58.constants.O_WRONLY,
@@ -24544,13 +24732,13 @@ function rewriteRegistryUnsafe(mappings) {
   const content = mappings.map((m) => JSON.stringify(m)).join("\n") + "\n";
   (0, import_fs58.writeFileSync)(getRegistryPath(), content, { mode: SECURE_FILE_MODE });
 }
-var import_fs58, import_path69, import_crypto11, SECURE_FILE_MODE, MAX_AGE_MS, LOCK_TIMEOUT_MS, LOCK_RETRY_MS, LOCK_STALE_MS, LOCK_MAX_WAIT_MS, SLEEP_ARRAY;
+var import_fs58, import_path69, import_crypto12, SECURE_FILE_MODE, MAX_AGE_MS, LOCK_TIMEOUT_MS, LOCK_RETRY_MS, LOCK_STALE_MS, LOCK_MAX_WAIT_MS, SLEEP_ARRAY;
 var init_session_registry = __esm({
   "src/notifications/session-registry.ts"() {
     "use strict";
     import_fs58 = require("fs");
     import_path69 = require("path");
-    import_crypto11 = require("crypto");
+    import_crypto12 = require("crypto");
     init_platform();
     init_paths();
     SECURE_FILE_MODE = 384;
@@ -25380,9 +25568,9 @@ function verifySlackSignature(signingSecret, signature, timestamp, body) {
     return false;
   }
   const sigBasestring = `v0:${timestamp}:${body}`;
-  const expectedSignature = "v0=" + (0, import_crypto12.createHmac)("sha256", signingSecret).update(sigBasestring).digest("hex");
+  const expectedSignature = "v0=" + (0, import_crypto13.createHmac)("sha256", signingSecret).update(sigBasestring).digest("hex");
   try {
-    return (0, import_crypto12.timingSafeEqual)(
+    return (0, import_crypto13.timingSafeEqual)(
       Buffer.from(expectedSignature),
       Buffer.from(signature)
     );
@@ -25489,11 +25677,11 @@ async function replySlackThread(botToken, channel, threadTs, text) {
     signal: AbortSignal.timeout(REACTION_TIMEOUT_MS)
   });
 }
-var import_crypto12, MAX_TIMESTAMP_AGE_SECONDS, VALID_ENVELOPE_TYPES, SlackConnectionStateTracker, API_TIMEOUT_MS, REACTION_TIMEOUT_MS, SlackSocketClient;
+var import_crypto13, MAX_TIMESTAMP_AGE_SECONDS, VALID_ENVELOPE_TYPES, SlackConnectionStateTracker, API_TIMEOUT_MS, REACTION_TIMEOUT_MS, SlackSocketClient;
 var init_slack_socket = __esm({
   "src/notifications/slack-socket.ts"() {
     "use strict";
-    import_crypto12 = require("crypto");
+    import_crypto13 = require("crypto");
     init_redact();
     MAX_TIMESTAMP_AGE_SECONDS = 300;
     VALID_ENVELOPE_TYPES = /* @__PURE__ */ new Set([
@@ -27079,7 +27267,7 @@ function acquireLock(projectPath) {
   const started = Date.now();
   while (Date.now() - started < LOCK_TIMEOUT_MS2) {
     try {
-      const token = (0, import_crypto13.randomUUID)();
+      const token = (0, import_crypto14.randomUUID)();
       const fd = (0, import_fs63.openSync)(
         getLockPath2(projectPath),
         import_fs63.constants.O_CREAT | import_fs63.constants.O_EXCL | import_fs63.constants.O_WRONLY,
@@ -27139,7 +27327,7 @@ function normalizePrompt(prompt) {
   return prompt.replace(/\s+/g, " ").trim().slice(0, 400);
 }
 function promptHash(prompt) {
-  return (0, import_crypto13.createHash)("sha1").update(prompt).digest("hex").slice(0, 12);
+  return (0, import_crypto14.createHash)("sha1").update(prompt).digest("hex").slice(0, 12);
 }
 function buildDescriptor(event, signal, context, tmuxSession, projectPath) {
   const scope = `${projectPath}::${tmuxSession}`;
@@ -27227,12 +27415,12 @@ function shouldCollapseOpenClawBurst(event, signal, context, tmuxSession) {
     return shouldCollapse;
   });
 }
-var import_fs63, import_crypto13, import_path74, STATE_DIR, STATE_FILE2, LOCK_FILE, START_WINDOW_MS, PROMPT_WINDOW_MS, STOP_WINDOW_MS, STATE_TTL_MS, LOCK_TIMEOUT_MS2, LOCK_RETRY_MS2, LOCK_STALE_MS2, TERMINAL_STATE_SUPPRESSION_WINDOW_MS, SLEEP_ARRAY2, TERMINAL_KEYS;
+var import_fs63, import_crypto14, import_path74, STATE_DIR, STATE_FILE2, LOCK_FILE, START_WINDOW_MS, PROMPT_WINDOW_MS, STOP_WINDOW_MS, STATE_TTL_MS, LOCK_TIMEOUT_MS2, LOCK_RETRY_MS2, LOCK_STALE_MS2, TERMINAL_STATE_SUPPRESSION_WINDOW_MS, SLEEP_ARRAY2, TERMINAL_KEYS;
 var init_dedupe = __esm({
   "src/openclaw/dedupe.ts"() {
     "use strict";
     import_fs63 = require("fs");
-    import_crypto13 = require("crypto");
+    import_crypto14 = require("crypto");
     import_path74 = require("path");
     init_atomic_write();
     init_platform();
@@ -29168,7 +29356,7 @@ async function claimTask(taskId, workerName2, expectedVersion, deps) {
       if (v.claim) return { ok: false, error: "claim_conflict" };
       if (v.owner && v.owner !== workerName2) return { ok: false, error: "claim_conflict" };
     }
-    const claimToken = (0, import_crypto14.randomUUID)();
+    const claimToken = (0, import_crypto15.randomUUID)();
     const updated = {
       ...v,
       status: "in_progress",
@@ -29323,11 +29511,11 @@ async function listTasks(teamName, cwd2, deps) {
   tasks.sort((a, b) => Number(a.id) - Number(b.id));
   return tasks;
 }
-var import_crypto14, import_path81, import_fs65, import_promises6;
+var import_crypto15, import_path81, import_fs65, import_promises6;
 var init_tasks = __esm({
   "src/team/state/tasks.ts"() {
     "use strict";
-    import_crypto14 = require("crypto");
+    import_crypto15 = require("crypto");
     import_path81 = require("path");
     import_fs65 = require("fs");
     import_promises6 = require("fs/promises");
@@ -30364,7 +30552,7 @@ __export(events_exports, {
 });
 async function appendTeamEvent(teamName, event, cwd2) {
   const full = {
-    event_id: (0, import_crypto15.randomUUID)(),
+    event_id: (0, import_crypto16.randomUUID)(),
     team: teamName,
     created_at: (/* @__PURE__ */ new Date()).toISOString(),
     ...event
@@ -30435,11 +30623,11 @@ async function emitMonitorDerivedEvents(teamName, tasks, workers, previousSnapsh
     }
   }
 }
-var import_crypto15, import_path83, import_promises9, import_fs67;
+var import_crypto16, import_path83, import_promises9, import_fs67;
 var init_events = __esm({
   "src/team/events.ts"() {
     "use strict";
-    import_crypto15 = require("crypto");
+    import_crypto16 = require("crypto");
     import_path83 = require("path");
     import_promises9 = require("fs/promises");
     import_fs67 = require("fs");
@@ -31178,7 +31366,7 @@ function buildWorkerLaunchSpec(shellPath) {
   return { shell: "/bin/sh", rcFile: null };
 }
 function commandFingerprint(value) {
-  return (0, import_crypto16.createHash)("sha256").update(value).digest("hex").slice(0, 12);
+  return (0, import_crypto17.createHash)("sha256").update(value).digest("hex").slice(0, 12);
 }
 function redactWorkerStartCommandForLog(command) {
   return command.replace(/\b([A-Za-z_][A-Za-z0-9_]*)='[^']*'/g, "$1='<redacted>'").replace(/set "([A-Za-z_][A-Za-z0-9_]*)=[^"]*"/g, 'set "$1=<redacted>"').replace(/\$env:([A-Za-z_][A-Za-z0-9_]*)='[^']*'/g, "$env:$1='<redacted>'").replace(
@@ -32075,12 +32263,12 @@ async function killTeamSession(sessionName2, workerPaneIds, leaderPaneId, option
   } catch {
   }
 }
-var import_fs68, import_crypto16, import_child_process23, import_util9, import_path85, import_promises10, sleep4, execFileAsync5, TMUX_SESSION_PREFIX, SUPPORTED_POSIX_SHELLS, ZSH_CANDIDATES, BASH_CANDIDATES, DANGEROUS_LAUNCH_BINARY_CHARS;
+var import_fs68, import_crypto17, import_child_process23, import_util9, import_path85, import_promises10, sleep4, execFileAsync5, TMUX_SESSION_PREFIX, SUPPORTED_POSIX_SHELLS, ZSH_CANDIDATES, BASH_CANDIDATES, DANGEROUS_LAUNCH_BINARY_CHARS;
 var init_tmux_session = __esm({
   "src/team/tmux-session.ts"() {
     "use strict";
     import_fs68 = require("fs");
-    import_crypto16 = require("crypto");
+    import_crypto17 = require("crypto");
     import_child_process23 = require("child_process");
     import_util9 = require("util");
     import_path85 = require("path");
@@ -32498,7 +32686,7 @@ function normalizeDispatchRequest(teamName, raw, nowIso = (/* @__PURE__ */ new D
   if (typeof raw.trigger_message !== "string" || raw.trigger_message.trim() === "") return null;
   const status = isDispatchStatus(raw.status) ? raw.status : "pending";
   return {
-    request_id: typeof raw.request_id === "string" && raw.request_id.trim() !== "" ? raw.request_id : (0, import_crypto17.randomUUID)(),
+    request_id: typeof raw.request_id === "string" && raw.request_id.trim() !== "" ? raw.request_id : (0, import_crypto18.randomUUID)(),
     kind: raw.kind,
     team_name: teamName,
     to_worker: raw.to_worker,
@@ -32551,7 +32739,7 @@ async function enqueueDispatchRequest(teamName, requestInput, cwd2) {
     const request = normalizeDispatchRequest(
       teamName,
       {
-        request_id: (0, import_crypto17.randomUUID)(),
+        request_id: (0, import_crypto18.randomUUID)(),
         ...requestInput,
         status: "pending",
         attempt_count: 0,
@@ -32619,11 +32807,11 @@ async function markDispatchRequestDelivered(teamName, requestId, patch = {}, cwd
   if (current.status === "delivered") return current;
   return await transitionDispatchRequest(teamName, requestId, current.status, "delivered", patch, cwd2);
 }
-var import_crypto17, import_fs70, import_promises12, import_path88, OMC_DISPATCH_LOCK_TIMEOUT_ENV, DEFAULT_DISPATCH_LOCK_TIMEOUT_MS, MIN_DISPATCH_LOCK_TIMEOUT_MS, MAX_DISPATCH_LOCK_TIMEOUT_MS, DISPATCH_LOCK_INITIAL_POLL_MS, DISPATCH_LOCK_MAX_POLL_MS, LOCK_STALE_MS3;
+var import_crypto18, import_fs70, import_promises12, import_path88, OMC_DISPATCH_LOCK_TIMEOUT_ENV, DEFAULT_DISPATCH_LOCK_TIMEOUT_MS, MIN_DISPATCH_LOCK_TIMEOUT_MS, MAX_DISPATCH_LOCK_TIMEOUT_MS, DISPATCH_LOCK_INITIAL_POLL_MS, DISPATCH_LOCK_MAX_POLL_MS, LOCK_STALE_MS3;
 var init_dispatch_queue = __esm({
   "src/team/dispatch-queue.ts"() {
     "use strict";
-    import_crypto17 = require("crypto");
+    import_crypto18 = require("crypto");
     import_fs70 = require("fs");
     import_promises12 = require("fs/promises");
     import_path88 = require("path");
@@ -45022,7 +45210,7 @@ function createRateLimitedCacheEntry(source, data, pollIntervalMs, previousCount
 function getKeychainServiceName() {
   const configDir = process.env.CLAUDE_CONFIG_DIR;
   if (configDir) {
-    const hash = (0, import_crypto20.createHash)("sha256").update(configDir).digest("hex").slice(0, 8);
+    const hash = (0, import_crypto21.createHash)("sha256").update(configDir).digest("hex").slice(0, 8);
     return `Claude Code-credentials-${hash}`;
   }
   return "Claude Code-credentials";
@@ -45722,7 +45910,7 @@ async function getUsage() {
     return { rateLimits: null, error: "network" };
   }
 }
-var import_fs97, import_path116, import_child_process31, import_crypto20, import_os19, import_https3, CACHE_TTL_FAILURE_MS, CACHE_TTL_TRANSIENT_NETWORK_MS, MAX_RATE_LIMITED_BACKOFF_MS, API_TIMEOUT_MS2, MAX_STALE_DATA_MS, TOKEN_REFRESH_URL_HOSTNAME, USAGE_CACHE_LOCK_OPTS, TOKEN_REFRESH_URL_PATH, DEFAULT_OAUTH_CLIENT_ID, ZAI_UNIT_WEEK;
+var import_fs97, import_path116, import_child_process31, import_crypto21, import_os19, import_https3, CACHE_TTL_FAILURE_MS, CACHE_TTL_TRANSIENT_NETWORK_MS, MAX_RATE_LIMITED_BACKOFF_MS, API_TIMEOUT_MS2, MAX_STALE_DATA_MS, TOKEN_REFRESH_URL_HOSTNAME, USAGE_CACHE_LOCK_OPTS, TOKEN_REFRESH_URL_PATH, DEFAULT_OAUTH_CLIENT_ID, ZAI_UNIT_WEEK;
 var init_usage_api = __esm({
   "src/hud/usage-api.ts"() {
     "use strict";
@@ -45730,7 +45918,7 @@ var init_usage_api = __esm({
     init_config_dir();
     import_path116 = require("path");
     import_child_process31 = require("child_process");
-    import_crypto20 = require("crypto");
+    import_crypto21 = require("crypto");
     import_os19 = require("os");
     import_https3 = __toESM(require("https"), 1);
     init_ssrf_guard();
@@ -86332,6 +86520,11 @@ async function processKeywordDetector(input) {
   if (!promptText) {
     return { continue: true };
   }
+  try {
+    const { recordNikoflowUserPrompt: recordNikoflowUserPrompt2 } = await Promise.resolve().then(() => (init_nikoflow(), nikoflow_exports));
+    recordNikoflowUserPrompt2(resolveToWorktreeRoot(input.directory), input.sessionId);
+  } catch {
+  }
   if (isExplicitAskSlashInvocation(promptText)) {
     return { continue: true };
   }
@@ -87809,7 +88002,7 @@ var import_fs83 = require("fs");
 var import_path101 = require("path");
 
 // src/hooks/rules-injector/matcher.ts
-var import_crypto18 = require("crypto");
+var import_crypto19 = require("crypto");
 var import_path99 = require("path");
 
 // src/hooks/rules-injector/storage.ts
@@ -88485,7 +88678,7 @@ init_config_dir();
 init_atomic_write();
 
 // src/hooks/learner/auto-learner.ts
-var import_crypto19 = require("crypto");
+var import_crypto20 = require("crypto");
 
 // src/hooks/index.ts
 init_autopilot();
@@ -95189,7 +95382,7 @@ async function launchCommand(args) {
 
 // src/cli/interop.ts
 var import_child_process36 = require("child_process");
-var import_crypto21 = require("crypto");
+var import_crypto22 = require("crypto");
 init_tmux_utils();
 function readInteropRuntimeFlags(env2 = process.env) {
   const rawMode = (env2.OMX_OMC_INTEROP_MODE || "off").toLowerCase();
@@ -95247,7 +95440,7 @@ function launchInteropSession(cwd2 = process.cwd()) {
     console.error("Start tmux first: tmux new-session -s myproject");
     process.exit(1);
   }
-  const sessionId = `interop-${(0, import_crypto21.randomUUID)().split("-")[0]}`;
+  const sessionId = `interop-${(0, import_crypto22.randomUUID)().split("-")[0]}`;
   const _config = initInteropSession(sessionId, cwd2, hasCodex ? cwd2 : void 0);
   console.log(`Initializing interop session: ${sessionId}`);
   console.log(`Working directory: ${cwd2}`);

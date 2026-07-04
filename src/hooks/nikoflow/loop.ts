@@ -10,6 +10,7 @@
  * Phase gating + gates land in TSK-002+.
  */
 
+import { randomUUID } from "crypto";
 import {
   writeModeState,
   readModeState,
@@ -53,6 +54,17 @@ export interface NikoflowState {
   phase_index: number;
   /** Whether deep-tier property-based-testing obligation applies */
   pbt_enabled?: boolean;
+
+  // --- Gate correlation (TSK-003) ---
+  /** Correlation id the current gate's confirmation tag must carry. */
+  request_id?: string;
+  /** The phase (or "depth") the current request_id was minted for. */
+  awaiting_gate?: string;
+  /** When the current request_id was minted (ISO). */
+  gate_request_minted_at?: string;
+  /** Timestamp of the most recent real UserPromptSubmit (ISO). Used to prove a
+   *  human actually replied after a gate was requested (anti-self-approval). */
+  last_user_prompt_at?: string;
 }
 
 export interface NikoflowLoopOptions {
@@ -218,6 +230,86 @@ export function advanceNikoflowPhase(
     phase: complete ? null : state.phases[state.phase_index],
     complete,
   };
+}
+
+/**
+ * Ensure a correlation request_id exists for the given gate. Mints a fresh id
+ * (and records the mint time) whenever the gate changed or no id is set, so a
+ * confirmation tag left over from a previous gate can never satisfy a new one.
+ * Returns the active request_id, or null if state is missing.
+ */
+export function mintGateRequest(
+  directory: string,
+  gate: string,
+  sessionId?: string,
+): string | null {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return null;
+
+  if (state.awaiting_gate === gate && state.request_id) {
+    return state.request_id;
+  }
+
+  state.request_id = randomUUID();
+  state.awaiting_gate = gate;
+  state.gate_request_minted_at = new Date().toISOString();
+  return writeNikoflowState(directory, state, sessionId) ? state.request_id : null;
+}
+
+/**
+ * Force a fresh request_id + mint time for the current gate, even if the gate
+ * is unchanged. Used to invalidate a confirmation tag the model emitted BEFORE
+ * a real user turn: after rotation the stale tag no longer correlates, so the
+ * model must re-emit the tag only after the user has actually replied.
+ */
+export function rotateGateRequest(
+  directory: string,
+  gate: string,
+  sessionId?: string,
+): string | null {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return null;
+  state.request_id = randomUUID();
+  state.awaiting_gate = gate;
+  state.gate_request_minted_at = new Date().toISOString();
+  return writeNikoflowState(directory, state, sessionId) ? state.request_id : null;
+}
+
+/** Clear the current gate correlation (after a gate passes). */
+export function clearGateRequest(
+  directory: string,
+  sessionId?: string,
+): boolean {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state) return false;
+  delete state.request_id;
+  delete state.awaiting_gate;
+  delete state.gate_request_minted_at;
+  return writeNikoflowState(directory, state, sessionId);
+}
+
+/** Record a real UserPromptSubmit timestamp (anti-self-approval evidence). */
+export function recordNikoflowUserPrompt(
+  directory: string,
+  sessionId?: string,
+): boolean {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return false;
+  state.last_user_prompt_at = new Date().toISOString();
+  return writeNikoflowState(directory, state, sessionId);
+}
+
+/**
+ * Whether a real user prompt arrived AFTER the current gate request was minted.
+ * This is the load-bearing anti-self-approval check for human gates: the model
+ * cannot satisfy a human gate without an actual user turn in between.
+ */
+export function userRepliedAfterMint(state: NikoflowState): boolean {
+  if (!state.gate_request_minted_at || !state.last_user_prompt_at) return false;
+  const minted = new Date(state.gate_request_minted_at).getTime();
+  const replied = new Date(state.last_user_prompt_at).getTime();
+  if (!Number.isFinite(minted) || !Number.isFinite(replied)) return false;
+  return replied > minted;
 }
 
 /** Create a Nikoflow loop hook instance bound to a working directory. */

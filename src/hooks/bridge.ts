@@ -1455,6 +1455,17 @@ async function processKeywordDetector(input: HookInput): Promise<HookOutput> {
     return { continue: true };
   }
 
+  // Nikoflow anti-self-approval evidence: record that a real user turn happened
+  // so human gates can require a user reply AFTER the gate was requested. Placed
+  // before the /ask early-return so an /ask turn still counts as a real reply.
+  // Cheap no-op when nikoflow is inactive (recordNikoflowUserPrompt reads state).
+  try {
+    const { recordNikoflowUserPrompt } = await import("./nikoflow/index.js");
+    recordNikoflowUserPrompt(resolveToWorktreeRoot(input.directory), input.sessionId);
+  } catch {
+    /* best-effort */
+  }
+
   // `/ask <provider> ...` delegates the remainder of the prompt to an
   // external advisor. Do not interpret magic keywords inside that payload as
   // instructions for the current Claude Code session.

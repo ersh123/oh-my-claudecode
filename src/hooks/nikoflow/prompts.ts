@@ -15,10 +15,30 @@ const CANCEL_HINT =
   "`/oh-my-claudecode:cancel --force`.";
 
 /**
+ * Inject the correlation request-id into every <nikoflow-gate ...> tag in a
+ * prompt body so the model echoes an id the Stop hook will accept. Without a
+ * matching request-id the gate is ignored, so this is required, not cosmetic.
+ */
+function injectRequestId(body: string, requestId?: string): string {
+  if (!requestId) return body;
+  return body.replace(
+    /(<nikoflow-gate\b)([^>]*?)(>)/gi,
+    (_full, open, attrs, close) => `${open}${attrs} request-id="${requestId}"${close}`,
+  );
+}
+
+/**
  * Prompt shown while no depth tier has been chosen yet. Depth selection is the
  * first act of Grilling — propose a tier with justification and confirm.
  */
-export function getDepthSelectionPrompt(state: NikoflowState): string {
+export function getDepthSelectionPrompt(
+  state: NikoflowState,
+  requestId?: string,
+): string {
+  const gateTag = injectRequestId(
+    `<nikoflow-gate phase="depth" depth="tactical|standard|deep">CONFIRMED</nikoflow-gate>`,
+    requestId,
+  );
   return (
     `<nikoflow-continuation phase="grilling:depth" iteration="${state.iteration}">\n` +
     `NIKOFLOW — depth not yet chosen. Begin Grilling by sizing the task:\n` +
@@ -26,8 +46,8 @@ export function getDepthSelectionPrompt(state: NikoflowState): string {
     `- 🟡 standard — a new feature (Grilling → ADR → PRD → Ticketization → TDD → Verification).\n` +
     `- 🔴 deep — an architectural change (full cycle + property-based tests + evidence).\n` +
     `Propose the smallest tier that fits, with a one-line justification, and confirm it with the user.\n` +
-    `Once agreed, record it by emitting on its own line:\n` +
-    `<nikoflow-gate phase="depth" depth="tactical|standard|deep">CONFIRMED</nikoflow-gate>\n` +
+    `Once the user agrees, record it by emitting on its own line:\n` +
+    `${gateTag}\n` +
     `(the tag is only accepted after the user has actually replied — do not self-confirm).\n` +
     `${CANCEL_HINT}\n` +
     `</nikoflow-continuation>`
@@ -75,8 +95,13 @@ const PHASE_BODIES: Record<string, string> = {
 };
 
 /** Continuation prompt for a named phase. */
-export function getPhasePrompt(phase: string, state: NikoflowState): string {
-  const body = PHASE_BODIES[phase] ?? `Phase "${phase}". Continue the methodology.`;
+export function getPhasePrompt(
+  phase: string,
+  state: NikoflowState,
+  requestId?: string,
+): string {
+  const rawBody = PHASE_BODIES[phase] ?? `Phase "${phase}". Continue the methodology.`;
+  const body = injectRequestId(rawBody, requestId);
   const depth = state.depth ?? "undecided";
   return (
     `<nikoflow-continuation phase="${phase}" depth="${depth}" iteration="${state.iteration}">\n` +

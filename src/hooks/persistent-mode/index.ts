@@ -54,6 +54,14 @@ import {
   isNikoflowComplete,
   getDepthSelectionPrompt,
   getPhasePrompt,
+  setNikoflowDepth,
+  advanceNikoflowPhase,
+  mintGateRequest,
+  rotateGateRequest,
+  clearGateRequest,
+  userRepliedAfterMint,
+  detectNikoflowGate,
+  HUMAN_GATE_PHASES,
 } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, StopContext, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
@@ -938,10 +946,51 @@ function checkArchitectRejectionInTranscript(sessionId: string): { rejected: boo
  * clears the state. Phase-gate enforcement (per-phase advance conditions,
  * human gates, reviewer convergence) lands in TSK-002+.
  */
+/** Gates wired for auto-advance in TSK-003. execute/verify advance in TSK-005/006. */
+const NIKOFLOW_ADVANCING_GATES = new Set(['depth', 'interview', 'adr', 'prd', 'tickets']);
+
+/** Extract decoded text (assistant + user message text blocks) from a JSONL transcript tail. */
+function readNikoflowGateText(transcriptPath: string): string {
+  const parts: string[] = [];
+  for (const line of readTranscriptTailLines(transcriptPath)) {
+    if (!line.trim()) continue;
+    let entry: { message?: { content?: unknown } };
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const content = entry?.message?.content;
+    if (typeof content === 'string') {
+      parts.push(content);
+    } else if (Array.isArray(content)) {
+      for (const block of content) {
+        const b = block as { type?: unknown; text?: unknown };
+        if (b?.type === 'text' && typeof b.text === 'string') {
+          parts.push(b.text);
+        }
+      }
+    }
+  }
+  return parts.join('\n');
+}
+
+function nikoflowCompleteResult(iteration: number): PersistentModeResult {
+  return {
+    shouldBlock: true,
+    message:
+      `<nikoflow-continuation phase="complete" iteration="${iteration}">\n` +
+      `All Niko Flow phases have passed. Run \`/oh-my-claudecode:cancel\` to exit and clean up state.\n` +
+      `</nikoflow-continuation>`,
+    mode: 'nikoflow',
+  };
+}
+
 async function checkNikoflowLoop(
   sessionId?: string,
   directory?: string,
-  cancelInProgress?: boolean
+  cancelInProgress?: boolean,
+  transcriptPath?: string,
 ): Promise<PersistentModeResult | null> {
   const workingDir = resolveToWorktreeRoot(directory);
   const state = readNikoflowState(workingDir, sessionId);
@@ -961,27 +1010,77 @@ async function checkNikoflowLoop(
   // current iteration (and refreshes last_checked_at to keep the session live).
   const current = incrementNikoflowIteration(workingDir, sessionId) ?? state;
 
-  // Every phase has completed but state was not cleared — remind to cancel.
   if (isNikoflowComplete(current)) {
-    return {
-      shouldBlock: true,
-      message:
-        `<nikoflow-continuation phase="complete" iteration="${current.iteration}">\n` +
-        `All Niko Flow phases have passed. Run \`/oh-my-claudecode:cancel\` to exit and clean up state.\n` +
-        `</nikoflow-continuation>`,
-      mode: 'nikoflow',
-    };
+    return nikoflowCompleteResult(current.iteration);
   }
 
-  // No depth chosen yet → depth-selection (first act of Grilling).
+  // The active gate is "depth" until a tier is chosen, then the current phase.
   const phase = getCurrentPhase(current);
-  const message = phase
-    ? getPhasePrompt(phase, current)
-    : getDepthSelectionPrompt(current);
+  const gate = phase ?? 'depth';
+  const requestId = mintGateRequest(workingDir, gate, sessionId) ?? undefined;
 
+  // Gate satisfaction: a correlated confirmation tag in the transcript, plus —
+  // for human gates — proof that a real user turn arrived after the request was
+  // minted (the model cannot self-confirm a human gate).
+  if (
+    NIKOFLOW_ADVANCING_GATES.has(gate) &&
+    transcriptPath &&
+    existsSync(transcriptPath)
+  ) {
+    let gateText = '';
+    try {
+      gateText = readNikoflowGateText(transcriptPath);
+    } catch {
+      gateText = '';
+    }
+    const match = detectNikoflowGate(gateText, { phase: gate, requestId });
+    const isHumanGate = HUMAN_GATE_PHASES.has(gate);
+    const humanOk = !isHumanGate || userRepliedAfterMint(current);
+
+    if (match.matched && humanOk) {
+      if (gate === 'depth') {
+        if (match.depth) {
+          setNikoflowDepth(workingDir, match.depth, sessionId);
+        }
+      } else {
+        advanceNikoflowPhase(workingDir, sessionId);
+      }
+      clearGateRequest(workingDir, sessionId);
+
+      // Emit the NEXT gate's prompt in the same block so the flow keeps moving.
+      const next = readNikoflowState(workingDir, sessionId) ?? current;
+      if (isNikoflowComplete(next)) {
+        return nikoflowCompleteResult(next.iteration);
+      }
+      const nextPhase = getCurrentPhase(next);
+      const nextGate = nextPhase ?? 'depth';
+      const nextRid = mintGateRequest(workingDir, nextGate, sessionId) ?? undefined;
+      return {
+        shouldBlock: true,
+        message: nextPhase
+          ? getPhasePrompt(nextPhase, next, nextRid)
+          : getDepthSelectionPrompt(next, nextRid),
+        mode: 'nikoflow',
+      };
+    }
+
+    // A correlated tag emitted BEFORE a real user turn is a self-approval
+    // attempt. Rotate the request-id so the premature tag goes stale — the
+    // model must re-emit only after the user has actually replied.
+    if (match.matched && isHumanGate && !humanOk) {
+      rotateGateRequest(workingDir, gate, sessionId);
+    }
+  }
+
+  // Gate not satisfied → block with the current gate's prompt (carrying the
+  // current request-id, which may have just been rotated above).
+  const blockState = readNikoflowState(workingDir, sessionId) ?? current;
+  const blockRid = blockState.request_id;
   return {
     shouldBlock: true,
-    message,
+    message: phase
+      ? getPhasePrompt(phase, blockState, blockRid)
+      : getDepthSelectionPrompt(blockState, blockRid),
     mode: 'nikoflow',
   };
 }
@@ -2359,7 +2458,8 @@ async function resolvePersistentModeBlock(
 
   // Priority 1.5: Nikoflow (phase-gated methodology loop, sibling of ralph)
   if (!tombstonedWorkflowModes.has('nikoflow') && isModeActive('nikoflow', workingDir, sessionId)) {
-    const nikoflowResult = await checkNikoflowLoop(sessionId, workingDir, cancelInProgress);
+    const nikoflowTranscript = stopContext?.transcript_path ?? stopContext?.transcriptPath;
+    const nikoflowResult = await checkNikoflowLoop(sessionId, workingDir, cancelInProgress, nikoflowTranscript);
     if (nikoflowResult) {
       return nikoflowResult;
     }

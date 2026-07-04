@@ -25,6 +25,13 @@ export {
   setNikoflowDepth,
   advanceNikoflowPhase,
 
+  // Gate correlation (TSK-003)
+  mintGateRequest,
+  rotateGateRequest,
+  clearGateRequest,
+  recordNikoflowUserPrompt,
+  userRepliedAfterMint,
+
   // Constants
   NIKOFLOW_DEPTHS,
   NIKOFLOW_PHASES,
@@ -40,3 +47,10 @@ export {
   getDepthSelectionPrompt,
   getPhasePrompt,
 } from "./prompts.js";
+
+export {
+  detectNikoflowGate,
+  NIKOFLOW_GATE_PAYLOADS,
+  HUMAN_GATE_PHASES,
+  type GateMatch,
+} from "./gates.js";
