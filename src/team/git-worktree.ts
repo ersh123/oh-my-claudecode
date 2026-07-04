@@ -694,12 +694,12 @@ export function cleanupTeamWorktrees(
   const entries = safety.entries;
   const removed: string[] = [];
   const preserved: Array<{ workerName: string; path: string; reason: string }> = [...safety.blockers];
-
-  if (preserved.length > 0) {
-    return { removed, preserved };
-  }
+  const blockedBackupPaths = new Set(preserved.map((blocker) => blocker.path));
 
   for (const entry of entries) {
+    if (blockedBackupPaths.has(getRootAgentsBackupPath(repoRoot, teamName, entry.workerName))) {
+      continue;
+    }
     try {
       removeWorkerWorktree(teamName, entry.workerName, repoRoot);
       removed.push(entry.workerName);
