@@ -262,3 +262,38 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Broader `.mjs`/template parity remains open; this iteration only closes delegated `/ask` provider suppression in the installed keyword hook.
 - Real Claude hook install smoke was not run; direct template hook probes covered the changed executable path.
+
+## 2026-07-05 — dogfood/mjs-parser-audit
+
+Candidates + WSJF:
+- TAKE: installed `post-tool-use-failure` template suppression parity. Value 6, risk reduction 7, urgency 5, complexity 2 => 9.0. The runtime hook suppressed optional OMX startup `Method not found` and broad `AGENTS.md` permission-denied scan noise, but the installed template wrote error state and injected recovery context for the same noise.
+- DEFER: `scripts/verify-deliverables.mjs` canonical team-stage fallback. Value 5, risk reduction 5, urgency 4, complexity 2 => 7.0. Drift is plausible, but the hook always suppresses output, so no user-visible runtime behavior was proven yet.
+- DROP: broad template/script byte sync. Value 8, risk reduction 7, urgency 5, complexity 8 => 2.5. Existing template/runtime differences include installer layout and dynamic imports; blanket sync is too risky for one reversible dogfood step.
+
+Changed:
+- `templates/hooks/post-tool-use-failure.mjs` now suppresses the same optional OMX startup read `Method not found` noise and broad filesystem-scan permission noise as `scripts/post-tool-use-failure.mjs`.
+- `src/__tests__/post-tool-use-failure.test.ts` now executes those suppression contracts against both runtime and installed template artifacts.
+- Updated generated `dist/__tests__/post-tool-use-failure.test.js` and map from `npm run build`.
+- Updated `ROADMAP.md` `.mjs parity` evidence without marking the area complete.
+
+Evidence:
+- RED direct probe before code changes: runtime reported `methodSuppress=true methodState=false scanSuppress=true scanState=false`; template reported `methodSuppress=false methodState=true scanSuppress=false scanState=true`.
+- RED regression: `npx vitest run src/__tests__/post-tool-use-failure.test.ts -t 'artifact' --reporter=verbose` failed 2/4 before the template fix, only on the template artifact cases.
+- GREEN targeted: the same artifact command passed 4/4 after the template fix.
+- GREEN affected suite: `npx vitest run src/__tests__/post-tool-use-failure.test.ts --reporter=verbose` passed 19/19.
+- Direct parity probe after fix: runtime and template both reported `methodSuppress=true methodState=false scanSuppress=true scanState=false`.
+- Build: `npm run build` exited 0.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 0 failing test(s) match test-baseline.json`.
+- Baseline JSON confirms `numTotalTests=10238`, `numPassedTests=10231`, `numFailedTests=0`, and no failed assertions.
+- Generated truth: `git status --porcelain dist/ bridge/cli.cjs bridge/mcp-server.cjs bridge/team-mcp.cjs bridge/runtime-cli.cjs bridge/team.js` showed only expected generated `dist/__tests__/post-tool-use-failure.test.js` and map changes.
+- Format scan: `git diff --check` produced no output.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The runtime hook was already correct; only the install template lacked two suppression helpers and early exits. The test now executes both executable artifacts, so the installed path is pinned directly.
+> No real failure suppression was broadened beyond the runtime's existing predicates, and actionable errors still use the existing state/write path.
+
+Remaining risk:
+- Broader `.mjs`/template parity remains open; this iteration only closes post-tool failure noise suppression in the installed template.
+- Real Claude hook install smoke was not run; direct template hook probes covered the changed executable path.
