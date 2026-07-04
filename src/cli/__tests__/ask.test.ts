@@ -492,15 +492,18 @@ describe('omc ask command', () => {
     const wd = mkdtempSync(join(tmpdir(), 'omc-ask-agent-prompt-'));
     try {
       const stubPath = writeAdvisorStub(wd);
+      const codexHome = join(wd, 'global-codex-home');
       mkdirSync(join(wd, '.omx'), { recursive: true });
       mkdirSync(join(wd, '.codex', 'prompts'), { recursive: true });
+      mkdirSync(join(codexHome, 'prompts'), { recursive: true });
       writeFileSync(join(wd, '.omx', 'setup-scope.json'), JSON.stringify({ scope: 'project' }), 'utf8');
       writeFileSync(join(wd, '.codex', 'prompts', 'executor.md'), 'ROLE HEADER\nFollow checks.', 'utf8');
+      writeFileSync(join(codexHome, 'prompts', 'executor.md'), 'GLOBAL ROLE HEADER', 'utf8');
 
       const result = runCli(
         ['ask', 'claude', '--agent-prompt=executor', '--prompt', 'ship feature'],
         wd,
-        { OMC_ASK_ADVISOR_SCRIPT: stubPath },
+        { CODEX_HOME: codexHome, OMC_ASK_ADVISOR_SCRIPT: stubPath },
       );
 
       expect(result.error).toBeUndefined();
@@ -509,6 +512,7 @@ describe('omc ask command', () => {
       const payload = JSON.parse(result.stdout);
       expect(payload.originalTask).toBe('ship feature');
       expect(payload.prompt).toContain('ROLE HEADER');
+      expect(payload.prompt).not.toContain('GLOBAL ROLE HEADER');
       expect(payload.prompt).toContain('ship feature');
     } finally {
       rmSync(wd, { recursive: true, force: true });

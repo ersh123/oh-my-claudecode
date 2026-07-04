@@ -38,3 +38,36 @@ Reviewer verdict (verbatim, Codex-only local refute pass):
 Remaining risk:
 - Five current failures remain accepted by baseline and should be shrunk in later iterations.
 - Full suite stdout is noisy from existing git/tmux fixtures, but the JSON set-diff is now the source of truth.
+
+## 2026-07-04 — dogfood/ask-baseline-shrink
+
+Candidates + WSJF:
+- TAKE: shrink `test-baseline.json` by fixing `omc ask --agent-prompt` prompt-dir precedence. Value 8, risk reduction 8, urgency 7, complexity 2 => 11.5. Deterministic unit failure, advisor-facing behavior, no tmux/perf flake.
+- DEFER: tmux `spawnWorkerInPane` baseline failures. Value 7, risk reduction 8, urgency 6, complexity 7 => 3.0. Needs separate terminal-delivery root-cause pass.
+- DEFER: `subagent-lock` perf baseline. Value 5, risk reduction 6, urgency 4, complexity 8 => 1.9. Likely timing/env-sensitive.
+
+Changed:
+- `resolveAskPromptsDir` now lets explicit project/project-local `.omx/setup-scope.json` choose `.codex/prompts` before falling back to global `CODEX_HOME/prompts`.
+- The `--agent-prompt` CLI test now creates a conflicting `CODEX_HOME` prompt and asserts the project prompt wins.
+- Removed the fixed ask failure from `test-baseline.json`, shrinking the known-failure set from 5 to 4.
+
+Evidence:
+- RED: `npx vitest run src/cli/__tests__/ask.test.ts -t 'loads --agent-prompt role from resolved prompts dir'` failed because payload loaded global executor prompt instead of `ROLE HEADER`.
+- GREEN targeted: same command passed 1/1 after the precedence fix.
+- GREEN ask suite: `npx vitest run src/cli/__tests__/ask.test.ts` passed 42/42.
+- Build: `npm run build` exited 0 in the dogfood worktree.
+- SQLite env repair: local `npm ci --ignore-scripts` left `better-sqlite3` without a native binding; `npm rebuild better-sqlite3` restored it, verified by `better-sqlite3 binding ok`.
+- SQLite smoke: `npx vitest run src/__tests__/job-state-db.test.ts src/__tests__/job-management-sqlite.test.ts src/__tests__/pre-compact-cwd.test.ts` passed 93/93.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 4 failing test(s) match test-baseline.json`.
+- Dist truth: build changed only `bridge/cli.cjs`, `dist/cli/**`, source, and `test-baseline.json`; `bridge/mcp-server.cjs`, `bridge/team-mcp.cjs`, `bridge/runtime-cli.cjs`, and `bridge/team.js` stayed clean after local-node_modules rebuild.
+- Secret/format scan: `git diff --check` and diff scan for key/token/password/private-key patterns produced no output.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The behavior change is limited to prompt directory precedence: project/project-local scope now wins over inherited global `CODEX_HOME`, while global fallback remains intact when no project scope exists.
+> The regression test is deterministic because it creates both project and global executor prompts and asserts the global prompt is absent.
+> Generated artifacts are in the same diff and match the source change; no unrelated bridge path-comment churn remains.
+
+Remaining risk:
+- Four accepted baseline failures remain: auto-update reconciliation, subagent-lock latency, and two tmux spawnWorkerInPane cases.
+- Full-suite stdout is still noisy from existing git/tmux fixtures; the JSON baseline set remains the source of truth.

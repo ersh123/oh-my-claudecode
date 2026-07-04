@@ -96382,10 +96382,6 @@ function getPackageRoot() {
   }
 }
 function resolveAskPromptsDir(cwd2, packageRoot, env2 = process.env) {
-  const codexHomeOverride = env2.CODEX_HOME?.trim();
-  if (codexHomeOverride) {
-    return (0, import_path126.join)(codexHomeOverride, "prompts");
-  }
   try {
     const scopePath = (0, import_path126.join)(cwd2, ".omx", "setup-scope.json");
     if ((0, import_fs107.existsSync)(scopePath)) {
@@ -96395,6 +96391,10 @@ function resolveAskPromptsDir(cwd2, packageRoot, env2 = process.env) {
       }
     }
   } catch {
+  }
+  const codexHomeOverride = env2.CODEX_HOME?.trim();
+  if (codexHomeOverride) {
+    return (0, import_path126.join)(codexHomeOverride, "prompts");
   }
   return (0, import_path126.join)(packageRoot, "agents");
 }
