@@ -101,3 +101,31 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Three accepted baseline failures remain: subagent-lock latency and two tmux spawnWorkerInPane cases.
 - Full-suite stdout remains noisy and briefly printed an intermediate outside-baseline warning before the JSON baseline concluded cleanly; the final JSON set and `baseline ok: 3` are the source of truth.
+
+## 2026-07-05 — dogfood/tmux-spawn-baseline-shrink
+
+Candidates + WSJF:
+- TAKE: shrink `test-baseline.json` by fixing `spawnWorkerInPane` test shell-env leakage. Value 7, risk reduction 8, urgency 7, complexity 1 => 22.0. Two deterministic failures, one shared test setup, no runtime behavior change needed.
+- DEFER: `subagent-lock` perf baseline. Value 5, risk reduction 6, urgency 4, complexity 8 => 1.9. Timing-sensitive and lower confidence.
+
+Changed:
+- `tmux-session.spawn.test.ts` now stubs `SHELL=/bin/bash` and `HOME=/home/tester` in `beforeEach`, matching its assertions for the non-fish `exec "$@"` launch form.
+- Removed both fixed `spawnWorkerInPane` failures from `test-baseline.json`, shrinking the known-failure set from 3 to 1.
+
+Evidence:
+- RED: `npx vitest run src/team/__tests__/tmux-session.spawn.test.ts -t 'argv-style launch|cmux worker command text'` failed because the host default fish shell generated `exec $argv`, while the tests asserted `exec "$@"`.
+- GREEN targeted: same targeted command passed after stubbing `SHELL`/`HOME`.
+- GREEN spawn suite: `npx vitest run src/team/__tests__/tmux-session.spawn.test.ts` passed 18/18.
+- Build: `npm run build` exited 0 and regenerated `dist/team/__tests__/tmux-session.spawn.test.js`.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 1 failing test(s) match test-baseline.json`.
+- Baseline JSON failure is now exactly: `subagent-lock benchmark sequential locked updates stay within Linux latency guardrails`.
+- Secret/format scan: `git diff --check` and diff scan for key/token/password/private-key patterns produced no output.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The fix is scoped to deterministic test setup. Runtime worker launch remains shell-aware: fish still uses `exec $argv`, bash/zsh still use `exec "$@"`.
+> The baseline shrink is justified by fresh targeted, file-level, build, and full-suite baseline evidence.
+
+Remaining risk:
+- One accepted baseline failure remains: `subagent-lock` Linux latency guardrail.
+- Full-suite stdout remains noisy from existing git/tmux fixtures; the final JSON set and `baseline ok: 1` are the source of truth.

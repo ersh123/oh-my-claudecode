@@ -125,6 +125,8 @@ describe('spawnWorkerInPane', () => {
         mockedCalls.cmuxFailOnce = [];
         mockedCalls.cmuxFailures = [];
         vi.unstubAllEnvs();
+        vi.stubEnv('SHELL', '/bin/bash');
+        vi.stubEnv('HOME', '/home/tester');
         mockedCalls.enterSubmitsCommand = true;
         mockedCalls.submitClearsAfterCaptures = 0;
         mockedCalls.delayedSubmitCapturesRemaining = null;
