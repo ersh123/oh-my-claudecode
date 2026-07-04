@@ -19,7 +19,7 @@ import { readUltraworkState, writeUltraworkState, incrementReinforcement, deacti
 import { resolveToWorktreeRoot, resolveSessionStatePath, resolveStatePath, getOmcRoot } from '../../lib/worktree-paths.js';
 import { readModeState, writeModeState } from '../../lib/mode-state-io.js';
 import { readRalphState, writeRalphState, incrementRalphIteration, clearRalphState, findPrdPath, getPrdCompletionStatus, getRalphContext, getStory, markStoryIncomplete, markStoryArchitectVerified, readVerificationState, startVerification, recordArchitectFeedback, getArchitectVerificationPrompt, getArchitectRejectionContinuationPrompt, detectArchitectApproval, detectArchitectRejection, clearVerificationState, } from '../ralph/index.js';
-import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, advanceNikoflowPhase, mintGateRequest, rotateGateRequest, clearGateRequest, userRepliedAfterMint, detectNikoflowGate, HUMAN_GATE_PHASES, readTickets, validateTicketDag, lintTicketsFile, } from '../nikoflow/index.js';
+import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, advanceNikoflowPhase, mintGateRequest, rotateGateRequest, clearGateRequest, userRepliedAfterMint, detectNikoflowGate, HUMAN_GATE_PHASES, readTickets, validateTicketDag, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
 import { isAutopilotActive } from '../autopilot/index.js';
@@ -765,6 +765,52 @@ function readNikoflowGateText(transcriptPath) {
     }
     return parts.join('\n');
 }
+/**
+ * Detect a ticket-done gate that was authored by an INDEPENDENT reviewer, not
+ * the main thread: the TICKET_DONE tag must appear inside the tool_result of a
+ * Task/Agent (reviewer subagent) tool_use, correlated by the ticket-scoped
+ * request-id. Mirrors ralph's checkReviewerAuthoredApprovalInMessages so the
+ * model cannot self-approve its own ticket by echoing the tag.
+ */
+function nikoflowReviewerAuthoredTicketDone(transcriptPath, ticketGate, requestId) {
+    const reviewerToolUses = new Set();
+    for (const line of readTranscriptTailLines(transcriptPath)) {
+        if (!line.trim())
+            continue;
+        let entry;
+        try {
+            entry = JSON.parse(line);
+        }
+        catch {
+            continue;
+        }
+        const content = entry.message?.content;
+        if (!Array.isArray(content))
+            continue;
+        for (const block of content) {
+            if (block?.type === 'tool_use' && block.id && block.name) {
+                if (REVIEWER_TASK_TOOL_NAMES.has(block.name)) {
+                    reviewerToolUses.add(block.id);
+                }
+                continue;
+            }
+            if (block?.type !== 'tool_result' || !block.tool_use_id)
+                continue;
+            if (!reviewerToolUses.has(block.tool_use_id))
+                continue;
+            const reviewerOutput = extractTranscriptText(block.content);
+            if (reviewerOutput &&
+                detectNikoflowGate(reviewerOutput, {
+                    phase: ticketGate,
+                    requestId,
+                    expectedPayloads: ['TICKET_DONE'],
+                }).matched) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 function nikoflowCompleteResult(iteration) {
     return {
         shouldBlock: true,
@@ -773,6 +819,90 @@ function nikoflowCompleteResult(iteration) {
             `</nikoflow-continuation>`,
         mode: 'nikoflow',
     };
+}
+/**
+ * Block-with-error helper for the execute phase. Emits a plain error prompt with
+ * NO gate tag and does NOT mint a gate — so it neither teaches the model a dead
+ * tag nor churns the ticket's awaiting_gate / request-id.
+ */
+function nikoflowExecuteError(current, error) {
+    return {
+        shouldBlock: true,
+        message: `<nikoflow-continuation phase="execute" iteration="${current.iteration}">\n` +
+            `Execute phase is blocked: ${error}\n` +
+            `Fix it, then continue driving the ticket loop.\n` +
+            `</nikoflow-continuation>`,
+        mode: 'nikoflow',
+    };
+}
+/** Advance out of execute → verify (or complete) and emit the next prompt. */
+function nikoflowAdvanceFromExecute(workingDir, sessionId, current) {
+    advanceNikoflowPhase(workingDir, sessionId);
+    clearGateRequest(workingDir, sessionId);
+    const next = readNikoflowState(workingDir, sessionId) ?? current;
+    if (isNikoflowComplete(next))
+        return nikoflowCompleteResult(next.iteration);
+    const nextPhase = getCurrentPhase(next);
+    const nextRid = mintGateRequest(workingDir, nextPhase ?? 'depth', sessionId) ?? undefined;
+    return {
+        shouldBlock: true,
+        message: nextPhase
+            ? getPhasePrompt(nextPhase, next, nextRid)
+            : getDepthSelectionPrompt(next, nextRid),
+        mode: 'nikoflow',
+    };
+}
+/**
+ * Execute phase: drive tickets one at a time (red→green→review→done). Each ticket
+ * is gated by a reviewer-authored ticket-scoped tag; when all are done, advance
+ * to verify. Re-validates the DAG every iteration and surfaces deadlock as an
+ * error (never silent completion) — per TSK-004 carry-forward.
+ */
+export function handleNikoflowExecute(workingDir, sessionId, current, transcriptPath) {
+    // Lint first so "missing" vs "invalid JSON" vs shape problems are distinguished.
+    const lint = lintTicketsFile(workingDir, sessionId);
+    if (lint.length > 0) {
+        return nikoflowExecuteError(current, `tickets.json problem(s): ${lint.join('; ')}`);
+    }
+    const tickets = readTickets(workingDir, sessionId);
+    if (!tickets) {
+        return nikoflowExecuteError(current, 'tickets.json could not be read.');
+    }
+    const dag = validateTicketDag(tickets);
+    if (!dag.ok) {
+        return nikoflowExecuteError(current, `invalid ticket DAG: ${dag.errors.join('; ')}`);
+    }
+    if (allTicketsDone(tickets)) {
+        return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
+    }
+    if (isTicketDeadlock(tickets)) {
+        return nikoflowExecuteError(current, 'ticket deadlock: no ticket is startable yet not all are done — a blocker chain or cycle was introduced. Fix blocked_by.');
+    }
+    const ticket = getNextTicket(tickets); // non-null: not all done and not deadlocked
+    const gate = `execute:${ticket.id}`;
+    const requestId = mintGateRequest(workingDir, gate, sessionId) ?? undefined;
+    // The ticket advances ONLY on a reviewer-subagent-authored TICKET_DONE tag.
+    if (transcriptPath &&
+        existsSync(transcriptPath) &&
+        nikoflowReviewerAuthoredTicketDone(transcriptPath, gate, requestId)) {
+        if (!markTicketStatus(workingDir, ticket.id, 'done', sessionId)) {
+            // Persistence failed — surface it instead of silently re-looping forever.
+            return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
+        }
+        clearGateRequest(workingDir, sessionId);
+        const after = readTickets(workingDir, sessionId);
+        if (!after || allTicketsDone(after)) {
+            return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
+        }
+        const nextTicket = getNextTicket(after);
+        if (nextTicket) {
+            const nrid = mintGateRequest(workingDir, `execute:${nextTicket.id}`, sessionId) ?? undefined;
+            return { shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid), mode: 'nikoflow' };
+        }
+        // Completed a ticket but nothing is startable and not all done → deadlock.
+        return nikoflowExecuteError(current, 'ticket deadlock after completing a ticket — check blocked_by.');
+    }
+    return { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId), mode: 'nikoflow' };
 }
 async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcriptPath) {
     const workingDir = resolveToWorktreeRoot(directory);
@@ -794,6 +924,10 @@ async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcr
     }
     // The active gate is "depth" until a tier is chosen, then the current phase.
     const phase = getCurrentPhase(current);
+    // Execute phase runs its own per-ticket loop (red→green→review→done).
+    if (phase === 'execute') {
+        return handleNikoflowExecute(workingDir, sessionId, current, transcriptPath);
+    }
     const gate = phase ?? 'depth';
     const requestId = mintGateRequest(workingDir, gate, sessionId) ?? undefined;
     // Gate satisfaction: a correlated confirmation tag in the transcript, plus —

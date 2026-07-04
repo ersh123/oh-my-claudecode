@@ -295,3 +295,34 @@ export function getNextTicket(
 export function allTicketsDone(file: NikoflowTicketsFile): boolean {
   return file.tickets.length > 0 && file.tickets.every((t) => t.status === "done");
 }
+
+/**
+ * Set a ticket's status (read-modify-write). Optionally merge evidence.
+ * Returns false if the file or ticket is missing.
+ */
+export function markTicketStatus(
+  directory: string,
+  ticketId: string,
+  status: TicketStatus,
+  sessionId?: string,
+  evidence?: Record<string, unknown>,
+): boolean {
+  const file = readTickets(directory, sessionId);
+  if (!file) return false;
+  const ticket = file.tickets.find((t) => t.id === ticketId);
+  if (!ticket) return false;
+  ticket.status = status;
+  if (evidence) {
+    ticket.evidence = { ...(ticket.evidence ?? {}), ...evidence };
+  }
+  return writeTickets(directory, file, sessionId);
+}
+
+/**
+ * Execute-phase health: is the ticket graph currently deadlocked — i.e. not all
+ * done, yet no ticket is startable (every remaining ticket is blocked). This is
+ * distinct from "all done" and must be surfaced as an error, not completion.
+ */
+export function isTicketDeadlock(file: NikoflowTicketsFile): boolean {
+  return !allTicketsDone(file) && getNextTicket(file) === null;
+}

@@ -80,12 +80,9 @@ const PHASE_BODIES: Record<string, string> = {
     `the user approves it. GATE — emit after approval:\n` +
     `<nikoflow-gate phase="tickets">APPROVED</nikoflow-gate>`,
   execute:
-    `Phase 🔴🟢♻️ EXECUTE (TDD). Work tickets in dependency order. For each: test only at the ` +
-    `pre-agreed seams, RED before GREEN (failing test first, then minimum code to pass), one ` +
-    `vertical slice at a time; refactor belongs to review. Deep tier: add property-based tests ` +
-    `per ticket touching pure logic. Each finished ticket needs an independent reviewer approval. ` +
-    `GATE — emit after every ticket is done + reviewer-approved:\n` +
-    `<nikoflow-gate phase="execute">ALL_TICKETS_APPROVED</nikoflow-gate>`,
+    `Phase 🔴🟢♻️ EXECUTE (TDD). Work tickets in dependency order, one vertical slice at a time. ` +
+    `The loop drives you ticket-by-ticket with a per-ticket prompt and an independent reviewer ` +
+    `gate; the phase advances automatically once every ticket is reviewer-approved and done.`,
   verify:
     `Phase ✅ VERIFICATION. Spawn a fresh, context-isolated independent reviewer; iterate ` +
     `fix → re-review until local validation (tests/lint/build) is green AND the reviewer scores ` +
@@ -93,6 +90,46 @@ const PHASE_BODIES: Record<string, string> = {
     `score while validation is red. GATE — emit after the reviewer passes on green validation:\n` +
     `<nikoflow-gate phase="verify">VERIFIED</nikoflow-gate>`,
 };
+
+/**
+ * Per-ticket execution prompt (Execute phase). Drives red→green→review for one
+ * ticket and names the ticket-scoped gate the reviewer's approval must carry.
+ */
+export function getExecuteTicketPrompt(
+  ticket: { id: string; title: string; acceptance: string[]; self_verify?: string; pbt_required?: boolean },
+  state: NikoflowState,
+  requestId?: string,
+): string {
+  const gate = `execute:${ticket.id}`;
+  const gateTag = injectRequestId(
+    `<nikoflow-gate phase="${gate}">TICKET_DONE</nikoflow-gate>`,
+    requestId,
+  );
+  const ac = ticket.acceptance.length
+    ? ticket.acceptance.map((c, i) => `  ${i + 1}. ${c}`).join("\n")
+    : "  (none listed — derive from the PRD story)";
+  const pbtLine = ticket.pbt_required
+    ? "\nThis ticket owes property-based tests (deep tier): after GREEN, add ≥1 real property (invariant/round-trip/metamorphic) before review."
+    : "";
+  return (
+    `<nikoflow-continuation phase="execute" ticket="${ticket.id}" iteration="${state.iteration}">\n` +
+    `🔴🟢♻️ TDD on ticket ${ticket.id} — ${ticket.title}.\n` +
+    `Acceptance criteria:\n${ac}\n` +
+    `Work this ONE vertical slice: RED (a failing test at a pre-agreed seam) → GREEN ` +
+    `(minimum code to pass) → then review. Do not start another ticket until this one is done.` +
+    `${pbtLine}\n` +
+    (ticket.self_verify ? `Self-verify: ${ticket.self_verify}\n` : "") +
+    `When the slice is green, spawn a FRESH, context-isolated reviewer subagent (Task/Agent) to ` +
+    `check it against the acceptance criteria and repo standards. Pass the reviewer this ` +
+    `request-id and instruct it to emit — in ITS OWN final output — the ticket gate on its own ` +
+    `line ONLY if it approves on green validation:\n` +
+    `${gateTag}\n` +
+    `The gate is accepted only from the reviewer subagent's output, never from your own text — ` +
+    `emitting it yourself will not advance the ticket.\n` +
+    `${CANCEL_HINT}\n` +
+    `</nikoflow-continuation>`
+  );
+}
 
 /** Continuation prompt for a named phase. */
 export function getPhasePrompt(

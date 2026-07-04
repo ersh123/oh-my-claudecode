@@ -19889,6 +19889,26 @@ ${gateTag}
 ${CANCEL_HINT}
 </nikoflow-continuation>`;
 }
+function getExecuteTicketPrompt(ticket, state, requestId) {
+  const gate = `execute:${ticket.id}`;
+  const gateTag = injectRequestId(
+    `<nikoflow-gate phase="${gate}">TICKET_DONE</nikoflow-gate>`,
+    requestId
+  );
+  const ac = ticket.acceptance.length ? ticket.acceptance.map((c, i) => `  ${i + 1}. ${c}`).join("\n") : "  (none listed \u2014 derive from the PRD story)";
+  const pbtLine = ticket.pbt_required ? "\nThis ticket owes property-based tests (deep tier): after GREEN, add \u22651 real property (invariant/round-trip/metamorphic) before review." : "";
+  return `<nikoflow-continuation phase="execute" ticket="${ticket.id}" iteration="${state.iteration}">
+\u{1F534}\u{1F7E2}\u267B\uFE0F TDD on ticket ${ticket.id} \u2014 ${ticket.title}.
+Acceptance criteria:
+${ac}
+Work this ONE vertical slice: RED (a failing test at a pre-agreed seam) \u2192 GREEN (minimum code to pass) \u2192 then review. Do not start another ticket until this one is done.${pbtLine}
+` + (ticket.self_verify ? `Self-verify: ${ticket.self_verify}
+` : "") + `When the slice is green, spawn a FRESH, context-isolated reviewer subagent (Task/Agent) to check it against the acceptance criteria and repo standards. Pass the reviewer this request-id and instruct it to emit \u2014 in ITS OWN final output \u2014 the ticket gate on its own line ONLY if it approves on green validation:
+${gateTag}
+The gate is accepted only from the reviewer subagent's output, never from your own text \u2014 emitting it yourself will not advance the ticket.
+${CANCEL_HINT}
+</nikoflow-continuation>`;
+}
 function getPhasePrompt2(phase, state, requestId) {
   const rawBody = PHASE_BODIES[phase] ?? `Phase "${phase}". Continue the methodology.`;
   const body = injectRequestId(rawBody, requestId);
@@ -19913,8 +19933,7 @@ var init_prompts2 = __esm({
 <nikoflow-gate phase="prd">SEAMS_CONFIRMED</nikoflow-gate>`,
       tickets: `Phase \u{1F3AB} TICKETIZATION. Split the PRD into atomic vertical-slice tickets (TSK-001\u2026) that each cut through all layers and are demoable on their own, with acceptance criteria + blocked-by dependencies + a self-verification step. Present the breakdown and iterate until the user approves it. GATE \u2014 emit after approval:
 <nikoflow-gate phase="tickets">APPROVED</nikoflow-gate>`,
-      execute: `Phase \u{1F534}\u{1F7E2}\u267B\uFE0F EXECUTE (TDD). Work tickets in dependency order. For each: test only at the pre-agreed seams, RED before GREEN (failing test first, then minimum code to pass), one vertical slice at a time; refactor belongs to review. Deep tier: add property-based tests per ticket touching pure logic. Each finished ticket needs an independent reviewer approval. GATE \u2014 emit after every ticket is done + reviewer-approved:
-<nikoflow-gate phase="execute">ALL_TICKETS_APPROVED</nikoflow-gate>`,
+      execute: `Phase \u{1F534}\u{1F7E2}\u267B\uFE0F EXECUTE (TDD). Work tickets in dependency order, one vertical slice at a time. The loop drives you ticket-by-ticket with a per-ticket prompt and an independent reviewer gate; the phase advances automatically once every ticket is reviewer-approved and done.`,
       verify: `Phase \u2705 VERIFICATION. Spawn a fresh, context-isolated independent reviewer; iterate fix \u2192 re-review until local validation (tests/lint/build) is green AND the reviewer scores the changed surface \u2265 9.5/10 or reports no actionable findings. Never accept a passing score while validation is red. GATE \u2014 emit after the reviewer passes on green validation:
 <nikoflow-gate phase="verify">VERIFIED</nikoflow-gate>`
     };
@@ -19930,7 +19949,7 @@ function stripInjectedExamples(text) {
   return text.replace(/<nikoflow-continuation\b[\s\S]*?<\/nikoflow-continuation>/gi, " ").replace(/```[\s\S]*?```/g, " ").replace(/~~~[\s\S]*?~~~/g, " ").replace(/`<nikoflow-gate\b[\s\S]*?<\/nikoflow-gate>`/gi, " ");
 }
 function detectNikoflowGate(text, opts) {
-  const expectedPayloads = NIKOFLOW_GATE_PAYLOADS[opts.phase];
+  const expectedPayloads = opts.expectedPayloads ?? NIKOFLOW_GATE_PAYLOADS[opts.phase];
   if (!expectedPayloads) return { matched: false };
   const sanitized = stripInjectedExamples(text);
   const tagRe = /<nikoflow-gate\b([^>]*)>([\s\S]*?)<\/nikoflow-gate>/gi;
@@ -19967,7 +19986,9 @@ var init_gates = __esm({
       adr: ["RECORDED", "SKIPPED"],
       prd: ["SEAMS_CONFIRMED"],
       tickets: ["APPROVED"],
-      execute: ["ALL_TICKETS_APPROVED"],
+      // execute advances per-ticket via dynamic "execute:TSK-NNN" gates (payload
+      // TICKET_DONE, passed explicitly) and auto-advances when all tickets are done —
+      // there is no phase-level "execute" gate.
       verify: ["VERIFIED"]
     };
     HUMAN_GATE_PHASES = /* @__PURE__ */ new Set([
@@ -20154,6 +20175,20 @@ function getNextTicket(file) {
 function allTicketsDone(file) {
   return file.tickets.length > 0 && file.tickets.every((t) => t.status === "done");
 }
+function markTicketStatus(directory, ticketId, status, sessionId, evidence) {
+  const file = readTickets(directory, sessionId);
+  if (!file) return false;
+  const ticket = file.tickets.find((t) => t.id === ticketId);
+  if (!ticket) return false;
+  ticket.status = status;
+  if (evidence) {
+    ticket.evidence = { ...ticket.evidence ?? {}, ...evidence };
+  }
+  return writeTickets(directory, file, sessionId);
+}
+function isTicketDeadlock(file) {
+  return !allTicketsDone(file) && getNextTicket(file) === null;
+}
 var import_fs55, import_path64, TICKET_STATUSES, TICKETS_STATE_KEY;
 var init_tickets = __esm({
   "src/hooks/nikoflow/tickets.ts"() {
@@ -20189,12 +20224,15 @@ __export(nikoflow_exports, {
   detectNikoflowGate: () => detectNikoflowGate,
   getCurrentPhase: () => getCurrentPhase,
   getDepthSelectionPrompt: () => getDepthSelectionPrompt,
+  getExecuteTicketPrompt: () => getExecuteTicketPrompt,
   getNextTicket: () => getNextTicket,
   getPhasePrompt: () => getPhasePrompt2,
   incrementNikoflowIteration: () => incrementNikoflowIteration,
   isNikoflowComplete: () => isNikoflowComplete,
+  isTicketDeadlock: () => isTicketDeadlock,
   lintTicketsFile: () => lintTicketsFile,
   lintTicketsRaw: () => lintTicketsRaw,
+  markTicketStatus: () => markTicketStatus,
   materializePhases: () => materializePhases,
   mintGateRequest: () => mintGateRequest,
   normalizeTicketsFile: () => normalizeTicketsFile,
@@ -20216,6 +20254,7 @@ var init_nikoflow = __esm({
     init_prompts2();
     init_gates();
     init_tickets();
+    init_prompts2();
   }
 });
 
@@ -20243,6 +20282,7 @@ __export(persistent_mode_exports, {
   createHookOutput: () => createHookOutput,
   getIdleNotificationCooldownSeconds: () => getIdleNotificationCooldownSeconds,
   getToolErrorRetryGuidance: () => getToolErrorRetryGuidance,
+  handleNikoflowExecute: () => handleNikoflowExecute,
   hasPendingOwnedAsyncWork: () => hasPendingOwnedAsyncWork,
   readLastToolError: () => readLastToolError,
   recordIdleNotificationSent: () => recordIdleNotificationSent,
@@ -20812,6 +20852,39 @@ function readNikoflowGateText(transcriptPath) {
   }
   return parts.join("\n");
 }
+function nikoflowReviewerAuthoredTicketDone(transcriptPath, ticketGate, requestId) {
+  const reviewerToolUses = /* @__PURE__ */ new Set();
+  for (const line of readTranscriptTailLines(transcriptPath)) {
+    if (!line.trim()) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const content = entry.message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (block?.type === "tool_use" && block.id && block.name) {
+        if (REVIEWER_TASK_TOOL_NAMES.has(block.name)) {
+          reviewerToolUses.add(block.id);
+        }
+        continue;
+      }
+      if (block?.type !== "tool_result" || !block.tool_use_id) continue;
+      if (!reviewerToolUses.has(block.tool_use_id)) continue;
+      const reviewerOutput = extractTranscriptText(block.content);
+      if (reviewerOutput && detectNikoflowGate(reviewerOutput, {
+        phase: ticketGate,
+        requestId,
+        expectedPayloads: ["TICKET_DONE"]
+      }).matched) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 function nikoflowCompleteResult(iteration) {
   return {
     shouldBlock: true,
@@ -20820,6 +20893,69 @@ All Niko Flow phases have passed. Run \`/oh-my-claudecode:cancel\` to exit and c
 </nikoflow-continuation>`,
     mode: "nikoflow"
   };
+}
+function nikoflowExecuteError(current, error2) {
+  return {
+    shouldBlock: true,
+    message: `<nikoflow-continuation phase="execute" iteration="${current.iteration}">
+Execute phase is blocked: ${error2}
+Fix it, then continue driving the ticket loop.
+</nikoflow-continuation>`,
+    mode: "nikoflow"
+  };
+}
+function nikoflowAdvanceFromExecute(workingDir, sessionId, current) {
+  advanceNikoflowPhase(workingDir, sessionId);
+  clearGateRequest(workingDir, sessionId);
+  const next = readNikoflowState(workingDir, sessionId) ?? current;
+  if (isNikoflowComplete(next)) return nikoflowCompleteResult(next.iteration);
+  const nextPhase = getCurrentPhase(next);
+  const nextRid = mintGateRequest(workingDir, nextPhase ?? "depth", sessionId) ?? void 0;
+  return {
+    shouldBlock: true,
+    message: nextPhase ? getPhasePrompt2(nextPhase, next, nextRid) : getDepthSelectionPrompt(next, nextRid),
+    mode: "nikoflow"
+  };
+}
+function handleNikoflowExecute(workingDir, sessionId, current, transcriptPath) {
+  const lint = lintTicketsFile(workingDir, sessionId);
+  if (lint.length > 0) {
+    return nikoflowExecuteError(current, `tickets.json problem(s): ${lint.join("; ")}`);
+  }
+  const tickets = readTickets(workingDir, sessionId);
+  if (!tickets) {
+    return nikoflowExecuteError(current, "tickets.json could not be read.");
+  }
+  const dag = validateTicketDag(tickets);
+  if (!dag.ok) {
+    return nikoflowExecuteError(current, `invalid ticket DAG: ${dag.errors.join("; ")}`);
+  }
+  if (allTicketsDone(tickets)) {
+    return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
+  }
+  if (isTicketDeadlock(tickets)) {
+    return nikoflowExecuteError(current, "ticket deadlock: no ticket is startable yet not all are done \u2014 a blocker chain or cycle was introduced. Fix blocked_by.");
+  }
+  const ticket = getNextTicket(tickets);
+  const gate = `execute:${ticket.id}`;
+  const requestId = mintGateRequest(workingDir, gate, sessionId) ?? void 0;
+  if (transcriptPath && (0, import_fs56.existsSync)(transcriptPath) && nikoflowReviewerAuthoredTicketDone(transcriptPath, gate, requestId)) {
+    if (!markTicketStatus(workingDir, ticket.id, "done", sessionId)) {
+      return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
+    }
+    clearGateRequest(workingDir, sessionId);
+    const after = readTickets(workingDir, sessionId);
+    if (!after || allTicketsDone(after)) {
+      return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
+    }
+    const nextTicket = getNextTicket(after);
+    if (nextTicket) {
+      const nrid = mintGateRequest(workingDir, `execute:${nextTicket.id}`, sessionId) ?? void 0;
+      return { shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid), mode: "nikoflow" };
+    }
+    return nikoflowExecuteError(current, "ticket deadlock after completing a ticket \u2014 check blocked_by.");
+  }
+  return { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId), mode: "nikoflow" };
 }
 async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcriptPath) {
   const workingDir = resolveToWorktreeRoot(directory);
@@ -20835,6 +20971,9 @@ async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcr
     return nikoflowCompleteResult(current.iteration);
   }
   const phase = getCurrentPhase(current);
+  if (phase === "execute") {
+    return handleNikoflowExecute(workingDir, sessionId, current, transcriptPath);
+  }
   const gate = phase ?? "depth";
   const requestId = mintGateRequest(workingDir, gate, sessionId) ?? void 0;
   if (NIKOFLOW_ADVANCING_GATES.has(gate) && transcriptPath && (0, import_fs56.existsSync)(transcriptPath)) {

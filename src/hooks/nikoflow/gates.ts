@@ -20,7 +20,9 @@ export const NIKOFLOW_GATE_PAYLOADS: Record<string, string[]> = {
   adr: ["RECORDED", "SKIPPED"],
   prd: ["SEAMS_CONFIRMED"],
   tickets: ["APPROVED"],
-  execute: ["ALL_TICKETS_APPROVED"],
+  // execute advances per-ticket via dynamic "execute:TSK-NNN" gates (payload
+  // TICKET_DONE, passed explicitly) and auto-advances when all tickets are done —
+  // there is no phase-level "execute" gate.
   verify: ["VERIFIED"],
 };
 
@@ -64,9 +66,11 @@ function stripInjectedExamples(text: string): string {
  */
 export function detectNikoflowGate(
   text: string,
-  opts: { phase: string; requestId?: string },
+  opts: { phase: string; requestId?: string; expectedPayloads?: string[] },
 ): GateMatch {
-  const expectedPayloads = NIKOFLOW_GATE_PAYLOADS[opts.phase];
+  // Dynamic per-ticket gates (e.g. "execute:TSK-001") pass their own payloads.
+  const expectedPayloads =
+    opts.expectedPayloads ?? NIKOFLOW_GATE_PAYLOADS[opts.phase];
   if (!expectedPayloads) return { matched: false };
 
   const sanitized = stripInjectedExamples(text);

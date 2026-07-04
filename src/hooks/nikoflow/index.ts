@@ -65,8 +65,12 @@ export {
   validateTicketDag,
   getNextTicket,
   allTicketsDone,
+  markTicketStatus,
+  isTicketDeadlock,
   type NikoflowTicket,
   type NikoflowTicketsFile,
   type TicketStatus,
   type DagValidation,
 } from "./tickets.js";
+
+export { getExecuteTicketPrompt } from "./prompts.js";
