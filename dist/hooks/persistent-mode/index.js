@@ -19,7 +19,7 @@ import { readUltraworkState, writeUltraworkState, incrementReinforcement, deacti
 import { resolveToWorktreeRoot, resolveSessionStatePath, resolveStatePath, getOmcRoot } from '../../lib/worktree-paths.js';
 import { readModeState, writeModeState } from '../../lib/mode-state-io.js';
 import { readRalphState, writeRalphState, incrementRalphIteration, clearRalphState, findPrdPath, getPrdCompletionStatus, getRalphContext, getStory, markStoryIncomplete, markStoryArchitectVerified, readVerificationState, startVerification, recordArchitectFeedback, getArchitectVerificationPrompt, getArchitectRejectionContinuationPrompt, detectArchitectApproval, detectArchitectRejection, clearVerificationState, } from '../ralph/index.js';
-import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, advanceNikoflowPhase, mintGateRequest, rotateGateRequest, clearGateRequest, userRepliedAfterMint, detectNikoflowGate, HUMAN_GATE_PHASES, readTickets, validateTicketDag, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, getVerifyPrompt, recordVerifyPass, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, } from '../nikoflow/index.js';
+import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, advanceNikoflowPhase, mintGateRequest, rotateGateRequest, clearGateRequest, userRepliedAfterMint, detectNikoflowGate, HUMAN_GATE_PHASES, readTickets, validateTicketDag, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, getVerifyPrompt, pbtObligation, recordVerifyPass, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
 import { isAutopilotActive } from '../autopilot/index.js';
@@ -880,6 +880,7 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
     if (isTicketDeadlock(tickets)) {
         return nikoflowExecuteError(current, 'ticket deadlock: no ticket is startable yet not all are done — a blocker chain or cycle was introduced. Fix blocked_by.');
     }
+    const pbt = pbtObligation(workingDir, current.pbt_enabled ?? false);
     const ticket = getNextTicket(tickets); // non-null: not all done and not deadlocked
     const gate = `execute:${ticket.id}`;
     const requestId = mintGateRequest(workingDir, gate, sessionId) ?? undefined;
@@ -900,12 +901,12 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
         const nextTicket = getNextTicket(after);
         if (nextTicket) {
             const nrid = mintGateRequest(workingDir, `execute:${nextTicket.id}`, sessionId) ?? undefined;
-            return { shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid), mode: 'nikoflow' };
+            return { shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid, pbt), mode: 'nikoflow' };
         }
         // Completed a ticket but nothing is startable and not all done → deadlock.
         return nikoflowExecuteError(current, 'ticket deadlock after completing a ticket — check blocked_by.');
     }
-    return { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId), mode: 'nikoflow' };
+    return { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId, pbt), mode: 'nikoflow' };
 }
 /**
  * Verify phase: loop-review convergence. Each pass requires a fresh, independent

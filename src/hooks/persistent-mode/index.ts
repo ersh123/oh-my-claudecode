@@ -71,6 +71,7 @@ import {
   markTicketStatus,
   getExecuteTicketPrompt,
   getVerifyPrompt,
+  pbtObligation,
   recordVerifyPass,
   NIKOFLOW_VERIFY_SCORE_THRESHOLD,
   NIKOFLOW_VERIFY_MAX_PASSES,
@@ -1149,6 +1150,7 @@ export function handleNikoflowExecute(
     return nikoflowExecuteError(current, 'ticket deadlock: no ticket is startable yet not all are done — a blocker chain or cycle was introduced. Fix blocked_by.');
   }
 
+  const pbt = pbtObligation(workingDir, current.pbt_enabled ?? false);
   const ticket = getNextTicket(tickets)!; // non-null: not all done and not deadlocked
   const gate = `execute:${ticket.id}`;
   const requestId = mintGateRequest(workingDir, gate, sessionId) ?? undefined;
@@ -1173,13 +1175,13 @@ export function handleNikoflowExecute(
     const nextTicket = getNextTicket(after);
     if (nextTicket) {
       const nrid = mintGateRequest(workingDir, `execute:${nextTicket.id}`, sessionId) ?? undefined;
-      return { shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid), mode: 'nikoflow' };
+      return { shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid, pbt), mode: 'nikoflow' };
     }
     // Completed a ticket but nothing is startable and not all done → deadlock.
     return nikoflowExecuteError(current, 'ticket deadlock after completing a ticket — check blocked_by.');
   }
 
-  return { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId), mode: 'nikoflow' };
+  return { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId, pbt), mode: 'nikoflow' };
 }
 
 /**

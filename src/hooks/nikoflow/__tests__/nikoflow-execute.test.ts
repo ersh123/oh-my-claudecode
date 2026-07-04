@@ -102,7 +102,7 @@ describe("nikoflow execute loop (TSK-005)", () => {
   describe("getExecuteTicketPrompt", () => {
     it("includes the ticket id, acceptance, and the ticket-scoped gate tag", () => {
       const p = getExecuteTicketPrompt(
-        { id: "TSK-003", title: "parse", acceptance: ["handles empty input"], pbt_required: true },
+        { id: "TSK-003", title: "parse", acceptance: ["handles empty input"] },
         state,
         "rid-1",
       );
@@ -110,15 +110,35 @@ describe("nikoflow execute loop (TSK-005)", () => {
       expect(p).toContain("handles empty input");
       expect(p).toContain('phase="execute:TSK-003"');
       expect(p).toContain('request-id="rid-1"');
-      expect(p.toLowerCase()).toContain("property-based");
     });
-    it("omits the PBT line when not required", () => {
+    it("renders the framework-specific PBT line when the obligation is ready", () => {
+      const p = getExecuteTicketPrompt(
+        { id: "TSK-003", title: "parse", acceptance: ["a"] },
+        state,
+        "rid-1",
+        { required: true, status: "ready", framework: "fast-check", reason: "use fast-check" },
+      );
+      expect(p.toLowerCase()).toContain("property");
+      expect(p).toContain("fast-check");
+    });
+    it("tells the model to ask before adding a missing PBT lib (needs-lib)", () => {
+      const p = getExecuteTicketPrompt(
+        { id: "TSK-003", title: "parse", acceptance: ["a"] },
+        state,
+        "rid-1",
+        { required: true, status: "needs-lib", framework: "hypothesis", reason: "not installed" },
+      );
+      expect(p.toLowerCase()).toContain("ask");
+      expect(p).toContain("hypothesis");
+    });
+    it("omits the PBT line when the obligation is waived / absent", () => {
       const p = getExecuteTicketPrompt(
         { id: "TSK-004", title: "x", acceptance: ["a"] },
         state,
         "rid-2",
+        { required: false, status: "waived", reason: "not deep tier" },
       );
-      expect(p.toLowerCase()).not.toContain("property-based");
+      expect(p.toLowerCase()).not.toContain("property");
     });
   });
 });

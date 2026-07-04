@@ -8,6 +8,7 @@
  */
 
 import type { NikoflowState } from "./loop.js";
+import type { PbtObligation } from "./pbt.js";
 
 const CANCEL_HINT =
   "When the whole task is FULLY complete and the Verification gate has passed, " +
@@ -99,6 +100,7 @@ export function getExecuteTicketPrompt(
   ticket: { id: string; title: string; acceptance: string[]; self_verify?: string; pbt_required?: boolean },
   state: NikoflowState,
   requestId?: string,
+  pbt?: PbtObligation,
 ): string {
   const gate = `execute:${ticket.id}`;
   const gateTag = injectRequestId(
@@ -108,9 +110,28 @@ export function getExecuteTicketPrompt(
   const ac = ticket.acceptance.length
     ? ticket.acceptance.map((c, i) => `  ${i + 1}. ${c}`).join("\n")
     : "  (none listed — derive from the PRD story)";
-  const pbtLine = ticket.pbt_required
-    ? "\nThis ticket owes property-based tests (deep tier): after GREEN, add ≥1 real property (invariant/round-trip/metamorphic) before review."
-    : "";
+  // The ticket may explicitly mark whether it owes property tests; otherwise
+  // fall back to the "touches pure logic" heuristic.
+  const owes =
+    ticket.pbt_required === true
+      ? "This ticket owes property-based tests"
+      : `If this ticket touches pure/parseable logic`;
+  let pbtLine = "";
+  let reviewerPbt = "";
+  if (pbt?.required && pbt.status === "ready" && ticket.pbt_required !== false) {
+    pbtLine =
+      `\nDeep tier: ${owes}. After GREEN add ≥1 real property (invariant / round-trip / ` +
+      `metamorphic — "no crash on random input" alone does not count) using ${pbt.framework}, before review.`;
+    reviewerPbt =
+      ` For this deep-tier ticket, also reject if pure/parseable logic changed without at least ` +
+      `one real ${pbt.framework} property test.`;
+  } else if (pbt?.required && pbt.status === "needs-lib" && ticket.pbt_required !== false) {
+    pbtLine =
+      `\nDeep tier: ${owes}, but ${pbt.framework} is not installed — ASK the user before adding it ` +
+      `as a dev dependency; do not add it speculatively.`;
+  } else if (pbt?.status === "waived" && pbt.reason !== "not deep tier") {
+    pbtLine = `\nDeep tier: property-based tests waived (${pbt.reason}).`;
+  }
   return (
     `<nikoflow-continuation phase="execute" ticket="${ticket.id}" iteration="${state.iteration}">\n` +
     `🔴🟢♻️ TDD on ticket ${ticket.id} — ${ticket.title}.\n` +
@@ -120,7 +141,7 @@ export function getExecuteTicketPrompt(
     `${pbtLine}\n` +
     (ticket.self_verify ? `Self-verify: ${ticket.self_verify}\n` : "") +
     `When the slice is green, spawn a FRESH, context-isolated reviewer subagent (Task/Agent) to ` +
-    `check it against the acceptance criteria and repo standards. Pass the reviewer this ` +
+    `check it against the acceptance criteria and repo standards.${reviewerPbt} Pass the reviewer this ` +
     `request-id and instruct it to emit — in ITS OWN final output — the ticket gate on its own ` +
     `line ONLY if it approves on green validation:\n` +
     `${gateTag}\n` +
