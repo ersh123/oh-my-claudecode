@@ -7,7 +7,7 @@ This is the steering artifact required by the autonomous mandate. Mark an area d
 | nikoflow | [ ] Human gates require a post-request real user turn. [ ] Execute/verify gates require independent reviewer tool results. [ ] Stale request ids fail closed. [ ] Request-id fidelity is pinned. | In progress | Existing invariant tests cover the core gate semantics. Next: design request-id fidelity without production edits. |
 | ralph | [ ] Cannot self-approve. [ ] Phase machine cannot livelock on recoverable failures. [ ] Live dogfood has BLOCK->PASS evidence. | Unchecked | Discovery pass needed. |
 | team | [ ] Team phases reach terminal states. [ ] Worker launch/model routing is deterministic. [x] Worktree cleanup is covered. | In progress | Spawn env baseline fixed; cleanup now removes safe clean worktrees even when unrelated backup blockers keep team state. Next: audit terminal phase/model-routing gaps. |
-| persistent-mode | [ ] Runtime hook cannot silently skip required enforcement. [ ] Dist import parity is checked. [ ] Failure mode is explicit in docs/tests. | Unchecked | Discovery pass needed around `scripts/persistent-mode.mjs` and compiled engine imports. |
+| persistent-mode | [ ] Runtime hook cannot silently skip required enforcement. [ ] Dist import parity is checked. [ ] Failure mode is explicit in docs/tests. | In progress | Active nikoflow Stop hook now fails closed when the TS engine import is missing. Next: check installed `templates/hooks/persistent-mode.mjs` nikoflow parity. |
 | state IO | [ ] Cross-process writes are atomic where needed. [ ] RMW order is designed for nikoflow F1. [ ] No user work is lost on crash/retry. | Escalation-gated | F1 is design-then-STOP before production edits. |
 | gate detection | [ ] Reviewer channel accepts only Task/proxy_Task/Agent tool results. [ ] Main-thread text never passes review gates. [ ] Tests pin negative cases. | In progress | Core safety invariants exist. Next: scan for cross-mode gaps before edits. |
 | transcript scan | [ ] Transcript parsing handles hook noise. [ ] Required BLOCK and PASS quotes are extracted without leaking secrets. [ ] Session/profile paths are redacted in committed artifacts. | Unchecked | Discovery pass needed before live-dogfood automation. |
@@ -19,6 +19,7 @@ This is the steering artifact required by the autonomous mandate. Mark an area d
 - Design nikoflow F1 write ordering and stop before production edits.
 - Investigate request-id fidelity without weakening anti-self-approval.
 - Audit team terminal phase/model-routing gaps now that cleanup orphan path is covered.
+- Check installed persistent-mode template nikoflow parity after active runtime fail-closed coverage.
 - Audit `.mjs` defaults and parsers against TS runtime.
 - Extend livelock and anti-self-approval coverage across ralph, team, and persistent-mode.
 

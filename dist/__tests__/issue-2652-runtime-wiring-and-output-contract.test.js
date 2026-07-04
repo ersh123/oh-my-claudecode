@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { basename, join } from 'path';
 import { execFileSync } from 'child_process';
+import { createHash } from 'crypto';
 import { ULTRAWORK_MESSAGE } from '../installer/hooks.js';
 import { getUltraworkMessage } from '../hooks/keyword-detector/ultrawork/index.js';
 describe('issue #2652 runtime wiring and output contract', () => {
@@ -54,6 +55,47 @@ describe('issue #2652 runtime wiring and output contract', () => {
                     projectPath: projectRoot,
                 },
             });
+        }
+        finally {
+            rmSync(tempRoot, { recursive: true, force: true });
+        }
+    });
+    it('fails closed when active nikoflow cannot load its TS engine', () => {
+        const tempRoot = mkdtempSync(join(tmpdir(), 'omc-nikoflow-engine-missing-'));
+        try {
+            const pluginRoot = join(tempRoot, 'plugin');
+            const projectRoot = join(tempRoot, 'project');
+            const stateRoot = join(tempRoot, 'state');
+            const sessionId = 'nikoflow-engine-missing';
+            mkdirSync(pluginRoot, { recursive: true });
+            mkdirSync(projectRoot, { recursive: true });
+            const projectHash = createHash('sha256').update(projectRoot).digest('hex').slice(0, 16);
+            const projectStateRoot = join(stateRoot, `${basename(projectRoot)}-${projectHash}`);
+            const sessionStateDir = join(projectStateRoot, 'state', 'sessions', sessionId);
+            mkdirSync(sessionStateDir, { recursive: true });
+            writeFileSync(join(sessionStateDir, 'nikoflow-state.json'), JSON.stringify({
+                active: true,
+                session_id: sessionId,
+                project_path: projectRoot,
+                phase: 'verify',
+                updated_at: new Date().toISOString(),
+                started_at: new Date().toISOString(),
+            }), 'utf-8');
+            const raw = execFileSync(process.execPath, [join(process.cwd(), 'scripts', 'persistent-mode.mjs')], {
+                input: JSON.stringify({ cwd: projectRoot, session_id: sessionId }),
+                encoding: 'utf-8',
+                env: {
+                    ...process.env,
+                    CLAUDE_PLUGIN_ROOT: pluginRoot,
+                    HOME: join(tempRoot, 'home'),
+                    OMC_NOTIFY: '0',
+                    OMC_STATE_DIR: stateRoot,
+                },
+            });
+            const result = JSON.parse(raw.trim().split(/\n/).pop() ?? '{}');
+            expect(result.decision).toBe('block');
+            expect(result.reason).toContain('NIKOFLOW ENFORCEMENT ERROR');
+            expect(result.reason).toContain('dist/hooks/persistent-mode/index.js');
         }
         finally {
             rmSync(tempRoot, { recursive: true, force: true });
