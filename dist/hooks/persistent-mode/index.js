@@ -517,7 +517,15 @@ function readTranscriptTailLines(transcriptPath, maxBytes = TRANSCRIPT_TAIL_BYTE
 }
 const REVIEWER_TASK_TOOL_NAMES = new Set(['Task', 'proxy_Task', 'Agent']);
 const REVIEWER_COMMAND_TOOL_NAMES = new Set(['Bash', 'proxy_Bash']);
-function normalizeReviewerPath(subagentType) {
+const NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES = new Set([
+    'code-reviewer',
+    'security-reviewer',
+    'security-reviewer-low',
+    'verifier',
+    'critic',
+    'codex-rescue',
+]);
+function normalizeSubagentBaseName(subagentType) {
     if (typeof subagentType !== 'string') {
         return null;
     }
@@ -528,6 +536,13 @@ function normalizeReviewerPath(subagentType) {
     const baseName = normalized.includes(':')
         ? normalized.slice(normalized.lastIndexOf(':') + 1)
         : normalized;
+    return baseName || null;
+}
+function normalizeReviewerPath(subagentType) {
+    const baseName = normalizeSubagentBaseName(subagentType);
+    if (!baseName) {
+        return null;
+    }
     if (baseName === 'architect' || baseName.startsWith('architect-')) {
         return 'architect';
     }
@@ -535,6 +550,23 @@ function normalizeReviewerPath(subagentType) {
         return 'critic';
     }
     return null;
+}
+function getToolUseSubagentType(input) {
+    if (!input || typeof input !== 'object') {
+        return undefined;
+    }
+    const record = input;
+    return record.subagent_type ?? record.agent_type;
+}
+function isNikoflowReviewerSubagentType(subagentType) {
+    const baseName = normalizeSubagentBaseName(subagentType);
+    return baseName ? NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES.has(baseName) : false;
+}
+function isNikoflowReviewerToolUse(block) {
+    return Boolean(block.id
+        && block.name
+        && REVIEWER_TASK_TOOL_NAMES.has(block.name)
+        && isNikoflowReviewerSubagentType(getToolUseSubagentType(block.input)));
 }
 function isCodexReviewerCommand(command) {
     return typeof command === 'string'
@@ -812,7 +844,7 @@ function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expected
             continue;
         for (const block of content) {
             if (block?.type === 'tool_use' && block.id && block.name) {
-                if (REVIEWER_TASK_TOOL_NAMES.has(block.name)) {
+                if (isNikoflowReviewerToolUse(block)) {
                     reviewerToolUses.add(block.id);
                 }
                 continue;

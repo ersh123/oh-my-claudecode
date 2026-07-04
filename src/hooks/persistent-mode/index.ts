@@ -725,8 +725,16 @@ type ReviewerApprovalPath = 'architect' | 'critic' | 'codex';
 
 const REVIEWER_TASK_TOOL_NAMES = new Set(['Task', 'proxy_Task', 'Agent']);
 const REVIEWER_COMMAND_TOOL_NAMES = new Set(['Bash', 'proxy_Bash']);
+const NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES = new Set([
+  'code-reviewer',
+  'security-reviewer',
+  'security-reviewer-low',
+  'verifier',
+  'critic',
+  'codex-rescue',
+]);
 
-function normalizeReviewerPath(subagentType: unknown): ReviewerApprovalPath | null {
+function normalizeSubagentBaseName(subagentType: unknown): string | null {
   if (typeof subagentType !== 'string') {
     return null;
   }
@@ -740,6 +748,15 @@ function normalizeReviewerPath(subagentType: unknown): ReviewerApprovalPath | nu
     ? normalized.slice(normalized.lastIndexOf(':') + 1)
     : normalized;
 
+  return baseName || null;
+}
+
+function normalizeReviewerPath(subagentType: unknown): ReviewerApprovalPath | null {
+  const baseName = normalizeSubagentBaseName(subagentType);
+  if (!baseName) {
+    return null;
+  }
+
   if (baseName === 'architect' || baseName.startsWith('architect-')) {
     return 'architect';
   }
@@ -749,6 +766,29 @@ function normalizeReviewerPath(subagentType: unknown): ReviewerApprovalPath | nu
   }
 
   return null;
+}
+
+function getToolUseSubagentType(input: unknown): unknown {
+  if (!input || typeof input !== 'object') {
+    return undefined;
+  }
+
+  const record = input as Record<string, unknown>;
+  return record.subagent_type ?? record.agent_type;
+}
+
+function isNikoflowReviewerSubagentType(subagentType: unknown): boolean {
+  const baseName = normalizeSubagentBaseName(subagentType);
+  return baseName ? NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES.has(baseName) : false;
+}
+
+function isNikoflowReviewerToolUse(block: TranscriptContentBlock): boolean {
+  return Boolean(
+    block.id
+    && block.name
+    && REVIEWER_TASK_TOOL_NAMES.has(block.name)
+    && isNikoflowReviewerSubagentType(getToolUseSubagentType(block.input)),
+  );
 }
 
 function isCodexReviewerCommand(command: unknown): boolean {
@@ -1072,7 +1112,7 @@ function nikoflowReviewerAuthoredGate(
     if (!Array.isArray(content)) continue;
     for (const block of content) {
       if (block?.type === 'tool_use' && block.id && block.name) {
-        if (REVIEWER_TASK_TOOL_NAMES.has(block.name)) {
+        if (isNikoflowReviewerToolUse(block)) {
           reviewerToolUses.add(block.id);
         }
         continue;

@@ -420,3 +420,35 @@ Reviewer verdict (manual Codex-only local diff review):
 
 Remaining risk:
 - Broader persistent-mode template/runtime parity is still tracked under `.mjs parity`.
+
+## 2026-07-05 — dogfood/nikoflow-gate-fidelity
+
+Candidates + WSJF:
+- TAKE: reject execute/verify gate laundering from non-reviewer Task tool results. Value 8, risk reduction 9, urgency 6, complexity 2 => 11.5. The roadmap required independent reviewer gates, but the parser trusted any Task/Agent output.
+- DEFER: full human-gate/request-id closure. Value 8, risk reduction 8, urgency 5, complexity 5 => 4.2. Existing tests cover core anti-self-approval; finishing fidelity needs its own focused slice.
+- DROP: broad rewrite of transcript gate parsing. Value 7, risk reduction 6, urgency 4, complexity 7 => 2.43. The bug was a narrow role-fidelity gap, not a parser architecture failure.
+
+Changed:
+- `nikoflowReviewerAuthoredGate` now records reviewer tool uses only when the Task/proxy_Task/Agent has a review-capable `subagent_type`/`agent_type`.
+- Execute and verify regression tests now prove `Task(subagent_type="executor")` cannot emit `TICKET_DONE` or `VERIFIED`.
+- `ROADMAP.md` and `docs/NIKOFLOW-FORK.md` now reflect the bounded reviewer-genuineness model instead of the old "any Task counts" risk.
+
+Evidence:
+- RED execute: `npx vitest run src/hooks/nikoflow/__tests__/nikoflow-execute-orch.test.ts -t "non-reviewer Task" --reporter=verbose` failed before the fix with `expected 'done' to be 'todo'`.
+- RED verify: `npx vitest run src/hooks/nikoflow/__tests__/nikoflow-verify.test.ts -t "non-reviewer Task" --reporter=verbose` failed before the fix with completed state (`phase=null`) instead of `verify`.
+- GREEN targeted: both commands passed after the fix.
+- GREEN affected suites: `nikoflow-execute-orch` + `nikoflow-verify` passed 15/15; `nikoflow-checkloop` + `nikoflow-gates` passed 23/23.
+- Build: `npm run build` exited 0 and regenerated `dist/hooks/persistent-mode/*` plus `bridge/cli.cjs`.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 0 failing test(s) match test-baseline.json`.
+- Baseline JSON confirms `numTotalTests=10244`, `numPassedTests=10237`, `numFailedTests=0`, and `success=true`.
+- Format/sensitive-data scan: `git diff --check` produced no output; diff sensitive-data scan produced no hits.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The gate detector now binds execute/verify approvals to review-capable subagent roles without changing the strict request-id/payload parser.
+> Existing `code-reviewer` approvals stay accepted, while `Bash`, main-thread text, empty Task input, and `executor` Task laundering fail closed.
+
+Remaining risk:
+- The hook still cannot cryptographically prove reviewer independence; it only enforces the transcript channel and role type.
+- Human-gate request-id fidelity remains open on the roadmap.

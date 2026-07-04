@@ -21038,7 +21038,7 @@ function readTranscriptTailLines(transcriptPath, maxBytes = TRANSCRIPT_TAIL_BYTE
   }
   return lines;
 }
-function normalizeReviewerPath(subagentType) {
+function normalizeSubagentBaseName(subagentType) {
   if (typeof subagentType !== "string") {
     return null;
   }
@@ -21047,6 +21047,13 @@ function normalizeReviewerPath(subagentType) {
     return null;
   }
   const baseName = normalized.includes(":") ? normalized.slice(normalized.lastIndexOf(":") + 1) : normalized;
+  return baseName || null;
+}
+function normalizeReviewerPath(subagentType) {
+  const baseName = normalizeSubagentBaseName(subagentType);
+  if (!baseName) {
+    return null;
+  }
   if (baseName === "architect" || baseName.startsWith("architect-")) {
     return "architect";
   }
@@ -21054,6 +21061,22 @@ function normalizeReviewerPath(subagentType) {
     return "critic";
   }
   return null;
+}
+function getToolUseSubagentType(input) {
+  if (!input || typeof input !== "object") {
+    return void 0;
+  }
+  const record2 = input;
+  return record2.subagent_type ?? record2.agent_type;
+}
+function isNikoflowReviewerSubagentType(subagentType) {
+  const baseName = normalizeSubagentBaseName(subagentType);
+  return baseName ? NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES.has(baseName) : false;
+}
+function isNikoflowReviewerToolUse(block) {
+  return Boolean(
+    block.id && block.name && REVIEWER_TASK_TOOL_NAMES.has(block.name) && isNikoflowReviewerSubagentType(getToolUseSubagentType(block.input))
+  );
 }
 function isCodexReviewerCommand(command) {
   return typeof command === "string" && /\bask\s+codex\s+--agent-prompt\s+critic\b/i.test(command);
@@ -21273,7 +21296,7 @@ function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expected
     if (!Array.isArray(content)) continue;
     for (const block of content) {
       if (block?.type === "tool_use" && block.id && block.name) {
-        if (REVIEWER_TASK_TOOL_NAMES.has(block.name)) {
+        if (isNikoflowReviewerToolUse(block)) {
           reviewerToolUses.add(block.id);
         }
         continue;
@@ -22389,7 +22412,7 @@ function createHookOutput(result) {
     message: result.message || void 0
   };
 }
-var import_fs58, import_path67, CANCEL_SIGNAL_TTL_MS2, STALE_STATE_THRESHOLD_MS, PENDING_ASYNC_STATE_STALE_MS, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_MAX, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_TTL_MS, TERMINAL_WORKFLOW_SLOT_MODES, TERMINAL_WORKFLOW_PHASES, todoContinuationAttempts, TRANSCRIPT_TAIL_BYTES, NIKOFLOW_REVIEWER_TAIL_BYTES, CRITICAL_CONTEXT_STOP_PERCENT, RALPLAN_TERMINAL_PHASES, REVIEWER_TASK_TOOL_NAMES, REVIEWER_COMMAND_TOOL_NAMES, AWAITING_CONFIRMATION_TTL_MS, NIKOFLOW_ADVANCING_GATES, THINKING_ONLY_STREAK_BREAKER, THINKING_ONLY_STREAK_MAX, THINKING_ONLY_STREAK_TTL_MS, THINKING_ONLY_STREAK_BAILOUT_MESSAGE, TEAM_PIPELINE_STOP_BLOCKER_MAX, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS, RALPLAN_STOP_BLOCKER_MAX, RALPLAN_STOP_BLOCKER_TTL_MS, RALPLAN_ACTIVE_AGENT_RECENCY_WINDOW_MS;
+var import_fs58, import_path67, CANCEL_SIGNAL_TTL_MS2, STALE_STATE_THRESHOLD_MS, PENDING_ASYNC_STATE_STALE_MS, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_MAX, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_TTL_MS, TERMINAL_WORKFLOW_SLOT_MODES, TERMINAL_WORKFLOW_PHASES, todoContinuationAttempts, TRANSCRIPT_TAIL_BYTES, NIKOFLOW_REVIEWER_TAIL_BYTES, CRITICAL_CONTEXT_STOP_PERCENT, RALPLAN_TERMINAL_PHASES, REVIEWER_TASK_TOOL_NAMES, REVIEWER_COMMAND_TOOL_NAMES, NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES, AWAITING_CONFIRMATION_TTL_MS, NIKOFLOW_ADVANCING_GATES, THINKING_ONLY_STREAK_BREAKER, THINKING_ONLY_STREAK_MAX, THINKING_ONLY_STREAK_TTL_MS, THINKING_ONLY_STREAK_BAILOUT_MESSAGE, TEAM_PIPELINE_STOP_BLOCKER_MAX, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS, RALPLAN_STOP_BLOCKER_MAX, RALPLAN_STOP_BLOCKER_TTL_MS, RALPLAN_ACTIVE_AGENT_RECENCY_WINDOW_MS;
 var init_persistent_mode = __esm({
   "src/hooks/persistent-mode/index.ts"() {
     "use strict";
@@ -22453,6 +22476,14 @@ var init_persistent_mode = __esm({
     ]);
     REVIEWER_TASK_TOOL_NAMES = /* @__PURE__ */ new Set(["Task", "proxy_Task", "Agent"]);
     REVIEWER_COMMAND_TOOL_NAMES = /* @__PURE__ */ new Set(["Bash", "proxy_Bash"]);
+    NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES = /* @__PURE__ */ new Set([
+      "code-reviewer",
+      "security-reviewer",
+      "security-reviewer-low",
+      "verifier",
+      "critic",
+      "codex-rescue"
+    ]);
     AWAITING_CONFIRMATION_TTL_MS = 2 * 60 * 1e3;
     NIKOFLOW_ADVANCING_GATES = /* @__PURE__ */ new Set(["depth", "interview", "adr", "prd", "tickets"]);
     THINKING_ONLY_STREAK_BREAKER = "thinking-only-streak";
