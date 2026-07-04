@@ -45,7 +45,9 @@ export interface GateMatch {
 }
 
 function extractAttribute(attributes: string, name: string): string | undefined {
-  const match = new RegExp(`\\b${name}=(["'])(.*?)\\1`, "i").exec(attributes);
+  // (?<![\w-]) not \b: `-` is a non-word char, so \b would let a hyphen-prefixed
+  // lookalike (data-phase, x-request-id) shadow the real attribute (audit F2).
+  const match = new RegExp(`(?<![\\w-])${name}=(["'])(.*?)\\1`, "i").exec(attributes);
   return match?.[2];
 }
 
@@ -78,7 +80,11 @@ export function detectNikoflowGate(
   if (!expectedPayloads) return { matched: false };
 
   const sanitized = stripInjectedExamples(text);
-  const tagRe = /<nikoflow-gate\b([^>]*)>([\s\S]*?)<\/nikoflow-gate>/gi;
+  // (?![\w-]) not \b: \b matches the boundary before the hyphen in a sibling like
+  // <nikoflow-gate-blocked>, mis-parsing it as an open <nikoflow-gate> whose
+  // payload then swallows the NEXT real gate (audit F1). The lookahead requires
+  // the name to end exactly at "nikoflow-gate".
+  const tagRe = /<nikoflow-gate(?![\w-])([^>]*)>([\s\S]*?)<\/nikoflow-gate>/gi;
 
   for (const m of sanitized.matchAll(tagRe)) {
     const attributes = m[1] ?? "";
@@ -100,8 +106,8 @@ export function detectNikoflowGate(
     if (scoreAttr !== undefined) {
       const parsed = Number.parseFloat(scoreAttr);
       // Scores are on a 1–10 scale; ignore out-of-range values (a placeholder
-      // like "N.N" → NaN, or "99" → nonsense) so they can't force a pass.
-      if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 10) {
+      // like "N.N" → NaN, or "99" → nonsense) so they can't force a pass (audit F6).
+      if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 10) {
         result.score = parsed;
       }
     }

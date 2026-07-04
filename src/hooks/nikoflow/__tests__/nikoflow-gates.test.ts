@@ -69,6 +69,26 @@ describe("nikoflow gate detection (TSK-003)", () => {
     expect(detectNikoflowGate(t, { phase: "depth", requestId: RID })).toMatchObject({ matched: true, depth: "deep" });
   });
 
+  it("a <nikoflow-blocked> sibling does not swallow a following real gate (audit F1)", () => {
+    const t =
+      `<nikoflow-gate-blocked>oops</nikoflow-gate-blocked>\n` +
+      `<nikoflow-gate phase="tickets" request-id="${RID}">APPROVED</nikoflow-gate>`;
+    expect(detectNikoflowGate(t, { phase: "tickets", requestId: RID }).matched).toBe(true);
+  });
+
+  it("a hyphenated lookalike attribute does not shadow the real request-id (audit F2)", () => {
+    const t = `<nikoflow-gate x-request-id="fake" phase="tickets" request-id="${RID}">APPROVED</nikoflow-gate>`;
+    expect(detectNikoflowGate(t, { phase: "tickets", requestId: RID }).matched).toBe(true);
+  });
+
+  it("a score with trailing junk stays within range or is rejected (audit F6 boundary)", () => {
+    // parseFloat("0.5") = 0.5 < 1 → out of scale → no score set → not a pass
+    const t = `<nikoflow-gate phase="verify" score="0.5" request-id="${RID}">VERIFIED</nikoflow-gate>`;
+    const m = detectNikoflowGate(t, { phase: "verify", requestId: RID });
+    expect(m.matched).toBe(true);
+    expect(m.score).toBeUndefined(); // 0.5 below the 1–10 scale → ignored
+  });
+
   it("adr gate accepts RECORDED or SKIPPED", () => {
     const rec = `<nikoflow-gate phase="adr" request-id="${RID}">RECORDED</nikoflow-gate>`;
     const skip = `<nikoflow-gate phase="adr" request-id="${RID}">SKIPPED</nikoflow-gate>`;

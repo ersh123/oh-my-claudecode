@@ -1382,9 +1382,9 @@ export async function checkNikoflowLoop(
         return {
           shouldBlock: true,
           message:
-            `${base}\n<nikoflow-gate-blocked>${preconditionError} ` +
+            `${base}\n<nikoflow-blocked>${preconditionError} ` +
             `After fixing, present the corrected breakdown and get the user to approve again.` +
-            `</nikoflow-gate-blocked>`,
+            `</nikoflow-blocked>`,
           mode: 'nikoflow',
         };
       }

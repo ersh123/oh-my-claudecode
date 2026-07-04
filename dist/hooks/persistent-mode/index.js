@@ -1057,9 +1057,9 @@ export async function checkNikoflowLoop(sessionId, directory, cancelInProgress, 
                     : getDepthSelectionPrompt(rotatedState, rotated);
                 return {
                     shouldBlock: true,
-                    message: `${base}\n<nikoflow-gate-blocked>${preconditionError} ` +
+                    message: `${base}\n<nikoflow-blocked>${preconditionError} ` +
                         `After fixing, present the corrected breakdown and get the user to approve again.` +
-                        `</nikoflow-gate-blocked>`,
+                        `</nikoflow-blocked>`,
                     mode: 'nikoflow',
                 };
             }

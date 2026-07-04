@@ -20143,7 +20143,7 @@ var init_prompts2 = __esm({
 
 // src/hooks/nikoflow/gates.ts
 function extractAttribute(attributes, name) {
-  const match = new RegExp(`\\b${name}=(["'])(.*?)\\1`, "i").exec(attributes);
+  const match = new RegExp(`(?<![\\w-])${name}=(["'])(.*?)\\1`, "i").exec(attributes);
   return match?.[2];
 }
 function stripInjectedExamples(text) {
@@ -20153,7 +20153,7 @@ function detectNikoflowGate(text, opts) {
   const expectedPayloads = opts.expectedPayloads ?? NIKOFLOW_GATE_PAYLOADS[opts.phase];
   if (!expectedPayloads) return { matched: false };
   const sanitized = stripInjectedExamples(text);
-  const tagRe = /<nikoflow-gate\b([^>]*)>([\s\S]*?)<\/nikoflow-gate>/gi;
+  const tagRe = /<nikoflow-gate(?![\w-])([^>]*)>([\s\S]*?)<\/nikoflow-gate>/gi;
   for (const m of sanitized.matchAll(tagRe)) {
     const attributes = m[1] ?? "";
     const payload = (m[2] ?? "").trim();
@@ -20168,7 +20168,7 @@ function detectNikoflowGate(text, opts) {
     const scoreAttr = extractAttribute(attributes, "score");
     if (scoreAttr !== void 0) {
       const parsed = Number.parseFloat(scoreAttr);
-      if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 10) {
+      if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 10) {
         result.score = parsed;
       }
     }
@@ -21377,7 +21377,7 @@ async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcr
         return {
           shouldBlock: true,
           message: `${base}
-<nikoflow-gate-blocked>${preconditionError} After fixing, present the corrected breakdown and get the user to approve again.</nikoflow-gate-blocked>`,
+<nikoflow-blocked>${preconditionError} After fixing, present the corrected breakdown and get the user to approve again.</nikoflow-blocked>`,
           mode: "nikoflow"
         };
       }
