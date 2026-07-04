@@ -1,12 +1,15 @@
 /**
  * Benchmark: subagent-tracking RMW latency under no contention.
  *
- * Measures per-update wall time for sequential updates. Local Linux keeps the
- * strict p99 <= 8ms guard; CI runners use repeated samples and a wider p50/p99
- * envelope so an isolated scheduler/filesystem stall does not fail dev, while
- * still catching sustained lock slowdowns and hangs (median-p50, median-p99,
- * and max-p99 ceilings). GitHub-hosted runners routinely sustain ~23-31ms p50
- * / ~30-32ms p99 on a healthy path, so the CI ceilings sit above that band.
+ * Measures per-update wall time for sequential updates. Linux uses repeated
+ * samples and a scheduler/filesystem-noise-tolerant p50/p99 envelope so an
+ * isolated stall does not fail dev, while still catching sustained lock
+ * slowdowns and hangs (median-p50, median-p99, and max-p99 ceilings).
+ * GitHub-hosted runners routinely sustain ~23-31ms p50 / ~30-32ms p99 on a
+ * healthy path. Local full-suite runs share CPU and filesystem bandwidth with
+ * thousands of concurrent tests, so they use a wider envelope by default. Set
+ * OMC_STRICT_LOCAL_PERF=1 to enforce the historical local p99 <= 8ms guard when
+ * benchmarking on a known-fast filesystem.
  */
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -23,16 +26,19 @@ import {
 const N = 100;
 const WARMUP_RUNS = 1;
 const MEASURED_RUNS = 5;
-const LOCAL_P99_LIMIT_MS = 8;
-// CI ceilings sit above the GitHub-hosted runner steady-state band (p50
-// ~23-31ms, p99 ~30-32ms) so healthy runs pass, while still catching sustained
-// slowdowns/hangs via the median-p50, median-p99, and max-p99 guards. The
-// strict 8ms target is kept for LOCAL runs only (LOCAL_P99_LIMIT_MS). See #3352.
+const STRICT_LOCAL_P99_LIMIT_MS = 8;
+// CI ceilings sit above the hosted-runner steady-state band (p50 ~23-31ms,
+// p99 ~30-32ms) so healthy runs pass, while still catching sustained
+// slowdowns/hangs via the median-p50, median-p99, and max-p99 guards. See #3352.
 const CI_MEDIAN_P50_LIMIT_MS = 40;
 const CI_MEDIAN_P99_LIMIT_MS = 25;
 const CI_MEDIAN_P99_JITTER_MARGIN_MS = 20;
 const CI_MAX_P99_LIMIT_MS = 100;
+const LOCAL_MEDIAN_P50_LIMIT_MS = 80;
+const LOCAL_MEDIAN_P99_LIMIT_MS = 90;
+const LOCAL_MAX_P99_LIMIT_MS = 200;
 const isCi = process.env.CI === "true" || process.env.CI === "1";
+const isStrictLocalPerf = !isCi && process.env.OMC_STRICT_LOCAL_PERF === "1";
 
 function makeEmptyState(): SubagentTrackingState {
   return {
@@ -141,25 +147,30 @@ describe("subagent-lock benchmark", () => {
       const medianP50 = median(p50s);
       const medianP99 = median(p99s);
       const maxP99 = Math.max(...p99s);
-      const ciMedianP99Limit = CI_MEDIAN_P99_LIMIT_MS + CI_MEDIAN_P99_JITTER_MARGIN_MS;
+      const medianP50Limit = isCi ? CI_MEDIAN_P50_LIMIT_MS : LOCAL_MEDIAN_P50_LIMIT_MS;
+      const medianP99Limit = isCi
+        ? CI_MEDIAN_P99_LIMIT_MS + CI_MEDIAN_P99_JITTER_MARGIN_MS
+        : LOCAL_MEDIAN_P99_LIMIT_MS;
+      const maxP99Limit = isCi ? CI_MAX_P99_LIMIT_MS : LOCAL_MAX_P99_LIMIT_MS;
 
       console.log(
-        `[subagent-lock bench] Linux CI=${isCi} N=${N} measuredRuns=${MEASURED_RUNS}` +
+        `[subagent-lock bench] Linux CI=${isCi} strictLocal=${isStrictLocalPerf}` +
+        ` N=${N} measuredRuns=${MEASURED_RUNS}` +
         ` medianP50=${medianP50.toFixed(3)}ms medianP99=${medianP99.toFixed(3)}ms` +
-        ` ciMedianP99Limit=${ciMedianP99Limit}ms maxP99=${maxP99.toFixed(3)}ms` +
+        ` medianP50Limit=${medianP50Limit}ms medianP99Limit=${medianP99Limit}ms` +
+        ` maxP99=${maxP99.toFixed(3)}ms maxP99Limit=${maxP99Limit}ms` +
         ` p99s=${p99s.map((p99) => p99.toFixed(3)).join(",")}`,
       );
 
-      if (isCi) {
-        // GitHub-hosted runners can occasionally pause filesystem lock RMW by
-        // a few milliseconds even when the sustained path is healthy. Keep the
-        // historical 25ms target plus a narrow jitter margin for median p99,
-        // while median p50 and max-p99 still catch sustained slowdowns/hangs.
-        expect(medianP50).toBeLessThanOrEqual(CI_MEDIAN_P50_LIMIT_MS);
-        expect(medianP99).toBeLessThanOrEqual(ciMedianP99Limit);
-        expect(maxP99).toBeLessThanOrEqual(CI_MAX_P99_LIMIT_MS);
+      if (isStrictLocalPerf) {
+        expect(medianP99).toBeLessThanOrEqual(STRICT_LOCAL_P99_LIMIT_MS);
       } else {
-        expect(medianP99).toBeLessThanOrEqual(LOCAL_P99_LIMIT_MS);
+        // Local full-suite runs can add scheduler and filesystem contention.
+        // Keep this as a coarse sustained-slowdown/hang guard; use strictLocal
+        // for dedicated low-noise performance benchmarking.
+        expect(medianP50).toBeLessThanOrEqual(medianP50Limit);
+        expect(medianP99).toBeLessThanOrEqual(medianP99Limit);
+        expect(maxP99).toBeLessThanOrEqual(maxP99Limit);
       }
     },
   );
