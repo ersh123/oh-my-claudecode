@@ -799,3 +799,33 @@ Remaining risk:
 - `.mjs` parity remains open; this slice covers uninstall/settings cleanup, not every template/runtime default.
 - Broader command/gate docs accuracy remains open.
 - Live merge will repeat build, typecheck, focused tests, temp uninstall smoke, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/docs-skill-table-parity
+
+Candidates + WSJF:
+- TAKE: pin `docs/REFERENCE.md` skill table to the builtin skill loader output. Value 6, risk reduction 6, urgency 4, complexity 1 => 16.0. The docs claimed 38 skills while the runtime loader exposed 40 names when deprecated aliases are included.
+- DEFER: full slash-command docs audit. Value 7, risk reduction 6, urgency 4, complexity 5 => 3.4. Useful, but this slice isolates one mechanical docs contract.
+- DROP: compare docs to raw `skills/*/SKILL.md` directories. Value 2, risk reduction 1, urgency 2, complexity 2 => 2.5. Raw filesystem count was misleading because the loader hides skininthegamebros-only skills, renames native-command collisions like `plan` to `omc-plan`, and expands aliases.
+
+Changed:
+- `docs/REFERENCE.md` now says `Skills (40 Total)` and includes the runtime-visible `cancel-ralph`, `local-build-reminder`, `nikoflow`, and `ultragoal` rows.
+- `src/__tests__/tier0-docs-consistency.test.ts` now compares the `REFERENCE.md` Skills table and count to `listBuiltinSkillNames({ includeAliases: true })`.
+- Generated `dist/__tests__/tier0-docs-consistency.test.js` artifacts were rebuilt.
+- `ROADMAP.md` records the loader-backed docs parity check while keeping broader command/gate docs accuracy open.
+
+Evidence:
+- RED parser correction: an initial filesystem-based test exposed that raw `skills/*/SKILL.md` count was the wrong source of truth for public docs.
+- RED runtime-backed: `npx vitest run src/__tests__/tier0-docs-consistency.test.ts --reporter=verbose` failed with `expected '38' to be '40'`.
+- GREEN affected: `npx vitest run src/__tests__/tier0-docs-consistency.test.ts --reporter=verbose` passed 18/18.
+- Build: `npm run build` exited 0 and regenerated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10265`, `numPassedTests=10258`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan reported `0` hits.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The test now depends on the same loader API used by runtime skill lookup instead of duplicating frontmatter rules. Docs changes are limited to the public runtime-visible names, so hidden skininthegamebros-only skills stay out of the reference table.
+
+Remaining risk:
+- Broader command/gate docs accuracy remains open.
+- Live merge will repeat focused docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
