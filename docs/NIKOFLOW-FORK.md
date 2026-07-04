@@ -57,7 +57,9 @@ The plugin loads `dist/`, not `src/`. After any TS edit: `npm run build` (behind
 
 - A model with shell/Write access can edit `.omc/state/**/nikoflow*.json` directly (same class as ralph).
 - Human-gate user-turn check is content-blind (a "no" reply still lets the model emit the tag).
-- Reviewer genuineness is unprovable: any `Task`/`Agent` tool_result counts as "a reviewer".
+- Reviewer genuineness is bounded, not cryptographic: execute/verify gates require a review-capable
+  `Task`/`proxy_Task`/`Agent` tool_result (`code-reviewer`, `security-reviewer`, `verifier`, `critic`, or
+  Codex rescue), but the Stop hook cannot prove the subagent was unbiased or context-isolated.
 - Green-validation in the verify phase is prompt-only (not run from the Stop hook).
 - PBT detection reads root manifests only (monorepos may mis-waive; the waived reason is the tell).
 
