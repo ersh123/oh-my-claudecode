@@ -54,3 +54,19 @@ export {
   HUMAN_GATE_PHASES,
   type GateMatch,
 } from "./gates.js";
+
+export {
+  normalizeTicketsFile,
+  lintTicketsRaw,
+  lintTicketsFile,
+  readTickets,
+  writeTickets,
+  clearTickets,
+  validateTicketDag,
+  getNextTicket,
+  allTicketsDone,
+  type NikoflowTicket,
+  type NikoflowTicketsFile,
+  type TicketStatus,
+  type DagValidation,
+} from "./tickets.js";

@@ -19,7 +19,7 @@ import { readUltraworkState, writeUltraworkState, incrementReinforcement, deacti
 import { resolveToWorktreeRoot, resolveSessionStatePath, resolveStatePath, getOmcRoot } from '../../lib/worktree-paths.js';
 import { readModeState, writeModeState } from '../../lib/mode-state-io.js';
 import { readRalphState, writeRalphState, incrementRalphIteration, clearRalphState, findPrdPath, getPrdCompletionStatus, getRalphContext, getStory, markStoryIncomplete, markStoryArchitectVerified, readVerificationState, startVerification, recordArchitectFeedback, getArchitectVerificationPrompt, getArchitectRejectionContinuationPrompt, detectArchitectApproval, detectArchitectRejection, clearVerificationState, } from '../ralph/index.js';
-import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, advanceNikoflowPhase, mintGateRequest, rotateGateRequest, clearGateRequest, userRepliedAfterMint, detectNikoflowGate, HUMAN_GATE_PHASES, } from '../nikoflow/index.js';
+import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, advanceNikoflowPhase, mintGateRequest, rotateGateRequest, clearGateRequest, userRepliedAfterMint, detectNikoflowGate, HUMAN_GATE_PHASES, readTickets, validateTicketDag, lintTicketsFile, } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
 import { isAutopilotActive } from '../autopilot/index.js';
@@ -712,6 +712,31 @@ function checkArchitectRejectionInTranscript(sessionId) {
  */
 /** Gates wired for auto-advance in TSK-003. execute/verify advance in TSK-005/006. */
 const NIKOFLOW_ADVANCING_GATES = new Set(['depth', 'interview', 'adr', 'prd', 'tickets']);
+/**
+ * Artifact precondition a gate requires beyond the confirmation tag. Returns an
+ * error string when the required artifact is missing/invalid (block, don't
+ * advance), or null when the gate may proceed. TSK-004: the tickets gate needs
+ * a valid tickets.json (present, acyclic, no dangling deps) before "APPROVED".
+ */
+function nikoflowGatePrecondition(gate, workingDir, sessionId) {
+    if (gate !== 'tickets')
+        return null;
+    // Lint the RAW file first so shape errors (blocked_by as a string, bad status)
+    // are surfaced instead of being silently laundered into a valid-looking graph.
+    const lint = lintTicketsFile(workingDir, sessionId);
+    if (lint.length > 0) {
+        return `tickets.json has shape problems: ${lint.join('; ')}. Fix them before approving.`;
+    }
+    const tickets = readTickets(workingDir, sessionId);
+    if (!tickets) {
+        return 'tickets.json not found — write the atomic ticket breakdown (TSK-001…) before approving.';
+    }
+    const dag = validateTicketDag(tickets);
+    if (!dag.ok) {
+        return `tickets.json is invalid: ${dag.errors.join('; ')}. Fix the breakdown before approving.`;
+    }
+    return null;
+}
 /** Extract decoded text (assistant + user message text blocks) from a JSONL transcript tail. */
 function readNikoflowGateText(transcriptPath) {
     const parts = [];
@@ -788,6 +813,29 @@ async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcr
         const isHumanGate = HUMAN_GATE_PHASES.has(gate);
         const humanOk = !isHumanGate || userRepliedAfterMint(current);
         if (match.matched && humanOk) {
+            // Gate confirmed by the user, but some gates also need a valid artifact
+            // (e.g. tickets.json). If missing/invalid, block with the error instead of
+            // advancing, keeping the same request-id so the fixed artifact re-passes.
+            const preconditionError = nikoflowGatePrecondition(gate, workingDir, sessionId);
+            if (preconditionError) {
+                // The user approved, but the required artifact is missing/invalid. Rotate
+                // the request-id so this approval cannot silently ratify a DIFFERENT
+                // artifact the model writes afterward — the corrected artifact must be
+                // re-approved by the user. (Closes the "approve garbage, swap in secretly"
+                // window; the model still owns the file, this just re-gates the human bit.)
+                const rotated = rotateGateRequest(workingDir, gate, sessionId) ?? requestId;
+                const rotatedState = readNikoflowState(workingDir, sessionId) ?? current;
+                const base = phase
+                    ? getPhasePrompt(phase, rotatedState, rotated)
+                    : getDepthSelectionPrompt(rotatedState, rotated);
+                return {
+                    shouldBlock: true,
+                    message: `${base}\n<nikoflow-gate-blocked>${preconditionError} ` +
+                        `After fixing, present the corrected breakdown and get the user to approve again.` +
+                        `</nikoflow-gate-blocked>`,
+                    mode: 'nikoflow',
+                };
+            }
             if (gate === 'depth') {
                 if (match.depth) {
                     setNikoflowDepth(workingDir, match.depth, sessionId);
