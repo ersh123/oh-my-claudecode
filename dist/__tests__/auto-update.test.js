@@ -15,6 +15,9 @@ vi.mock('../installer/index.js', async () => {
 });
 vi.mock('fs', async () => {
     const actual = await vi.importActual('fs');
+    const mockedRealpathSync = Object.assign(vi.fn((path) => String(path)), {
+        native: vi.fn((path) => String(path)),
+    });
     return {
         ...actual,
         cpSync: vi.fn(),
@@ -25,6 +28,7 @@ vi.mock('fs', async () => {
         renameSync: vi.fn(),
         readdirSync: vi.fn(),
         rmSync: vi.fn(),
+        realpathSync: mockedRealpathSync,
         statSync: vi.fn(),
     };
 });
