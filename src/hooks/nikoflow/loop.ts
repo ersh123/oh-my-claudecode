@@ -70,12 +70,22 @@ export interface NikoflowState {
   last_user_prompt_at?: string;
   /** Number of failed verify-review passes (loop-review convergence, TSK-006). */
   verify_pass?: number;
+  /** Consecutive verify Stops with NO parseable reviewer verdict (livelock guard). */
+  verify_no_verdict?: number;
+  /** The ticket the execute-stall counter is tracking. */
+  execute_stall_ticket?: string;
+  /** Consecutive execute Stops on the same ticket with no reviewer verdict. */
+  execute_stall?: number;
 }
 
 /** Verify gate: reviewer score at/above this passes. */
 export const NIKOFLOW_VERIFY_SCORE_THRESHOLD = 9.5;
 /** Verify gate: after this many failed passes, escalate to the user. */
 export const NIKOFLOW_VERIFY_MAX_PASSES = 6;
+/** Verify: after this many Stops with NO parseable verdict, escalate (livelock guard, R1). */
+export const NIKOFLOW_VERIFY_MAX_NO_VERDICT = 8;
+/** Execute: after this many Stops on one ticket with no reviewer verdict, surface it (R1). */
+export const NIKOFLOW_EXECUTE_MAX_STALL = 15;
 
 export interface NikoflowLoopOptions {
   depth?: NikoflowDepth;
@@ -315,8 +325,57 @@ export function recordVerifyPass(
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return 0;
   state.verify_pass = (state.verify_pass ?? 0) + 1;
+  state.verify_no_verdict = 0; // a verdict was seen → reset the livelock guard
   writeNikoflowState(directory, state, sessionId);
   return state.verify_pass;
+}
+
+/** Count a verify Stop that produced NO parseable reviewer verdict. Returns the
+ *  running count so the caller can escalate before an unbounded reviewer loop. */
+export function bumpVerifyNoVerdict(directory: string, sessionId?: string): number {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return 0;
+  state.verify_no_verdict = (state.verify_no_verdict ?? 0) + 1;
+  writeNikoflowState(directory, state, sessionId);
+  return state.verify_no_verdict;
+}
+
+/** Reset the verify no-verdict counter (a verdict was seen). */
+export function resetVerifyNoVerdict(directory: string, sessionId?: string): void {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active || !state.verify_no_verdict) return;
+  state.verify_no_verdict = 0;
+  writeNikoflowState(directory, state, sessionId);
+}
+
+/** Count an execute Stop that made no progress on `ticketId` (no reviewer verdict).
+ *  Resets when the tracked ticket changes. Returns the running stall count. */
+export function bumpExecuteStall(
+  directory: string,
+  ticketId: string,
+  sessionId?: string,
+): number {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return 0;
+  if (state.execute_stall_ticket !== ticketId) {
+    state.execute_stall_ticket = ticketId;
+    state.execute_stall = 1;
+  } else {
+    state.execute_stall = (state.execute_stall ?? 0) + 1;
+  }
+  writeNikoflowState(directory, state, sessionId);
+  return state.execute_stall;
+}
+
+/** Reset the execute-stall counter (a ticket advanced). */
+export function resetExecuteStall(directory: string, sessionId?: string): void {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return;
+  if (state.execute_stall || state.execute_stall_ticket) {
+    delete state.execute_stall;
+    delete state.execute_stall_ticket;
+    writeNikoflowState(directory, state, sessionId);
+  }
 }
 
 const USER_TURN_KEY = "nikoflow-userturn";

@@ -37,11 +37,19 @@ export {
   // Verify convergence (TSK-006)
   recordVerifyPass,
 
+  // Livelock guards (R1)
+  bumpVerifyNoVerdict,
+  resetVerifyNoVerdict,
+  bumpExecuteStall,
+  resetExecuteStall,
+
   // Constants
   NIKOFLOW_DEPTHS,
   NIKOFLOW_PHASES,
   NIKOFLOW_VERIFY_SCORE_THRESHOLD,
   NIKOFLOW_VERIFY_MAX_PASSES,
+  NIKOFLOW_VERIFY_MAX_NO_VERDICT,
+  NIKOFLOW_EXECUTE_MAX_STALL,
 
   // Types
   type NikoflowDepth,

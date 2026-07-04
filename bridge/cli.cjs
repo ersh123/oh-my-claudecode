@@ -19814,8 +19814,43 @@ function recordVerifyPass(directory, sessionId) {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return 0;
   state.verify_pass = (state.verify_pass ?? 0) + 1;
+  state.verify_no_verdict = 0;
   writeNikoflowState(directory, state, sessionId);
   return state.verify_pass;
+}
+function bumpVerifyNoVerdict(directory, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return 0;
+  state.verify_no_verdict = (state.verify_no_verdict ?? 0) + 1;
+  writeNikoflowState(directory, state, sessionId);
+  return state.verify_no_verdict;
+}
+function resetVerifyNoVerdict(directory, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active || !state.verify_no_verdict) return;
+  state.verify_no_verdict = 0;
+  writeNikoflowState(directory, state, sessionId);
+}
+function bumpExecuteStall(directory, ticketId, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return 0;
+  if (state.execute_stall_ticket !== ticketId) {
+    state.execute_stall_ticket = ticketId;
+    state.execute_stall = 1;
+  } else {
+    state.execute_stall = (state.execute_stall ?? 0) + 1;
+  }
+  writeNikoflowState(directory, state, sessionId);
+  return state.execute_stall;
+}
+function resetExecuteStall(directory, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return;
+  if (state.execute_stall || state.execute_stall_ticket) {
+    delete state.execute_stall;
+    delete state.execute_stall_ticket;
+    writeNikoflowState(directory, state, sessionId);
+  }
 }
 function userTurnPath(directory, sessionId) {
   if (!sessionId) return null;
@@ -19906,7 +19941,7 @@ function createNikoflowLoopHook(directory) {
   };
   return { startLoop, cancelLoop, getState };
 }
-var import_crypto11, import_fs55, NIKOFLOW_DEPTHS, NIKOFLOW_PHASES, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, MODE, USER_TURN_KEY;
+var import_crypto11, import_fs55, NIKOFLOW_DEPTHS, NIKOFLOW_PHASES, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, MODE, USER_TURN_KEY;
 var init_loop2 = __esm({
   "src/hooks/nikoflow/loop.ts"() {
     "use strict";
@@ -19923,6 +19958,8 @@ var init_loop2 = __esm({
     };
     NIKOFLOW_VERIFY_SCORE_THRESHOLD = 9.5;
     NIKOFLOW_VERIFY_MAX_PASSES = 6;
+    NIKOFLOW_VERIFY_MAX_NO_VERDICT = 8;
+    NIKOFLOW_EXECUTE_MAX_STALL = 15;
     MODE = "nikoflow";
     USER_TURN_KEY = "nikoflow-userturn";
   }
@@ -20397,12 +20434,16 @@ var nikoflow_exports = {};
 __export(nikoflow_exports, {
   HUMAN_GATE_PHASES: () => HUMAN_GATE_PHASES,
   NIKOFLOW_DEPTHS: () => NIKOFLOW_DEPTHS,
+  NIKOFLOW_EXECUTE_MAX_STALL: () => NIKOFLOW_EXECUTE_MAX_STALL,
   NIKOFLOW_GATE_PAYLOADS: () => NIKOFLOW_GATE_PAYLOADS,
   NIKOFLOW_PHASES: () => NIKOFLOW_PHASES,
+  NIKOFLOW_VERIFY_MAX_NO_VERDICT: () => NIKOFLOW_VERIFY_MAX_NO_VERDICT,
   NIKOFLOW_VERIFY_MAX_PASSES: () => NIKOFLOW_VERIFY_MAX_PASSES,
   NIKOFLOW_VERIFY_SCORE_THRESHOLD: () => NIKOFLOW_VERIFY_SCORE_THRESHOLD,
   advanceNikoflowPhase: () => advanceNikoflowPhase,
   allTicketsDone: () => allTicketsDone,
+  bumpExecuteStall: () => bumpExecuteStall,
+  bumpVerifyNoVerdict: () => bumpVerifyNoVerdict,
   clearGateRequest: () => clearGateRequest,
   clearNikoflowState: () => clearNikoflowState,
   clearTickets: () => clearTickets,
@@ -20432,6 +20473,8 @@ __export(nikoflow_exports, {
   readTickets: () => readTickets,
   recordNikoflowUserPrompt: () => recordNikoflowUserPrompt,
   recordVerifyPass: () => recordVerifyPass,
+  resetExecuteStall: () => resetExecuteStall,
+  resetVerifyNoVerdict: () => resetVerifyNoVerdict,
   rotateGateRequest: () => rotateGateRequest,
   setNikoflowDepth: () => setNikoflowDepth,
   stripNikoflowFlags: () => stripNikoflowFlags,
@@ -20808,26 +20851,26 @@ function recordIdleNotificationSent(stateDir, sessionId, repoState) {
   } catch {
   }
 }
-function readTranscriptTail(transcriptPath) {
+function readTranscriptTail(transcriptPath, maxBytes = TRANSCRIPT_TAIL_BYTES) {
   const size = (0, import_fs58.statSync)(transcriptPath).size;
-  if (size <= TRANSCRIPT_TAIL_BYTES) {
+  if (size <= maxBytes) {
     return (0, import_fs58.readFileSync)(transcriptPath, "utf-8");
   }
   const fd = (0, import_fs58.openSync)(transcriptPath, "r");
   try {
-    const offset = size - TRANSCRIPT_TAIL_BYTES;
-    const buf = Buffer.allocUnsafe(TRANSCRIPT_TAIL_BYTES);
-    const bytesRead = (0, import_fs58.readSync)(fd, buf, 0, TRANSCRIPT_TAIL_BYTES, offset);
+    const offset = size - maxBytes;
+    const buf = Buffer.allocUnsafe(maxBytes);
+    const bytesRead = (0, import_fs58.readSync)(fd, buf, 0, maxBytes, offset);
     return buf.subarray(0, bytesRead).toString("utf-8");
   } finally {
     (0, import_fs58.closeSync)(fd);
   }
 }
-function readTranscriptTailLines(transcriptPath) {
-  const content = readTranscriptTail(transcriptPath);
+function readTranscriptTailLines(transcriptPath, maxBytes = TRANSCRIPT_TAIL_BYTES) {
+  const content = readTranscriptTail(transcriptPath, maxBytes);
   const lines = content.split("\n");
   try {
-    if ((0, import_fs58.statSync)(transcriptPath).size > TRANSCRIPT_TAIL_BYTES && lines.length > 0) {
+    if ((0, import_fs58.statSync)(transcriptPath).size > maxBytes && lines.length > 0) {
       lines.shift();
     }
   } catch {
@@ -21050,7 +21093,7 @@ function readNikoflowGateText(transcriptPath) {
 }
 function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expectedPayloads) {
   const reviewerToolUses = /* @__PURE__ */ new Set();
-  for (const line of readTranscriptTailLines(transcriptPath)) {
+  for (const line of readTranscriptTailLines(transcriptPath, NIKOFLOW_REVIEWER_TAIL_BYTES)) {
     if (!line.trim()) continue;
     let entry;
     try {
@@ -21141,6 +21184,7 @@ function handleNikoflowExecute(workingDir, sessionId, current, transcriptPath) {
       return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
     }
     clearGateRequest(workingDir, sessionId);
+    resetExecuteStall(workingDir, sessionId);
     const after = readTickets(workingDir, sessionId);
     if (!after || allTicketsDone(after)) {
       return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
@@ -21151,6 +21195,13 @@ function handleNikoflowExecute(workingDir, sessionId, current, transcriptPath) {
       return { shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid, pbt), mode: "nikoflow" };
     }
     return nikoflowExecuteError(current, "ticket deadlock after completing a ticket \u2014 check blocked_by.");
+  }
+  const stall = bumpExecuteStall(workingDir, ticket.id, sessionId);
+  if (stall >= NIKOFLOW_EXECUTE_MAX_STALL) {
+    return nikoflowExecuteError(
+      current,
+      `ticket ${ticket.id} has not been reviewer-approved after ${stall} attempts. Confirm an independent reviewer actually ran, or ask the user how to proceed.`
+    );
   }
   return { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId, pbt), mode: "nikoflow" };
 }
@@ -21178,6 +21229,7 @@ function handleNikoflowVerify(workingDir, sessionId, current, transcriptPath) {
       ["VERIFIED", "NO_ACTIONABLE_FINDINGS"]
     );
     if (match.matched) {
+      resetVerifyNoVerdict(workingDir, sessionId);
       const passed = match.payload === "NO_ACTIONABLE_FINDINGS" || match.score !== void 0 && match.score >= NIKOFLOW_VERIFY_SCORE_THRESHOLD;
       if (passed) {
         advanceNikoflowPhase(workingDir, sessionId);
@@ -21198,6 +21250,10 @@ function handleNikoflowVerify(workingDir, sessionId, current, transcriptPath) {
     }
   }
   if (atCap) {
+    return nikoflowVerifyEscalation(current, passSoFar);
+  }
+  const noVerdict = bumpVerifyNoVerdict(workingDir, sessionId);
+  if (noVerdict >= NIKOFLOW_VERIFY_MAX_NO_VERDICT) {
     return nikoflowVerifyEscalation(current, passSoFar);
   }
   return { shouldBlock: true, message: getVerifyPrompt(current, requestId, passSoFar + 1), mode: "nikoflow" };
@@ -22165,7 +22221,7 @@ function createHookOutput(result) {
     message: result.message || void 0
   };
 }
-var import_fs58, import_path66, CANCEL_SIGNAL_TTL_MS2, STALE_STATE_THRESHOLD_MS, PENDING_ASYNC_STATE_STALE_MS, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_MAX, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_TTL_MS, TERMINAL_WORKFLOW_SLOT_MODES, TERMINAL_WORKFLOW_PHASES, todoContinuationAttempts, TRANSCRIPT_TAIL_BYTES, CRITICAL_CONTEXT_STOP_PERCENT, RALPLAN_TERMINAL_PHASES, REVIEWER_TASK_TOOL_NAMES, REVIEWER_COMMAND_TOOL_NAMES, AWAITING_CONFIRMATION_TTL_MS, NIKOFLOW_ADVANCING_GATES, THINKING_ONLY_STREAK_BREAKER, THINKING_ONLY_STREAK_MAX, THINKING_ONLY_STREAK_TTL_MS, THINKING_ONLY_STREAK_BAILOUT_MESSAGE, TEAM_PIPELINE_STOP_BLOCKER_MAX, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS, RALPLAN_STOP_BLOCKER_MAX, RALPLAN_STOP_BLOCKER_TTL_MS, RALPLAN_ACTIVE_AGENT_RECENCY_WINDOW_MS;
+var import_fs58, import_path66, CANCEL_SIGNAL_TTL_MS2, STALE_STATE_THRESHOLD_MS, PENDING_ASYNC_STATE_STALE_MS, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_MAX, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_TTL_MS, TERMINAL_WORKFLOW_SLOT_MODES, TERMINAL_WORKFLOW_PHASES, todoContinuationAttempts, TRANSCRIPT_TAIL_BYTES, NIKOFLOW_REVIEWER_TAIL_BYTES, CRITICAL_CONTEXT_STOP_PERCENT, RALPLAN_TERMINAL_PHASES, REVIEWER_TASK_TOOL_NAMES, REVIEWER_COMMAND_TOOL_NAMES, AWAITING_CONFIRMATION_TTL_MS, NIKOFLOW_ADVANCING_GATES, THINKING_ONLY_STREAK_BREAKER, THINKING_ONLY_STREAK_MAX, THINKING_ONLY_STREAK_TTL_MS, THINKING_ONLY_STREAK_BAILOUT_MESSAGE, TEAM_PIPELINE_STOP_BLOCKER_MAX, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS, RALPLAN_STOP_BLOCKER_MAX, RALPLAN_STOP_BLOCKER_TTL_MS, RALPLAN_ACTIVE_AGENT_RECENCY_WINDOW_MS;
 var init_persistent_mode = __esm({
   "src/hooks/persistent-mode/index.ts"() {
     "use strict";
@@ -22206,6 +22262,7 @@ var init_persistent_mode = __esm({
     ]);
     todoContinuationAttempts = /* @__PURE__ */ new Map();
     TRANSCRIPT_TAIL_BYTES = 32 * 1024;
+    NIKOFLOW_REVIEWER_TAIL_BYTES = 512 * 1024;
     CRITICAL_CONTEXT_STOP_PERCENT = 95;
     RALPLAN_TERMINAL_PHASES = /* @__PURE__ */ new Set([
       "completed",

@@ -19,7 +19,7 @@ import { readUltraworkState, writeUltraworkState, incrementReinforcement, deacti
 import { resolveToWorktreeRoot, resolveSessionStatePath, resolveStatePath, getOmcRoot } from '../../lib/worktree-paths.js';
 import { readModeState, writeModeState } from '../../lib/mode-state-io.js';
 import { readRalphState, writeRalphState, incrementRalphIteration, clearRalphState, findPrdPath, getPrdCompletionStatus, getRalphContext, getStory, markStoryIncomplete, markStoryArchitectVerified, readVerificationState, startVerification, recordArchitectFeedback, getArchitectVerificationPrompt, getArchitectRejectionContinuationPrompt, detectArchitectApproval, detectArchitectRejection, clearVerificationState, } from '../ralph/index.js';
-import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, advanceNikoflowPhase, mintGateRequest, rotateGateRequest, clearGateRequest, userRepliedAfterMint, isNikoflowUserTurnFresh, detectNikoflowGate, HUMAN_GATE_PHASES, readTickets, validateTicketDag, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, getVerifyPrompt, pbtObligation, recordVerifyPass, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, } from '../nikoflow/index.js';
+import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, advanceNikoflowPhase, mintGateRequest, rotateGateRequest, clearGateRequest, userRepliedAfterMint, isNikoflowUserTurnFresh, detectNikoflowGate, HUMAN_GATE_PHASES, readTickets, validateTicketDag, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, getVerifyPrompt, pbtObligation, recordVerifyPass, bumpVerifyNoVerdict, resetVerifyNoVerdict, bumpExecuteStall, resetExecuteStall, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
 import { isAutopilotActive } from '../autopilot/index.js';
@@ -457,6 +457,10 @@ export function recordIdleNotificationSent(stateDir, sessionId, repoState) {
 }
 /** Max bytes to read from the tail of a transcript for architect approval detection. */
 const TRANSCRIPT_TAIL_BYTES = 32 * 1024; // 32 KB
+/** Larger window for nikoflow reviewer-authored gates: a reviewer subagent's
+ *  tool_use line + its (possibly long) tool_result must both fit, or the gate
+ *  never matches → livelock (Fable QA R1). */
+const NIKOFLOW_REVIEWER_TAIL_BYTES = 512 * 1024; // 512 KB
 const CRITICAL_CONTEXT_STOP_PERCENT = 95;
 const RALPLAN_TERMINAL_PHASES = new Set([
     'completed',
@@ -482,27 +486,27 @@ const RALPLAN_TERMINAL_PHASES = new Set([
  * Architect approval/rejection markers appear near the end of the conversation,
  * so reading only the last N bytes avoids loading megabyte-sized transcripts.
  */
-function readTranscriptTail(transcriptPath) {
+function readTranscriptTail(transcriptPath, maxBytes = TRANSCRIPT_TAIL_BYTES) {
     const size = statSync(transcriptPath).size;
-    if (size <= TRANSCRIPT_TAIL_BYTES) {
+    if (size <= maxBytes) {
         return readFileSync(transcriptPath, 'utf-8');
     }
     const fd = openSync(transcriptPath, 'r');
     try {
-        const offset = size - TRANSCRIPT_TAIL_BYTES;
-        const buf = Buffer.allocUnsafe(TRANSCRIPT_TAIL_BYTES);
-        const bytesRead = readSync(fd, buf, 0, TRANSCRIPT_TAIL_BYTES, offset);
+        const offset = size - maxBytes;
+        const buf = Buffer.allocUnsafe(maxBytes);
+        const bytesRead = readSync(fd, buf, 0, maxBytes, offset);
         return buf.subarray(0, bytesRead).toString('utf-8');
     }
     finally {
         closeSync(fd);
     }
 }
-function readTranscriptTailLines(transcriptPath) {
-    const content = readTranscriptTail(transcriptPath);
+function readTranscriptTailLines(transcriptPath, maxBytes = TRANSCRIPT_TAIL_BYTES) {
+    const content = readTranscriptTail(transcriptPath, maxBytes);
     const lines = content.split('\n');
     try {
-        if (statSync(transcriptPath).size > TRANSCRIPT_TAIL_BYTES && lines.length > 0) {
+        if (statSync(transcriptPath).size > maxBytes && lines.length > 0) {
             lines.shift();
         }
     }
@@ -775,7 +779,7 @@ function readNikoflowGateText(transcriptPath) {
  */
 function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expectedPayloads) {
     const reviewerToolUses = new Set();
-    for (const line of readTranscriptTailLines(transcriptPath)) {
+    for (const line of readTranscriptTailLines(transcriptPath, NIKOFLOW_REVIEWER_TAIL_BYTES)) {
         if (!line.trim())
             continue;
         let entry;
@@ -894,6 +898,7 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
             return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
         }
         clearGateRequest(workingDir, sessionId);
+        resetExecuteStall(workingDir, sessionId); // a ticket advanced → clear stall guard
         const after = readTickets(workingDir, sessionId);
         if (!after || allTicketsDone(after)) {
             return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
@@ -905,6 +910,14 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
         }
         // Completed a ticket but nothing is startable and not all done → deadlock.
         return nikoflowExecuteError(current, 'ticket deadlock after completing a ticket — check blocked_by.');
+    }
+    // No reviewer verdict for this ticket yet. Bound it: if a ticket never gets a
+    // reviewer-authored TICKET_DONE for many Stops, surface it instead of looping
+    // forever (Fable QA R1 — the per-ticket gate otherwise has no cap).
+    const stall = bumpExecuteStall(workingDir, ticket.id, sessionId);
+    if (stall >= NIKOFLOW_EXECUTE_MAX_STALL) {
+        return nikoflowExecuteError(current, `ticket ${ticket.id} has not been reviewer-approved after ${stall} attempts. ` +
+            `Confirm an independent reviewer actually ran, or ask the user how to proceed.`);
     }
     return { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId, pbt), mode: 'nikoflow' };
 }
@@ -940,6 +953,7 @@ export function handleNikoflowVerify(workingDir, sessionId, current, transcriptP
     if (transcriptPath && existsSync(transcriptPath)) {
         const match = nikoflowReviewerAuthoredGate(transcriptPath, 'verify', requestId, ['VERIFIED', 'NO_ACTIONABLE_FINDINGS']);
         if (match.matched) {
+            resetVerifyNoVerdict(workingDir, sessionId); // a verdict was parsed → clear livelock guard
             const passed = match.payload === 'NO_ACTIONABLE_FINDINGS' ||
                 (match.score !== undefined && match.score >= NIKOFLOW_VERIFY_SCORE_THRESHOLD);
             if (passed) {
@@ -962,8 +976,14 @@ export function handleNikoflowVerify(workingDir, sessionId, current, transcriptP
             return { shouldBlock: true, message: getVerifyPrompt(current, freshRid, passes + 1), mode: 'nikoflow' };
         }
     }
-    // No reviewer verdict yet.
+    // No reviewer verdict yet. Bound the loop: if a parseable verdict never
+    // appears (e.g. the reviewer tag keeps scrolling out of the scan window),
+    // escalate instead of spawning reviewers forever (Fable QA R1 livelock).
     if (atCap) {
+        return nikoflowVerifyEscalation(current, passSoFar);
+    }
+    const noVerdict = bumpVerifyNoVerdict(workingDir, sessionId);
+    if (noVerdict >= NIKOFLOW_VERIFY_MAX_NO_VERDICT) {
         return nikoflowVerifyEscalation(current, passSoFar);
     }
     return { shouldBlock: true, message: getVerifyPrompt(current, requestId, passSoFar + 1), mode: 'nikoflow' };
