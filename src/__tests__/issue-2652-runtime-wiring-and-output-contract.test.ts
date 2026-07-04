@@ -76,7 +76,10 @@ describe('issue #2652 runtime wiring and output contract', () => {
     }
   });
 
-  it('fails closed when active nikoflow cannot load its TS engine', () => {
+  it.each([
+    ['runtime script', 'scripts/persistent-mode.mjs'],
+    ['installed template', 'templates/hooks/persistent-mode.mjs'],
+  ])('fails closed when active nikoflow cannot load its TS engine via %s', (_artifactName, scriptPath) => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'omc-nikoflow-engine-missing-'));
     try {
       const pluginRoot = join(tempRoot, 'plugin');
@@ -103,7 +106,7 @@ describe('issue #2652 runtime wiring and output contract', () => {
         'utf-8',
       );
 
-      const raw = execFileSync(process.execPath, [join(process.cwd(), 'scripts', 'persistent-mode.mjs')], {
+      const raw = execFileSync(process.execPath, [join(process.cwd(), scriptPath)], {
         input: JSON.stringify({ cwd: projectRoot, session_id: sessionId }),
         encoding: 'utf-8',
         env: {
