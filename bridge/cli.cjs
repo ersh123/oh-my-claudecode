@@ -21629,8 +21629,8 @@ async function checkRalphLoop(sessionId, directory, cancelInProgress) {
         if (verificationState.verification_scope === "story" && verificationState.story_id) {
           markStoryIncomplete(workingDir, verificationState.story_id, rejection.feedback, sessionId);
         }
-        recordArchitectFeedback(workingDir, false, rejection.feedback, sessionId);
-        const updatedVerification = readVerificationState(workingDir, sessionId);
+        const feedbackState = recordArchitectFeedback(workingDir, false, rejection.feedback, sessionId);
+        const updatedVerification = readVerificationState(workingDir, sessionId) ?? feedbackState;
         verificationState = updatedVerification;
         if (updatedVerification) {
           const continuationPrompt2 = getArchitectRejectionContinuationPrompt(updatedVerification);
