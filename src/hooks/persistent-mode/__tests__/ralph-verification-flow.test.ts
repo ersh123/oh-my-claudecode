@@ -58,6 +58,58 @@ describe('Ralph verification flow', () => {
     );
   }
 
+  function writePendingCompletionVerification(sessionId: string): void {
+    const sessionDir = join(testDir, '.omc', 'state', 'sessions', sessionId);
+    mkdirSync(sessionDir, { recursive: true });
+    writeFileSync(join(sessionDir, 'ralph-verification-state.json'), JSON.stringify({
+      pending: true,
+      completion_claim: 'All stories are complete',
+      verification_attempts: 0,
+      max_verification_attempts: 3,
+      requested_at: new Date().toISOString(),
+      original_task: 'Implement issue #1496',
+      critic_mode: 'critic',
+      request_id: 'completion-request',
+    }));
+  }
+
+  function writeCompletionApprovalTranscript(sessionId: string, input: Record<string, unknown>): void {
+    writeMessagesTranscript(sessionId, [
+      {
+        timestamp: '2026-04-13T12:00:00.000Z',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu-review',
+              name: 'Task',
+              input,
+            },
+          ],
+        },
+      },
+      {
+        timestamp: '2026-04-13T12:00:05.000Z',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu-review',
+              content: [
+                {
+                  type: 'text',
+                  text: '<ralph-approved critic="critic" request-id="completion-request">VERIFIED_COMPLETE</ralph-approved>',
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+  }
+
   it('enters verification instead of completing immediately when PRD is done', async () => {
     const sessionId = 'ralph-prd-complete';
     const prd: PRD = {
@@ -88,63 +140,48 @@ describe('Ralph verification flow', () => {
 
   it('completes Ralph only after reviewer-authored approval output is seen in messages.json', async () => {
     const sessionId = 'ralph-approved';
-    const sessionDir = join(testDir, '.omc', 'state', 'sessions', sessionId);
-    mkdirSync(sessionDir, { recursive: true });
-
     writeRalphState(sessionId);
-    writeFileSync(join(sessionDir, 'ralph-verification-state.json'), JSON.stringify({
-      pending: true,
-      completion_claim: 'All stories are complete',
-      verification_attempts: 0,
-      max_verification_attempts: 3,
-      requested_at: new Date().toISOString(),
-      original_task: 'Implement issue #1496',
-      critic_mode: 'critic',
-      request_id: 'completion-request',
-    }));
-
-    writeMessagesTranscript(sessionId, [
-      {
-        timestamp: '2026-04-13T12:00:00.000Z',
-        message: {
-          role: 'assistant',
-          content: [
-            {
-              type: 'tool_use',
-              id: 'toolu-review-critic',
-              name: 'Task',
-              input: {
-                subagent_type: 'critic',
-                description: 'Review Ralph completion claim',
-              },
-            },
-          ],
-        },
-      },
-      {
-        timestamp: '2026-04-13T12:00:05.000Z',
-        message: {
-          role: 'user',
-          content: [
-            {
-              type: 'tool_result',
-              tool_use_id: 'toolu-review-critic',
-              content: [
-                {
-                  type: 'text',
-                  text: '<ralph-approved critic="critic" request-id="completion-request">VERIFIED_COMPLETE</ralph-approved>',
-                },
-              ],
-            },
-          ],
-        },
-      },
-    ]);
+    writePendingCompletionVerification(sessionId);
+    writeCompletionApprovalTranscript(sessionId, {
+      subagent_type: 'critic',
+      description: 'Review Ralph completion claim',
+    });
 
     const result = await checkPersistentModes(sessionId, testDir);
 
     expect(result.shouldBlock).toBe(false);
     expect(result.message).toContain('Critic verified task completion');
+  });
+
+  it('accepts reviewer-authored approval when native Task records agent_type instead of subagent_type', async () => {
+    const sessionId = 'ralph-approved-agent-type';
+    writeRalphState(sessionId);
+    writePendingCompletionVerification(sessionId);
+    writeCompletionApprovalTranscript(sessionId, {
+      agent_type: 'critic',
+      description: 'Review Ralph completion claim',
+    });
+
+    const result = await checkPersistentModes(sessionId, testDir);
+
+    expect(result.shouldBlock).toBe(false);
+    expect(result.message).toContain('Critic verified task completion');
+  });
+
+  it('rejects approval tags from non-reviewer native Task agent_type', async () => {
+    const sessionId = 'ralph-rejects-executor-agent-type';
+    writeRalphState(sessionId);
+    writePendingCompletionVerification(sessionId);
+    writeCompletionApprovalTranscript(sessionId, {
+      agent_type: 'executor',
+      description: 'Do implementation work',
+    });
+
+    const result = await checkPersistentModes(sessionId, testDir);
+
+    expect(result.shouldBlock).toBe(true);
+    expect(result.mode).toBe('ralph');
+    expect(result.message).toContain('request-id="completion-request"');
   });
 
   it('starts story-scoped architect verification before moving to the next story', async () => {
