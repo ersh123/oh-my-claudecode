@@ -361,3 +361,36 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Installed `templates/hooks/persistent-mode.mjs` still lacks nikoflow parity and needs its own audit slice.
 - Real live Claude hook smoke was not run; direct runtime hook execution covered the changed executable path.
+
+## 2026-07-05 — dogfood/persistent-template-nikoflow
+
+Candidates + WSJF:
+- TAKE: installed persistent-mode template missing-engine parity. Value 7, risk reduction 7, urgency 5, complexity 2 => 9.5. Runtime now failed closed for active nikoflow when the compiled TS engine was missing, but the installed template still had no nikoflow branch and silently released Stop.
+- DEFER: live installed-hook smoke through the real Claude hook config. Value 6, risk reduction 6, urgency 4, complexity 4 => 4.0. Useful, but direct executable artifact coverage was the smaller reversible step.
+- DROP: broad persistent-mode template/runtime sync. Value 8, risk reduction 7, urgency 5, complexity 8 => 2.5. The installed template is intentionally stripped down and differs from runtime in multiple areas; blanket sync is too risky for one pass.
+
+Changed:
+- `templates/hooks/persistent-mode.mjs` now reads active `nikoflow-state.json` and delegates enforcement to `CLAUDE_PLUGIN_ROOT/dist/hooks/persistent-mode/index.js`.
+- The installed template now blocks with the same explicit `NIKOFLOW ENFORCEMENT ERROR` as runtime when active nikoflow state exists but the compiled engine cannot load.
+- `src/__tests__/issue-2652-runtime-wiring-and-output-contract.test.ts` now runs the missing-engine fail-closed case against both `scripts/persistent-mode.mjs` and `templates/hooks/persistent-mode.mjs`.
+- Updated generated `dist/__tests__/issue-2652-runtime-wiring-and-output-contract.test.js` and map from `npm run build`.
+- Updated `ROADMAP.md` persistent-mode evidence and moved the remaining risk to live installed-hook smoke.
+
+Evidence:
+- RED: `npx vitest run src/__tests__/issue-2652-runtime-wiring-and-output-contract.test.ts -t "fails closed when active nikoflow cannot load its TS engine" --reporter=verbose` failed before the template fix only on `installed template` with `expected undefined to be 'block'`; runtime artifact passed.
+- GREEN targeted: the same command passed after the template fix, 2/2 artifact cases.
+- GREEN affected suite: `npx vitest run src/__tests__/issue-2652-runtime-wiring-and-output-contract.test.ts --reporter=verbose` passed 5/5.
+- Signature check: `dist/hooks/persistent-mode/index.d.ts` declares `checkNikoflowLoop(..., transcriptPath?: string)`, so the installed template can pass `undefined` for transcript path.
+- Build: `npm run build` exited 0.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 0 failing test(s) match test-baseline.json`.
+- Baseline JSON confirms `numTotalTests=10242`, `numPassedTests=10235`, `numFailedTests=0`, and no failed assertions.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The template now matches runtime only for the active nikoflow missing-engine path, leaving unrelated stripped-template behavior untouched.
+> The guard is scoped to active nikoflow state for the current project/session and preserves normal Stop fallthrough when no active nikoflow state exists.
+
+Remaining risk:
+- Real installed-hook smoke was not run against the user's actual Claude hook config.
+- Broader persistent-mode template/runtime parity remains open outside the active nikoflow missing-engine path.

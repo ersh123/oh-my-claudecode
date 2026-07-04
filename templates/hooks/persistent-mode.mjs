@@ -5,7 +5,7 @@
  * Minimal continuation enforcer for all OMC modes.
  * Stripped down for reliability — no optional imports, no PRD, no notepad pruning.
  *
- * Supported modes: ralph, autopilot, ultrapilot, swarm, ultrawork, ultraqa, pipeline, team
+ * Supported modes: nikoflow, ralph, autopilot, ultrapilot, swarm, ultrawork, ultraqa, pipeline, team
  */
 
 import {
@@ -855,6 +855,12 @@ async function main() {
       "team-state.json",
       sessionId,
     );
+    const nikoflow = readStateFileWithSession(
+      stateDir,
+      globalStateDir,
+      "nikoflow-state.json",
+      sessionId,
+    );
 
     // Swarm uses swarm-summary.json (not swarm-state.json) + marker file
     // Note: Swarm only reads from local stateDir, never global fallback
@@ -870,6 +876,50 @@ async function main() {
     if (isSessionCancelInProgress(stateDir, sessionId)) {
       console.log(JSON.stringify({ continue: true, suppressOutput: true }));
       return;
+    }
+
+    // Priority 0.9: Nikoflow (phase-gated methodology mode). Enforcement is
+    // delegated to the compiled TS engine (dist) so the phase machine + gates
+    // live in one place; this hook only reads state and relays the block.
+    if (
+      isAuthoritativeModeActive(stateDir, "nikoflow", nikoflow, sessionId) &&
+      isStateForCurrentProject(nikoflow.state, directory, nikoflow.isGlobal)
+    ) {
+      // Staleness is decided by the TS engine (it also honors the user-turn
+      // sidecar so a flow parked at a human gate overnight isn't killed).
+      const nfSessionMatches = hasValidSessionId
+        ? nikoflow.state.session_id === sessionId
+        : !nikoflow.state.session_id || nikoflow.state.session_id === sessionId;
+      if (nfSessionMatches) {
+        try {
+          const nfPluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(__dirname, "..");
+          const engineUrl = pathToFileURL(
+            join(nfPluginRoot, "dist", "hooks", "persistent-mode", "index.js"),
+          ).href;
+          const engine = await import(engineUrl);
+          const result = await engine.checkNikoflowLoop(sessionId, directory, false, undefined);
+          if (result && result.shouldBlock) {
+            console.log(JSON.stringify({ decision: "block", reason: result.message }));
+            return;
+          }
+        } catch (error) {
+          const detail = error?.message || String(error);
+          try {
+            process.stderr.write(`[persistent-mode] nikoflow engine unavailable: ${detail}\n`);
+          } catch {
+            // Best-effort diagnostic only; the block decision below is the safety path.
+          }
+          console.log(
+            JSON.stringify({
+              continue: false,
+              decision: "block",
+              reason:
+                "[NIKOFLOW ENFORCEMENT ERROR] Active nikoflow state is present, but the Stop hook could not load CLAUDE_PLUGIN_ROOT/dist/hooks/persistent-mode/index.js. Rebuild/reinstall OMC so the TS engine can enforce nikoflow gates, or run /oh-my-claudecode:cancel --force if this nikoflow run should be abandoned.",
+            }),
+          );
+          return;
+        }
+      }
     }
 
     // Priority 1: Ralph Loop (explicit persistence mode)
