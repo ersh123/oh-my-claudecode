@@ -92,6 +92,7 @@ export declare function recordIdleNotificationSent(stateDir: string, sessionId?:
  */
 export declare function handleNikoflowExecute(workingDir: string, sessionId: string | undefined, current: NikoflowState, transcriptPath?: string): PersistentModeResult;
 export declare function handleNikoflowVerify(workingDir: string, sessionId: string | undefined, current: NikoflowState, transcriptPath?: string): PersistentModeResult;
+export declare function checkNikoflowLoop(sessionId?: string, directory?: string, cancelInProgress?: boolean, transcriptPath?: string): Promise<PersistentModeResult | null>;
 /**
  * Main persistent mode checker.
  * Resolves which mode (if any) should block, then applies the thinking-only

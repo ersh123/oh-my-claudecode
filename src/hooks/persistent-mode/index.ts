@@ -1263,7 +1263,7 @@ export function handleNikoflowVerify(
   return { shouldBlock: true, message: getVerifyPrompt(current, requestId, passSoFar + 1), mode: 'nikoflow' };
 }
 
-async function checkNikoflowLoop(
+export async function checkNikoflowLoop(
   sessionId?: string,
   directory?: string,
   cancelInProgress?: boolean,

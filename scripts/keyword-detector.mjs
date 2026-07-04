@@ -900,6 +900,24 @@ function activateState(directory, prompt, stateName, sessionId, omcRoot) {
       awaiting_confirmation_set_at: now,
       last_checked_at: now
     };
+  } else if (stateName === 'nikoflow') {
+    // Nikoflow skeleton state; the compiled TS engine (dist) drives the phase
+    // machine on Stop. Depth starts null → the flow opens with depth-selection
+    // during Grilling. Shape must match NikoflowState in src/hooks/nikoflow/loop.ts.
+    state = {
+      active: true,
+      iteration: 1,
+      started_at: now,
+      last_checked_at: now,
+      last_user_prompt_at: now,
+      prompt: safePrompt,
+      session_id: sessionId || undefined,
+      project_path: directory,
+      depth: null,
+      phases: [],
+      phase_index: 0,
+      pbt_enabled: false
+    };
   } else if (stateName === 'ralplan') {
     // Ralplan needs active + session_id for stop-hook enforcement
     state = {
@@ -1158,7 +1176,7 @@ function resolveConflicts(matches) {
   // Team keyword detection removed — team is now explicit-only via /team skill.
 
   // Sort by priority order
-  const priorityOrder = ['cancel','ralph','ultragoal','autopilot','ultrawork',
+  const priorityOrder = ['cancel','ralph','nikoflow','ultragoal','autopilot','ultrawork',
     'ccg','ralplan','deep-interview','ai-slop-cleaner','tdd','code-review','security-review','ultrathink','deepsearch','analyze'];
   resolved.sort((a, b) => priorityOrder.indexOf(a.name) - priorityOrder.indexOf(b.name));
 
@@ -1208,6 +1226,21 @@ async function main() {
     const sessionId = data.session_id || data.sessionId || '';
     const omcRoot = await resolveOmcStateRoot(directory);
 
+    // Nikoflow anti-self-approval: stamp every real user turn so human gates can
+    // require a user reply AFTER the gate was requested (mirrors the TS engine).
+    if (sessionId) {
+      try {
+        const nfPath = join(omcRoot, 'state', 'sessions', sessionId, 'nikoflow-state.json');
+        if (existsSync(nfPath)) {
+          const nf = JSON.parse(readFileSync(nfPath, 'utf-8'));
+          if (nf && nf.active) {
+            nf.last_user_prompt_at = new Date().toISOString();
+            writeFileSync(nfPath, JSON.stringify(nf, null, 2), { mode: 0o600 });
+          }
+        }
+      } catch { /* best-effort */ }
+    }
+
     const prompt = extractPrompt(input);
     if (!prompt) {
       console.log(JSON.stringify({ continue: true, suppressOutput: true }));
@@ -1253,6 +1286,11 @@ async function main() {
     // Ralph keywords
     if (hasActionableKeyword(cleanPrompt, /\b(ralph|don't stop|must complete|until done)\b|(랄프)(?!로렌)|(ラルフ)(?!・?ローレン)/i)) {
       matches.push({ name: 'ralph', args: '' });
+    }
+
+    // Nikoflow keywords (Niko Flow v2.1 phase-gated methodology mode)
+    if (hasActionableKeyword(cleanPrompt, /\b(nikoflow|niko[\s-]?flow|nflow)\b|(никофлоу)/i)) {
+      matches.push({ name: 'nikoflow', args: '' });
     }
 
     // Autopilot keywords
@@ -1445,13 +1483,13 @@ async function main() {
 
     // Handle cancel specially - clear states and emit
     if (resolved.length > 0 && resolved[0].name === 'cancel') {
-      clearStateFiles(directory, ['ralph', 'ultragoal', 'autopilot', 'ultrawork', 'swarm', 'ralplan'], sessionId, omcRoot);
+      clearStateFiles(directory, ['ralph', 'nikoflow', 'ultragoal', 'autopilot', 'ultrawork', 'swarm', 'ralplan'], sessionId, omcRoot);
       console.log(JSON.stringify(createHookOutput(createSkillInvocation('cancel', prompt))));
       return;
     }
 
     // Activate states for modes that need them (team removed — explicit-only via /team skill)
-    const stateModes = resolved.filter(m => ['ralph', 'ultragoal', 'autopilot', 'ultrawork', 'ralplan'].includes(m.name));
+    const stateModes = resolved.filter(m => ['ralph', 'nikoflow', 'ultragoal', 'autopilot', 'ultrawork', 'ralplan'].includes(m.name));
     for (const mode of stateModes) {
       activateState(directory, prompt, mode.name, sessionId, omcRoot);
     }

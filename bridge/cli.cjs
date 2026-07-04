@@ -20413,6 +20413,7 @@ var init_truncate_prompt = __esm({
 // src/hooks/persistent-mode/index.ts
 var persistent_mode_exports = {};
 __export(persistent_mode_exports, {
+  checkNikoflowLoop: () => checkNikoflowLoop,
   checkPersistentModes: () => checkPersistentModes,
   clearToolErrorState: () => clearToolErrorState,
   createHookOutput: () => createHookOutput,

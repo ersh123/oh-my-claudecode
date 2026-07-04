@@ -968,7 +968,7 @@ export function handleNikoflowVerify(workingDir, sessionId, current, transcriptP
     }
     return { shouldBlock: true, message: getVerifyPrompt(current, requestId, passSoFar + 1), mode: 'nikoflow' };
 }
-async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcriptPath) {
+export async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcriptPath) {
     const workingDir = resolveToWorktreeRoot(directory);
     const state = readNikoflowState(workingDir, sessionId);
     // Ignore inactive or stale (crashed/legacy) state so it can't hard-block

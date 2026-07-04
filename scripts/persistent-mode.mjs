@@ -1090,6 +1090,46 @@ async function main() {
     const todoCount = await countIncompleteTodos(sessionId, directory);
     const totalIncomplete = taskCount + todoCount;
 
+    // Priority 0.9: Nikoflow (phase-gated methodology mode). Enforcement is
+    // delegated to the compiled TS engine (dist) so the phase machine + gates
+    // live in one place; this hook only reads state and relays the block.
+    const nikoflow = readStateFileWithSession(
+      stateDir,
+      globalStateDir,
+      "nikoflow-state.json",
+      sessionId,
+    );
+    if (
+      isAuthoritativeModeActive(stateDir, "nikoflow", nikoflow, sessionId) &&
+      !isStaleState(nikoflow.state) &&
+      isStateForCurrentProject(nikoflow.state, directory, nikoflow.isGlobal)
+    ) {
+      const nfSessionMatches = hasValidSessionId
+        ? nikoflow.state.session_id === sessionId
+        : !nikoflow.state.session_id || nikoflow.state.session_id === sessionId;
+      if (nfSessionMatches) {
+        try {
+          const nfPluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(__dirname, "..");
+          const engineUrl = pathToFileURL(
+            join(nfPluginRoot, "dist", "hooks", "persistent-mode", "index.js"),
+          ).href;
+          const engine = await import(engineUrl);
+          const result = await engine.checkNikoflowLoop(
+            sessionId,
+            directory,
+            false,
+            criticalTranscriptPath,
+          );
+          if (result && result.shouldBlock) {
+            console.log(JSON.stringify({ decision: "block", reason: result.message }));
+            return;
+          }
+        } catch {
+          // Engine unavailable (dist not built) → fall through; never hard-fail Stop.
+        }
+      }
+    }
+
     // Priority 1: Ralph Loop (explicit persistence mode)
     // Skip if state is stale (older than 2 hours) - prevents blocking new sessions
     if (
