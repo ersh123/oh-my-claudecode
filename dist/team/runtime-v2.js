@@ -23,7 +23,7 @@ import { performance } from 'perf_hooks';
 import { TeamPaths, absPath, teamStateRoot } from './state-paths.js';
 import { getOmcRoot } from '../lib/worktree-paths.js';
 import { allocateTasksToWorkers } from './allocation-policy.js';
-import { readTeamConfig, readWorkerStatus, readWorkerHeartbeat, readMonitorSnapshot, writeMonitorSnapshot, writeShutdownRequest, readShutdownAck, writeWorkerInbox, listTasksFromFiles, saveTeamConfig, cleanupTeamState, } from './monitor.js';
+import { readTeamConfig, readWorkerStatus, readWorkerHeartbeat, readMonitorSnapshot, writeMonitorSnapshot, readTeamPhaseState, writeTeamPhaseState, writeShutdownRequest, readShutdownAck, writeWorkerInbox, listTasksFromFiles, saveTeamConfig, cleanupTeamState, } from './monitor.js';
 import { appendTeamEvent, emitMonitorDerivedEvents } from './events.js';
 import { DEFAULT_TEAM_GOVERNANCE, DEFAULT_TEAM_TRANSPORT_POLICY, getConfigGovernance, } from './governance.js';
 import { inferPhase } from './phase-controller.js';
@@ -60,6 +60,26 @@ const CURSOR_EXECUTOR_CONTEXT_INTENTS = new Set([
     'cleanup',
     'verification',
 ]);
+async function persistTeamPhaseSnapshot(teamName, phase, cwd) {
+    const previous = await readTeamPhaseState(teamName, cwd);
+    const updatedAt = new Date().toISOString();
+    const transitions = [...(previous?.transitions ?? [])];
+    if (previous && previous.current_phase !== phase) {
+        transitions.push({
+            from: previous.current_phase,
+            to: phase,
+            at: updatedAt,
+            reason: 'monitor-team-v2',
+        });
+    }
+    await writeTeamPhaseState(teamName, {
+        current_phase: phase,
+        max_fix_attempts: previous?.max_fix_attempts ?? 3,
+        current_fix_attempt: previous?.current_fix_attempt ?? 0,
+        transitions,
+        updated_at: updatedAt,
+    }, cwd);
+}
 function isCursorExecutorContextTask(task) {
     const text = `${task.subject} ${task.description}`.trim();
     if (!text || CURSOR_UNSUPPORTED_REVIEW_INTENT_RE.test(text))
@@ -1483,10 +1503,12 @@ export async function monitorTeamV2(teamName, cwd) {
         recommendations.push(`Investigate task-${task.id}: depends on missing task ids [${missingDependencyIds.join(', ')}]`);
     }
     // Infer phase from task distribution
-    const phase = inferPhase(allTasks.map((t) => ({
+    const inferredPhase = inferPhase(allTasks.map((t) => ({
         status: t.status,
         metadata: undefined,
     })));
+    const phase = allTasksTerminal && taskCounts.failed > 0 ? 'failed' : inferredPhase;
+    await persistTeamPhaseSnapshot(sanitized, phase, cwd);
     // Emit monitor-derived events (task completions, worker state changes)
     await emitMonitorDerivedEvents(sanitized, allTasks, workers.map((w) => ({ name: w.name, alive: w.alive, liveness: w.liveness, status: w.status })), previousSnapshot, cwd);
     // Persist snapshot for next cycle

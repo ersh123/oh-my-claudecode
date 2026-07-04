@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -61,7 +61,7 @@ describe('monitorTeamV2 pane-based stall inference', () => {
     if (cwd) await rm(cwd, { recursive: true, force: true });
   });
 
-  async function writeConfigAndTask(taskStatus: 'pending' | 'in_progress' = 'pending'): Promise<void> {
+  async function writeConfigAndTask(taskStatus: 'pending' | 'in_progress' | 'completed' | 'failed' = 'pending'): Promise<void> {
     const teamRoot = join(cwd, '.omc', 'state', 'team', 'demo-team');
     await mkdir(join(teamRoot, 'tasks'), { recursive: true });
     await mkdir(join(teamRoot, 'workers', 'worker-1'), { recursive: true });
@@ -99,6 +99,58 @@ describe('monitorTeamV2 pane-based stall inference', () => {
       created_at: new Date().toISOString(),
     }, null, 2), 'utf-8');
   }
+
+  it('persists canonical phase-state when tasks reach terminal completion', async () => {
+    cwd = await mkdtemp(join(tmpdir(), 'omc-runtime-v2-monitor-terminal-phase-'));
+    await writeConfigAndTask('completed');
+    const teamRoot = join(cwd, '.omc', 'state', 'team', 'demo-team');
+    await writeFile(join(teamRoot, 'phase-state.json'), JSON.stringify({
+      current_phase: 'executing',
+      max_fix_attempts: 3,
+      current_fix_attempt: 0,
+      transitions: [],
+      updated_at: '2026-01-01T00:00:00.000Z',
+    }, null, 2), 'utf-8');
+
+    const { monitorTeamV2 } = await import('../runtime-v2.js');
+    const snapshot = await monitorTeamV2('demo-team', cwd);
+    const phaseState = JSON.parse(await readFile(join(teamRoot, 'phase-state.json'), 'utf-8')) as {
+      current_phase: string;
+      transitions: Array<{ from: string; to: string; reason?: string }>;
+    };
+
+    expect(snapshot?.phase).toBe('completed');
+    expect(phaseState.current_phase).toBe('completed');
+    expect(phaseState.transitions).toEqual([
+      { from: 'executing', to: 'completed', at: expect.any(String), reason: 'monitor-team-v2' },
+    ]);
+  });
+
+  it('persists failed phase when all terminal tasks include failures', async () => {
+    cwd = await mkdtemp(join(tmpdir(), 'omc-runtime-v2-monitor-failed-phase-'));
+    await writeConfigAndTask('failed');
+    const teamRoot = join(cwd, '.omc', 'state', 'team', 'demo-team');
+    await writeFile(join(teamRoot, 'phase-state.json'), JSON.stringify({
+      current_phase: 'executing',
+      max_fix_attempts: 3,
+      current_fix_attempt: 0,
+      transitions: [],
+      updated_at: '2026-01-01T00:00:00.000Z',
+    }, null, 2), 'utf-8');
+
+    const { monitorTeamV2 } = await import('../runtime-v2.js');
+    const snapshot = await monitorTeamV2('demo-team', cwd);
+    const phaseState = JSON.parse(await readFile(join(teamRoot, 'phase-state.json'), 'utf-8')) as {
+      current_phase: string;
+      transitions: Array<{ from: string; to: string; reason?: string }>;
+    };
+
+    expect(snapshot?.phase).toBe('failed');
+    expect(phaseState.current_phase).toBe('failed');
+    expect(phaseState.transitions).toEqual([
+      { from: 'executing', to: 'failed', at: expect.any(String), reason: 'monitor-team-v2' },
+    ]);
+  });
 
   it('flags pane-idle workers with assigned work but no work-start evidence', async () => {
     cwd = await mkdtemp(join(tmpdir(), 'omc-runtime-v2-monitor-'));

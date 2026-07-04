@@ -643,3 +643,34 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Team terminal phase audit remains open; this slice closes only worker launch/model-routing determinism.
 - Live merge will repeat build, typecheck, focused launch/model tests, built-code dogfood, and baseline before moving `loop-last-good`.
+
+## 2026-07-05 — dogfood/team-terminal-phase-state
+
+Candidates + WSJF:
+- TAKE: persist runtime-v2 terminal phase-state from monitor snapshots. Value 8, risk reduction 8, urgency 5, complexity 2 => 10.5. Runtime-cli can finish on terminal task counts while canonical `phase-state.json` stays active/stale, leaving stop/session-start fallbacks with the wrong phase.
+- DEFER: remaining team model-routing audit. Value 7, risk reduction 7, urgency 5, complexity 4 => 4.75. The previous slice closed explicit Claude `--model` normalization, but broader model-routing is still open.
+- DROP: rewrite the phase-controller retry model. Value 5, risk reduction 4, urgency 3, complexity 7 => 1.71. The concrete drift was monitor/runtime terminal alignment, not the whole phase-controller API.
+
+Changed:
+- `monitorTeamV2()` now writes canonical `phase-state.json` on every snapshot and records `monitor-team-v2` transitions when the phase changes.
+- Runtime-v2 now treats an all-terminal task set with any failed task as phase `failed`, matching runtime-cli terminal-count behavior instead of reporting `fixing`.
+- `src/team/__tests__/runtime-v2.monitor.test.ts` pins completed and failed terminal phase persistence.
+- `ROADMAP.md` marks the team terminal-phase criterion checked while keeping remaining model-routing work open.
+
+Evidence:
+- RED completed: with `phase-state.current_phase="executing"` and task status `completed`, the new monitor test failed because `phaseState.current_phase` stayed `executing` while snapshot phase was `completed`.
+- RED failed: with all tasks terminal and task status `failed`, the new monitor test failed because snapshot phase was `fixing`, not `failed`.
+- GREEN targeted: `npx vitest run src/team/__tests__/runtime-v2.monitor.test.ts --reporter=verbose` passed 8/8.
+- Build: `npm run build` exited 0 and regenerated bridge/dist artifacts.
+- Focused affected run: `npx vitest run src/team/__tests__/runtime-v2.monitor.test.ts src/team/__tests__/runtime-cli.test.ts src/hooks/persistent-mode/__tests__/team-ralplan-stop.test.ts --reporter=verbose` passed 81/81.
+- Direct built-code dogfood: `.omc/dogfood/team-terminal-phase-state-1783203351/output.json` had completed `snapshotPhase="completed"` and `phaseState="completed"`, plus failed `snapshotPhase="failed"` and `phaseState="failed"`.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and baseline JSON confirms `numTotalTests=10255`, `numPassedTests=10248`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The fix is scoped to runtime-v2 monitor snapshots. It keeps task-count terminal behavior aligned with runtime-cli, preserves existing phase-state retry fields, and writes transitions only when the phase actually changes.
+
+Remaining risk:
+- Team model-routing remains open beyond the explicit Claude worker `--model` normalization already landed.
+- Live merge will repeat build, typecheck, focused affected tests, built-code dogfood, and baseline before moving `loop-last-good`.

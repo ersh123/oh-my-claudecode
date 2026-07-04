@@ -36015,6 +36015,26 @@ __export(runtime_v2_exports, {
   startTeamV2: () => startTeamV2,
   writeWatchdogFailedMarker: () => writeWatchdogFailedMarker
 });
+async function persistTeamPhaseSnapshot(teamName, phase, cwd2) {
+  const previous = await readTeamPhaseState(teamName, cwd2);
+  const updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const transitions = [...previous?.transitions ?? []];
+  if (previous && previous.current_phase !== phase) {
+    transitions.push({
+      from: previous.current_phase,
+      to: phase,
+      at: updatedAt,
+      reason: "monitor-team-v2"
+    });
+  }
+  await writeTeamPhaseState(teamName, {
+    current_phase: phase,
+    max_fix_attempts: previous?.max_fix_attempts ?? 3,
+    current_fix_attempt: previous?.current_fix_attempt ?? 0,
+    transitions,
+    updated_at: updatedAt
+  }, cwd2);
+}
 function isCursorExecutorContextTask(task) {
   const text = `${task.subject} ${task.description}`.trim();
   if (!text || CURSOR_UNSUPPORTED_REVIEW_INTENT_RE.test(text)) return false;
@@ -37217,10 +37237,12 @@ async function monitorTeamV2(teamName, cwd2) {
       `Investigate task-${task.id}: depends on missing task ids [${missingDependencyIds.join(", ")}]`
     );
   }
-  const phase = inferPhase(allTasks.map((t) => ({
+  const inferredPhase = inferPhase(allTasks.map((t) => ({
     status: t.status,
     metadata: void 0
   })));
+  const phase = allTasksTerminal2 && taskCounts.failed > 0 ? "failed" : inferredPhase;
+  await persistTeamPhaseSnapshot(sanitized, phase, cwd2);
   await emitMonitorDerivedEvents(
     sanitized,
     allTasks,
