@@ -226,3 +226,39 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Broader `.mjs` defaults/parsers parity remains open; this iteration only closes canonical team phase fallback drift.
 - Real tmux Claude session dogfood was not run; direct runtime hook BLOCK/PASS probes covered the changed paths.
+
+## 2026-07-05 — dogfood/mjs-defaults-audit
+
+Candidates + WSJF:
+- TAKE: installed template `/ask` provider parity. Value 6, risk reduction 6, urgency 5, complexity 1 => 17.0. `src/installer/hooks.ts` loads `templates/hooks/keyword-detector.mjs`, whose delegated `/ask` guard lagged behind the runtime script.
+- DEFER: `scripts/verify-deliverables.mjs` canonical team-stage fallback. Value 5, risk reduction 5, urgency 4, complexity 2 => 7.0. Drift is plausible, but current hook output is suppressed, so no observable user/runtime behavior was proven.
+- DROP: broad template/script sync. Value 8, risk reduction 7, urgency 5, complexity 8 => 2.5. Too much unrelated stale template surface for one reversible dogfood step.
+
+Changed:
+- `templates/hooks/keyword-detector.mjs` now suppresses delegated `/ask antigravity`, `/ask agy`, and `/ask cursor` payloads, matching `scripts/keyword-detector.mjs`.
+- `keyword-detector-script.test.ts` can execute either the runtime script or the installed template hook, and pins the template path with three delegated `/ask` regression cases.
+- Updated generated `dist/__tests__/keyword-detector-script.test.js` and map from `npm run build`.
+- Updated `ROADMAP.md` `.mjs parity` evidence without marking the area complete.
+
+Evidence:
+- RED: `npx vitest run src/__tests__/keyword-detector-script.test.ts -t 'install template hook' --reporter=verbose` failed 3/3 before the fix: delegated `/ask antigravity|agy|cursor ... ralph` returned a magic-hook output instead of `suppressOutput=true`.
+- GREEN targeted: the same command passed 3/3 after the regex fix.
+- GREEN affected suite: `npx vitest run src/__tests__/keyword-detector-script.test.ts --reporter=verbose` passed 75/75.
+- Dogfood template probes: `NEG antigravity: suppress=true magic=false ralphState=false`; `NEG agy: suppress=true magic=false ralphState=false`; `NEG cursor: suppress=true magic=false ralphState=false`; positive control `POS ralph: magic=true ralphState=true`.
+- Build: `npm run build` exited 0 after replacing the temporary symlinked `node_modules` with a local install and removing bridge path-comment drift.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0 and ended with `baseline ok: 0 failing test(s) match test-baseline.json`.
+- Baseline JSON confirms `numTotalTests=10236`, `numPassedTests=10229`, `numFailedTests=0`, and no failed assertions.
+- Environment recovery: `npm ci --ignore-scripts` left `better-sqlite3` without its native binding; `npm rebuild better-sqlite3` restored SQLite job-state tests before the final baseline.
+- Generated truth: `git status --porcelain dist/ bridge/cli.cjs bridge/mcp-server.cjs bridge/team-mcp.cjs bridge/runtime-cli.cjs bridge/team.js templates/hooks/keyword-detector.mjs src/__tests__/keyword-detector-script.test.ts` showed only expected `templates/hooks/keyword-detector.mjs`, source test, and generated `dist/__tests__` changes.
+- Format scan: `git diff --check` produced no output.
+- Secret scan over changed source/template/test diff produced no output.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The runtime keyword detector was already correct; the install template was the stale path. The regression test executes the template file directly, so future installer/template drift is covered.
+> No runtime mode activation heuristics were weakened beyond recognizing the same delegated advisor providers as the runtime script.
+
+Remaining risk:
+- Broader `.mjs`/template parity remains open; this iteration only closes delegated `/ask` provider suppression in the installed keyword hook.
+- Real Claude hook install smoke was not run; direct template hook probes covered the changed executable path.

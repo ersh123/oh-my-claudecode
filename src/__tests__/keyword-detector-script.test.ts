@@ -5,10 +5,16 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const SCRIPT_PATH = join(process.cwd(), 'scripts', 'keyword-detector.mjs');
+const TEMPLATE_SCRIPT_PATH = join(process.cwd(), 'templates', 'hooks', 'keyword-detector.mjs');
 const NODE = process.execPath;
 
-function runKeywordDetector(prompt: string, cwd = process.cwd(), sessionId = 'session-2053') {
-  const raw = execFileSync(NODE, [SCRIPT_PATH], {
+function runKeywordDetector(
+  prompt: string,
+  cwd = process.cwd(),
+  sessionId = 'session-2053',
+  scriptPath = SCRIPT_PATH,
+) {
+  const raw = execFileSync(NODE, [scriptPath], {
     input: JSON.stringify({
       hook_event_name: 'UserPromptSubmit',
       cwd,
@@ -392,6 +398,30 @@ describe('keyword-detector.mjs mode-message dispatch', () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it.each(['antigravity', 'agy', 'cursor'])(
+    'does not activate a magic keyword from a delegated /ask %s payload in the install template hook',
+    provider => {
+      const tempDir = mkdtempSync(join(tmpdir(), `keyword-detector-template-ask-${provider}-`));
+
+      try {
+        const sessionId = `template-ask-${provider}-session`;
+        const output = runKeywordDetector(
+          `/ask ${provider} please ralph through the remaining cleanup tasks`,
+          tempDir,
+          sessionId,
+          TEMPLATE_SCRIPT_PATH,
+        );
+
+        expect(output.continue).toBe(true);
+        expect(output.suppressOutput).toBe(true);
+        expect(output.hookSpecificOutput).toBeUndefined();
+        expect(existsSync(join(tempDir, '.omc', 'state', 'sessions', sessionId, 'ralph-state.json'))).toBe(false);
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('initializes ralplan startup state and init context for explicit /ralplan slash invoke', () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'keyword-detector-ralplan-slash-'));
