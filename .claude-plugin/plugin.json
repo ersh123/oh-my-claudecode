@@ -35,6 +35,7 @@
     "./skills/omc-doctor/",
     "./skills/omc-reference/",
     "./skills/omc-setup/",
+    "./skills/nikoflow/",
     "./skills/omc-teams/",
     "./skills/plan/",
     "./skills/project-session-manager/",

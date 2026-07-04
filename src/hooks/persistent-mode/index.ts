@@ -47,6 +47,10 @@ import {
   clearVerificationState,
   type VerificationState,
 } from '../ralph/index.js';
+import {
+  readNikoflowState,
+  incrementNikoflowIteration,
+} from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, StopContext, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
 import {
@@ -74,7 +78,7 @@ export interface PersistentModeResult {
   /** Message to inject into context */
   message: string;
   /** Which mode triggered the block */
-  mode: 'ralph' | 'ultrawork' | 'todo-continuation' | 'autopilot' | 'autoresearch' | 'team' | 'ralplan' | 'none';
+  mode: 'ralph' | 'nikoflow' | 'ultrawork' | 'todo-continuation' | 'autopilot' | 'autoresearch' | 'team' | 'ralplan' | 'none';
   /** Additional metadata */
   metadata?: {
     todoCount?: number;
@@ -920,6 +924,51 @@ function checkArchitectRejectionInTranscript(sessionId: string): { rejected: boo
     }
   }
   return { rejected: false, feedback: '' };
+}
+
+/**
+ * Check Nikoflow state and determine if the Stop event should be blocked.
+ *
+ * TSK-001 skeleton: while the mode is active it hard-blocks Stop with a
+ * continuation banner (mirroring ralph) until `/oh-my-claudecode:cancel`
+ * clears the state. Phase-gate enforcement (per-phase advance conditions,
+ * human gates, reviewer convergence) lands in TSK-002+.
+ */
+async function checkNikoflowLoop(
+  sessionId?: string,
+  directory?: string,
+  cancelInProgress?: boolean
+): Promise<PersistentModeResult | null> {
+  const workingDir = resolveToWorktreeRoot(directory);
+  const state = readNikoflowState(workingDir, sessionId);
+
+  if (!state || !state.active) {
+    return null;
+  }
+
+  // Respect an in-flight cancel: let the Stop through so cleanup can settle.
+  if (cancelInProgress) {
+    return null;
+  }
+
+  const depthLabel = state.depth ?? 'undecided';
+  const phase = state.phases[state.phase_index] ?? 'interview';
+
+  const message =
+    `<nikoflow-continuation>\n` +
+    `Niko Flow v2.1 mode is ACTIVE — depth: ${depthLabel}, phase: ${phase}, iteration ${state.iteration}.\n` +
+    `Follow the /oh-my-claudecode:nikoflow skill and drive the methodology to completion.\n` +
+    `When the task is FULLY complete and verified, run \`/oh-my-claudecode:cancel\` to exit and clean up state. ` +
+    `If cancel fails, retry with \`/oh-my-claudecode:cancel --force\`.\n` +
+    `</nikoflow-continuation>`;
+
+  incrementNikoflowIteration(workingDir, sessionId);
+
+  return {
+    shouldBlock: true,
+    message,
+    mode: 'nikoflow',
+  };
 }
 
 /**
@@ -2291,6 +2340,14 @@ async function resolvePersistentModeBlock(
     if (ralphResult) return ralphResult;
     const autopilotResult = await runAutopilotPriority();
     if (autopilotResult) return autopilotResult;
+  }
+
+  // Priority 1.5: Nikoflow (phase-gated methodology loop, sibling of ralph)
+  if (!tombstonedWorkflowModes.has('nikoflow') && isModeActive('nikoflow', workingDir, sessionId)) {
+    const nikoflowResult = await checkNikoflowLoop(sessionId, workingDir, cancelInProgress);
+    if (nikoflowResult) {
+      return nikoflowResult;
+    }
   }
 
   // Priority 1.6: Autoresearch (stateful single-mission runtime)

@@ -261,6 +261,29 @@ Ralph mode auto-activates Ultrawork for maximum parallel execution. Follow these
 Continue working until the task is truly done.
 `;
 
+export const NIKOFLOW_MESSAGE = `[NIKOFLOW MODE ACTIVATED — Niko Flow v2.1]
+
+A phase-gated methodology loop is now active. Each phase is a hard quality gate —
+do not advance until the current gate passes.
+
+### Depth tiers
+- 🟢 Tactical (1-file bugfix): Grilling → Verification
+- 🟡 Standard (new feature): Grilling → ADR → PRD → Ticketization → TDD → Verification
+- 🔴 Deep (architectural): full cycle + property-based tests + evidence
+If depth was not given explicitly, propose one during Grilling and confirm with the user.
+
+### Phases
+1. 🔥 Grilling — interrogate the task (why, why this way, alternatives, risks) before any code. Gate: user-confirmed shared understanding.
+2. 📋 ADR — only for a decision that is hard-to-reverse AND surprising AND a real trade-off (all three); otherwise record a skip.
+3. 📄 PRD — "[Actor] can [capability]" + User Stories with Given/When/Then. Gate: test seams confirmed.
+4. 🎫 Ticketization — atomic vertical-slice tickets (TSK-001…) with acceptance criteria + blocked-by. Gate: user approves the breakdown.
+5. 🔴🟢♻️ TDD — RED→GREEN, no prod code without a failing test; refactor belongs to review.
+6. ✅ Verification — independent fresh-context reviewer + green validation (tests/lint/build) before completion.
+
+Follow the /oh-my-claudecode:nikoflow skill. When the task is FULLY complete and verified,
+run \`/oh-my-claudecode:cancel\` to exit and clean up state.
+`;
+
 /**
  * Prompt translation message - injected when non-English input detected
  * Reminds users to write prompts in English for consistent agent routing

@@ -93,6 +93,7 @@ import {
   CODE_REVIEW_MESSAGE,
   SECURITY_REVIEW_MESSAGE,
   RALPH_MESSAGE,
+  NIKOFLOW_MESSAGE,
   PROMPT_TRANSLATION_MESSAGE,
 } from "../installer/hooks.js";
 import { getUltraworkMessage } from "./keyword-detector/ultrawork/index.js";
@@ -161,6 +162,7 @@ const TASK_OUTPUT_STATUS_PATTERN = /<status>([^<]+)<\/status>/i;
 const SAFE_SESSION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/;
 const MODE_CONFIRMATION_SKILL_MAP: Record<string, string[]> = {
   ralph: ["ralph", "ultrawork"],
+  nikoflow: ["nikoflow"],
   ultrawork: ["ultrawork"],
   autopilot: ["autopilot"],
   ralplan: ["ralplan"],
@@ -1647,6 +1649,30 @@ async function processKeywordDetector(input: HookInput): Promise<HookOutput> {
         break;
       }
 
+      case "nikoflow": {
+        // Lazy-load nikoflow module
+        const { createNikoflowLoopHook, detectDepthFlag } = await import(
+          "./nikoflow/index.js"
+        );
+
+        const depth = detectDepthFlag(promptText) ?? undefined;
+
+        const hook = createNikoflowLoopHook(directory);
+        const started = hook.startLoop(
+          sessionId,
+          promptText,
+          {
+            ...(depth ? { depth } : {}),
+          },
+        );
+        if (started) {
+          markModeAwaitingConfirmation(directory, sessionId, 'nikoflow');
+        }
+
+        messages.push(NIKOFLOW_MESSAGE);
+        break;
+      }
+
       case "ultrawork": {
         // Lazy-load ultrawork module
         const { activateUltrawork } = await import("./ultrawork/index.js");
@@ -2797,6 +2823,27 @@ async function processPostToolUse(input: HookInput): Promise<HookOutput> {
         cleanPrompt,
         {
           ...(criticMode ? { criticMode } : {}),
+        },
+      );
+    }
+
+    if (skillName === "nikoflow") {
+      const { createNikoflowLoopHook, detectDepthFlag } = await import(
+        "./nikoflow/index.js"
+      );
+      const rawPrompt =
+        typeof input.prompt === "string" && input.prompt.trim().length > 0
+          ? input.prompt
+          : "Nikoflow methodology loop activated via Skill tool";
+
+      const depth = detectDepthFlag(rawPrompt) ?? undefined;
+
+      const hook = createNikoflowLoopHook(directory);
+      hook.startLoop(
+        input.sessionId,
+        rawPrompt,
+        {
+          ...(depth ? { depth } : {}),
         },
       );
     }
