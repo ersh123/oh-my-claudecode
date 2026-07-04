@@ -394,3 +394,29 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Real installed-hook smoke was not run against the user's actual Claude hook config.
 - Broader persistent-mode template/runtime parity remains open outside the active nikoflow missing-engine path.
+
+## 2026-07-05 — dogfood/persistent-live-smoke-docs
+
+Candidates + WSJF:
+- TAKE: live plugin Stop manifest smoke for persistent-mode. Value 6, risk reduction 7, urgency 5, complexity 1 => 18.0. Runtime and template artifacts were covered by tests, but the roadmap still needed evidence that the real plugin Stop command shape reaches nikoflow enforcement.
+- DEFER: legacy global `~/.claude/hooks/persistent-mode.mjs` install smoke. Value 4, risk reduction 4, urgency 2, complexity 3 => 3.33. This machine has no global OMC persistent hook file and global Claude settings do not route OMC Stop through that path.
+- DROP: mutate the user's global Claude hook settings to create a smoke target. Value 4, risk reduction 4, urgency 2, complexity 6 => 1.67. Not needed; the active plugin manifest path is the relevant live config and mutation would add local config risk.
+
+Changed:
+- `ROADMAP.md` now marks `persistent-mode` Done because runtime missing-engine fail-closed, template parity, explicit tests, and live plugin Stop manifest smoke are all checked.
+- `AUTONOMOUS-JOURNAL.md` records the live smoke evidence and keeps broader template/runtime parity under the separate `.mjs parity` area.
+
+Evidence:
+- Read-only config check: `/home/niko/.claude/hooks/persistent-mode.mjs` does not exist; `/home/niko/.claude/settings.json` Stop hooks are Engram, SocratiCode, and Orca only.
+- Live OMC Stop config source: `hooks/hooks.json` runs `node "$CLAUDE_PLUGIN_ROOT"/scripts/run.cjs "$CLAUDE_PLUGIN_ROOT"/scripts/persistent-mode.mjs`.
+- False-start smoke with a non-git temp project returned `{"continue":true,"suppressOutput":true}` and logged `non-git directory provided, falling back to process root`; this proved the smoke must use a temp git root.
+- Corrected live smoke with temp git repo, temp `OMC_STATE_DIR`, active session-scoped `nikoflow-state.json`, and manifest-shaped command returned `{"decision":"block", ...}` with a `nikoflow-continuation` reason.
+- Format scan: `git diff --check` produced no output.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> This is a docs/evidence-only closure. It does not alter hook behavior or user Claude settings.
+> The smoke used temp state only and left the actual OMC state/config untouched.
+
+Remaining risk:
+- Broader persistent-mode template/runtime parity is still tracked under `.mjs parity`.
