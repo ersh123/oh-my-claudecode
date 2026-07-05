@@ -54,7 +54,6 @@ Skills are reusable workflow templates that can be invoked via `/oh-my-claudecod
 | `skillify/SKILL.md` | skillify | Extract reusable skill from session |
 | `learner/SKILL.md` | learner | Deprecated compatibility alias/internal implementation history for skillify |
 | `ask/SKILL.md` | ask | Ask Claude, Codex, or Gemini via `omc ask` and capture an artifact |
-| `note/SKILL.md` | note | Save notes for compaction resilience |
 | `cancel/SKILL.md` | cancel | Cancel any active OMC mode |
 | `hud/SKILL.md` | hud | Configure HUD display |
 | `omc-doctor/SKILL.md` | omc-doctor | Diagnose installation issues |
@@ -180,7 +179,7 @@ None - pure markdown files.
 | Cleanup | ai-slop-cleaner | "deslop", "anti-slop", cleanup/refactor + slop smells |
 | Planning | omc-plan, ralplan, deep-interview, ralph-init | "plan this", "interview me", "ouroboros" |
 | Exploration | deepinit, sciomc, external-context | "deepinit", "research" |
-| Utility | skillify, learner (deprecated alias), note, cancel, hud, setup, omc-doctor, omc-setup, omc-help, mcp-setup | "stop", "cancel" |
+| Utility | skillify, learner (deprecated alias), cancel, hud, setup, omc-doctor, omc-setup, omc-help, mcp-setup | "stop", "cancel" |
 | Domain | psm, writer-memory, release | psm context |
 
 ## Auto-Activation

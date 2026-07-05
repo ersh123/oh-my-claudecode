@@ -253,7 +253,7 @@ Environment variables that already use the `OMC_` prefix do not need renaming. C
 
 ### Command Mapping
 
-All 2.x commands continue to work. Here's what changed:
+Most 2.x commands continue to work. Here's what changed:
 
 | 2.x Command                            | 3.0 Equivalent                                     | Works?                 |
 | -------------------------------------- | -------------------------------------------------- | ---------------------- |
@@ -268,7 +268,7 @@ All 2.x commands continue to work. Here's what changed:
 | `/oh-my-claudecode:deepinit [path]`    | Invoke normally                                    | ✅ YES (unchanged)     |
 | `/oh-my-claudecode:git-master`         | Say "git", "commit", "atomic commit"               | ✅ YES (auto-detect)   |
 | `/oh-my-claudecode:frontend-ui-ux`     | Say "UI", "styling", "component", "design"         | ✅ YES (auto-detect)   |
-| `/oh-my-claudecode:note "content"`     | Say "remember this" or "save this"                 | ✅ YES (auto-detect)   |
+| Legacy note memory command             | `/oh-my-claudecode:remember "content"` or say "remember this" / "save this" | Replacement works; legacy slash command removed |
 | `/oh-my-claudecode:cancel-ralph`       | Say "stop", "cancel", or "abort"                   | ✅ YES (auto-detect)   |
 | `/oh-my-claudecode:omc-doctor`         | Invoke normally                                    | ✅ YES (unchanged)     |
 | All other commands                     | Work exactly as before                             | ✅ YES                 |
@@ -459,10 +459,10 @@ Permanently loaded on session start
 Never lost through compaction
 ```
 
-Or use `/oh-my-claudecode:note` to save discoveries manually:
+Or use `/oh-my-claudecode:remember` to save discoveries manually:
 
 ```bash
-/oh-my-claudecode:note Project uses PostgreSQL with Prisma ORM
+/oh-my-claudecode:remember Project uses PostgreSQL with Prisma ORM
 ```
 
 #### 6. Structured Task Tracking (PRD Support)
