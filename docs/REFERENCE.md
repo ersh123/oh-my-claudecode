@@ -824,12 +824,18 @@ Most installed skills are exposed as `/oh-my-claudecode:<skill-name>`. Deep Inte
 | -------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `/oh-my-claudecode:ai-slop-cleaner <target>`             | Run the anti-slop cleanup workflow (`--review` for reviewer-only pass)                        |
 | `/oh-my-claudecode:ask <claude\|codex\|gemini\|antigravity\|grok\|cursor> <prompt>` | Route a prompt through the selected advisor CLI and capture an ask artifact                   |
+| `/oh-my-claudecode:autoresearch <mission>`               | Run the stateful single-mission evaluator-driven improvement loop                              |
 | `/oh-my-claudecode:autopilot <task>`                     | Full autonomous execution                                                                     |
+| `/oh-my-claudecode:ccg <prompt>`                         | Run the Claude/Codex/Gemini-style advisor synthesis workflow through `ask` artifacts           |
 | `/oh-my-claudecode:configure-notifications`              | Configure notification integrations                                                           |
 | `/oh-my-claudecode:compact [note]`                        | Prepare an OMC-safe manual handoff telling the user to run bare `/compact [note]`              |
+| `/oh-my-claudecode:debug <problem>`                      | Diagnose current OMC session or repo state via the bundled debug skill                         |
 | `/oh-my-claudecode:deep-dive <problem>`                  | Run the trace → deep-interview pipeline                                                       |
 | `/deep-interview <idea>`                                 | Socratic interview with ambiguity scoring before execution                                    |
 | `/oh-my-claudecode:deepinit [path]`                      | Index codebase with hierarchical AGENTS.md files                                              |
+| `/oh-my-claudecode:external-context <topic>`             | Collect external-context research through document-specialist workers                          |
+| `/oh-my-claudecode:hud`                                  | Configure HUD/statusline behavior                                                             |
+| `/oh-my-claudecode:learner`                              | Deprecated alias for extracting a reusable skill with `skillify`                               |
 | `/oh-my-claudecode:mcp-setup`                            | Configure MCP servers                                                                         |
 | `/oh-my-claudecode:omc-doctor`                           | Diagnose and fix installation issues                                                          |
 | `/oh-my-claudecode:plan <description>`                   | Start planning session (supports consensus structured deliberation)                           |
@@ -840,13 +846,20 @@ Most installed skills are exposed as `/oh-my-claudecode:<skill-name>`. Deep Inte
 | `/oh-my-claudecode:ralph <task>`                         | Self-referential loop until task completion (`--critic=architect \| critic \| codex`)       |
 | `/oh-my-claudecode:ralplan <description>`                | Iterative planning with consensus structured deliberation (`--deliberate` for high-risk mode) |
 | `/oh-my-claudecode:release`                              | Automated release workflow                                                                    |
+| `/oh-my-claudecode:remember <note>`                      | Store or organize reusable project knowledge through the bundled remember skill                |
 | `/oh-my-claudecode:setup`                                | Unified setup entrypoint (`setup`, `setup doctor`, `setup mcp`)                               |
 | `/oh-my-claudecode:sciomc <topic>`                       | Parallel research orchestration                                                               |
+| `/oh-my-claudecode:self-improve <topic>`                 | Run the autonomous self-improvement workflow                                                  |
+| `/oh-my-claudecode:skill <arguments>`                    | Manage local skills                                                                           |
+| `/oh-my-claudecode:skillify <description>`               | Extract a reusable skill from the current session                                             |
 | `/oh-my-claudecode:team <N>:<agent> <task>`              | Coordinated native team workflow                                                              |
 | `/oh-my-claudecode:trace`                                | Evidence-driven tracing lane that orchestrates parallel tracer hypotheses in team mode        |
 | `/oh-my-claudecode:ultraqa <goal>`                       | Autonomous QA cycling workflow                                                                |
 | `/oh-my-claudecode:ultrawork <task>`                     | Maximum performance mode with parallel agents                                                 |
+| `/oh-my-claudecode:verify <claim>`                       | Verify a change with concrete evidence before claiming completion                             |
 | `/oh-my-claudecode:visual-verdict <task>`                | Structured visual QA verdict for screenshot/reference comparisons                             |
+| `/oh-my-claudecode:wiki <query>`                         | Read or update the persistent project wiki                                                    |
+| `/oh-my-claudecode:writer-memory <note>`                 | Manage reusable memory for writing projects                                                   |
 
 
 ### Skill Pipeline Metadata (Preview)
