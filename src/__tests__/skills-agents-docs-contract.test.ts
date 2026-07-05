@@ -27,6 +27,12 @@ interface KeyFileRow {
   purpose: string;
 }
 
+interface SkillCategoryRow {
+  category: string;
+  skillNames: string[];
+  triggerKeywords: string[];
+}
+
 function extractSkillFrontmatterName(markdown: string, fallback: string): string {
   return extractSkillFrontmatter(markdown).match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? fallback;
 }
@@ -100,24 +106,41 @@ function listSkillInvocationMetadataByDir(): Record<string, SkillInvocationMetad
 }
 
 function extractSkillCategoryNames(markdown: string): string[] {
+  return extractSkillCategoryRows(markdown)
+    .flatMap((row) => row.skillNames)
+    .sort();
+}
+
+function extractQuotedStrings(value: string): string[] {
+  return Array.from(value.matchAll(/"([^"]+)"/g), (match) => match[1]).sort();
+}
+
+function extractSkillCategoryRows(markdown: string): SkillCategoryRow[] {
   const categorySection = markdown.split('## Skill Categories')[1]?.split('## Auto-Activation')[0] ?? '';
 
   return categorySection
     .split('\n')
-    .flatMap((line) => {
-      const match = line.match(/^\|\s*[^|]+\s*\|\s*([^|]+?)\s*\|/);
-      const skillCell = match?.[1]?.trim();
+    .flatMap((line): SkillCategoryRow[] => {
+      const match = line.match(/^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/);
+      const category = match?.[1]?.trim() ?? '';
+      const skillCell = match?.[2]?.trim();
+      const triggerKeywords = match?.[3]?.trim() ?? '';
 
-      if (!skillCell || skillCell === 'Skills' || /^-+$/.test(skillCell)) {
+      if (!skillCell || category === 'Category' || /^-+$/.test(category)) {
         return [];
       }
 
-      return skillCell
-        .split(',')
-        .map((skillName) => skillName.trim())
-        .filter(Boolean);
+      return [
+        {
+          category,
+          skillNames: skillCell
+            .split(',')
+            .map((skillName) => skillName.trim())
+            .filter(Boolean),
+          triggerKeywords: extractQuotedStrings(triggerKeywords),
+        },
+      ];
     })
-    .sort();
 }
 
 function extractAutoActivationSkillNames(markdown: string): string[] {
@@ -235,5 +258,25 @@ describe('skills/AGENTS.md docs contract', () => {
       .sort();
 
     expect(missingTriggeredSkills).toEqual([]);
+  });
+
+  it('keeps category trigger keyword cells covering listed skill frontmatter triggers', () => {
+    const metadataByDir = listSkillInvocationMetadataByDir();
+    const missingCategoryTriggers = extractSkillCategoryRows(readSkillsAgentsDoc())
+      .flatMap((row) =>
+        row.skillNames.flatMap((skillName) =>
+          resolveCategorizedSkillName(skillName, metadataByDir).flatMap((skillDir) => {
+            const markdown = readFileSync(join(process.cwd(), 'skills', skillDir, 'SKILL.md'), 'utf8');
+            const triggers = parseFrontmatterTriggers(markdown);
+
+            return triggers
+              .filter((trigger) => !row.triggerKeywords.includes(trigger))
+              .map((trigger) => `${row.category}/${skillName}: ${trigger}`);
+          }),
+        ),
+      )
+      .sort();
+
+    expect(missingCategoryTriggers).toEqual([]);
   });
 });

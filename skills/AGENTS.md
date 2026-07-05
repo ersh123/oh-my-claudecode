@@ -194,9 +194,9 @@ None - pure markdown files.
 | Execution | autopilot, autoresearch, nikoflow, ralph, self-improve, team, ultragoal, ultraqa, ultrawork, verify | "autopilot", "ulw", "ralph", "team" |
 | Cleanup | ai-slop-cleaner | "deslop", "anti-slop", cleanup/refactor + slop smells |
 | Planning | omc-plan, ralplan, deep-interview | "plan this", "interview me", "ouroboros" |
-| Exploration | debug, deep-dive, deepinit, external-context, sciomc, trace, wiki | "deepinit", "research" |
+| Exploration | debug, deep-dive, deepinit, external-context, sciomc, trace, wiki | "deepinit", "research", "deep dive", "deep-dive", "trace and interview", "investigate deeply", "wiki", "wiki this", "wiki add", "wiki lint", "wiki query" |
 | Visual | visual-verdict | screenshot/reference comparison |
-| Utility | ask, cancel, ccg, configure-notifications, hud, learner, local-build-reminder, mcp-setup, omc-doctor, omc-reference, omc-setup, omc-teams, remember, setup, skill, skillify | "stop", "cancel" |
+| Utility | ask, cancel, ccg, configure-notifications, hud, learner, local-build-reminder, mcp-setup, omc-doctor, omc-reference, omc-setup, omc-teams, remember, setup, skill, skillify | "stop", "cancel", "abort", "configure notifications", "setup notifications", "configure telegram", "setup telegram", "telegram bot", "configure discord", "setup discord", "discord webhook", "configure slack", "setup slack", "slack webhook" |
 | Domain | psm, writer-memory, release | psm context |
 
 `learner` remains a deprecated compatibility skill; prefer `skillify` for new skill extraction workflows.
