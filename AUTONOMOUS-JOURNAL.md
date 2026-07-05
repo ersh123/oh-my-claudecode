@@ -1094,3 +1094,30 @@ Remaining risk:
 - Category labels and purpose groupings are still curated, not generated from richer metadata.
 - Broader command/gate docs accuracy remains open.
 - Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/skills-category-unique
+
+Candidates + WSJF:
+- TAKE: Skill Categories entries must be exact machine-readable skill names, and their resolved dirs must be unique after primary name resolution. Value 4, risk reduction 4, urgency 3, complexity 1 => 11.0.
+- DEFER: generated category assignment or richer purpose metadata parity. Value 5, risk reduction 4, urgency 3, complexity 3 => 4.0.
+
+Changed:
+- `src/__tests__/skills-agents-docs-contract.test.ts` now resolves category entries through primary dir/name first, then aliases, and fails on inline annotations, unknown names, ambiguous names, duplicate resolved dirs, or missing dirs.
+- `skills/AGENTS.md` now lists `learner` as a machine-readable skill entry and moves its deprecated-compatibility note below the table.
+- `ROADMAP.md` records machine-readable Skill Categories coverage and keeps deeper category purpose parity open.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/skills-agents-docs-contract.test.ts --reporter=verbose` failed on `learner (deprecated alias)` in the Skill Categories table.
+- GREEN affected: the same command passed 4/4 after the annotation moved out of the Skills cell.
+- Build: `npm run build` exited 0 and generated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10276`, `numPassedTests=10269`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The change is docs/test scoped, preserves the deprecated `learner` compatibility note, and avoids changing runtime alias behavior.
+
+Remaining risk:
+- Category membership and purpose text are still curated rather than generated from skill metadata.
+- Broader command/gate docs accuracy remains open.
+- Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.

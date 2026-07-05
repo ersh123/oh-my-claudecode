@@ -26,11 +26,13 @@ function parseInlineAliases(markdown) {
         .map((alias) => alias.trim().replace(/^['"]|['"]$/g, ''))
         .filter(Boolean);
 }
-function listSkillInvocationNamesByDir() {
+function listSkillInvocationMetadataByDir() {
     return Object.fromEntries(listBundledSkillDirs().map((skillDir) => {
         const markdown = readFileSync(join(process.cwd(), 'skills', skillDir, 'SKILL.md'), 'utf8');
         const frontmatterName = markdown.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? skillDir;
-        return [skillDir, Array.from(new Set([skillDir, frontmatterName, ...parseInlineAliases(markdown)]))];
+        const primaryNames = Array.from(new Set([skillDir, frontmatterName]));
+        const aliases = parseInlineAliases(markdown);
+        return [skillDir, { aliases, allNames: Array.from(new Set([...primaryNames, ...aliases])), primaryNames }];
     }));
 }
 function extractSkillCategoryNames(markdown) {
@@ -45,10 +47,21 @@ function extractSkillCategoryNames(markdown) {
         }
         return skillCell
             .split(',')
-            .map((skillName) => skillName.replace(/\([^)]*\)/g, '').trim())
+            .map((skillName) => skillName.trim())
             .filter(Boolean);
     })
         .sort();
+}
+function resolveCategorizedSkillName(skillName, metadataByDir) {
+    const primaryMatches = Object.entries(metadataByDir)
+        .filter(([, metadata]) => metadata.primaryNames.includes(skillName))
+        .map(([skillDir]) => skillDir);
+    if (primaryMatches.length > 0) {
+        return primaryMatches;
+    }
+    return Object.entries(metadataByDir)
+        .filter(([, metadata]) => metadata.aliases.includes(skillName))
+        .map(([skillDir]) => skillDir);
 }
 describe('skills/AGENTS.md docs contract', () => {
     it('keeps the skill directory count aligned with bundled skills', () => {
@@ -63,13 +76,27 @@ describe('skills/AGENTS.md docs contract', () => {
         expect(extractKeyFileSkillDirs(readSkillsAgentsDoc())).toEqual(listBundledSkillDirs());
     });
     it('keeps the skill categories table covering every bundled skill', () => {
-        const namesByDir = listSkillInvocationNamesByDir();
-        const allowedSkillNames = new Set(Object.values(namesByDir).flat());
+        const metadataByDir = listSkillInvocationMetadataByDir();
+        const allowedSkillNames = new Set(Object.values(metadataByDir).flatMap((metadata) => metadata.allNames));
         const categorizedSkillNames = extractSkillCategoryNames(readSkillsAgentsDoc());
         const unknownSkillNames = categorizedSkillNames.filter((skillName) => !allowedSkillNames.has(skillName));
-        const missingSkillDirs = Object.entries(namesByDir)
-            .filter(([, skillNames]) => !skillNames.some((skillName) => categorizedSkillNames.includes(skillName)))
-            .map(([skillDir]) => skillDir);
+        const categorizedSkillDirs = categorizedSkillNames.flatMap((skillName) => resolveCategorizedSkillName(skillName, metadataByDir));
+        const missingSkillDirs = listBundledSkillDirs()
+            .filter((skillDir) => !categorizedSkillDirs.includes(skillDir))
+            .sort();
+        const duplicateSkillDirs = categorizedSkillDirs
+            .filter((skillDir, index) => categorizedSkillDirs.indexOf(skillDir) !== index)
+            .filter((skillDir, index, duplicateSkillDirs) => duplicateSkillDirs.indexOf(skillDir) === index)
+            .sort();
+        const ambiguousSkillNames = categorizedSkillNames
+            .filter((skillName) => resolveCategorizedSkillName(skillName, metadataByDir).length > 1)
+            .sort();
+        const unresolvedAnnotations = categorizedSkillNames
+            .filter((skillName) => /\([^)]*\)/.test(skillName))
+            .sort();
+        expect(unresolvedAnnotations).toEqual([]);
+        expect(ambiguousSkillNames).toEqual([]);
+        expect(duplicateSkillDirs).toEqual([]);
         expect(unknownSkillNames).toEqual([]);
         expect(missingSkillDirs).toEqual([]);
     });

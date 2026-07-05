@@ -194,8 +194,10 @@ None - pure markdown files.
 | Planning | omc-plan, ralplan, deep-interview | "plan this", "interview me", "ouroboros" |
 | Exploration | debug, deep-dive, deepinit, external-context, sciomc, trace, wiki | "deepinit", "research" |
 | Visual | visual-verdict | screenshot/reference comparison |
-| Utility | ask, cancel, ccg, configure-notifications, hud, learner (deprecated alias), local-build-reminder, mcp-setup, omc-doctor, omc-reference, omc-setup, omc-teams, remember, setup, skill, skillify | "stop", "cancel" |
+| Utility | ask, cancel, ccg, configure-notifications, hud, learner, local-build-reminder, mcp-setup, omc-doctor, omc-reference, omc-setup, omc-teams, remember, setup, skill, skillify | "stop", "cancel" |
 | Domain | psm, writer-memory, release | psm context |
+
+`learner` remains a deprecated compatibility skill; prefer `skillify` for new skill extraction workflows.
 
 ## Auto-Activation
 
