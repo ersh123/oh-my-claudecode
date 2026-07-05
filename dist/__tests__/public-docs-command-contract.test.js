@@ -114,6 +114,11 @@ const stalePublicTriggerExamples = [
     'Just say "don\'t stop until done"',
     'Just say "fast" or "parallel"',
     'Just say "stop"',
+    'Say "fast" or "parallel" OR use `ulw` keyword',
+    '"fast: refactor the entire API layer"',
+    '"fast, I\'m in a hurry"',
+    '"I\'m in a hurry, go fast!"',
+    '"fix all errors fast"',
     '`build me`',
     '`I want a`',
     '`handle it all`',
@@ -238,6 +243,19 @@ describe('public docs command contract', () => {
             return stalePublicTriggerExamples
                 .filter((example) => markdown.includes(example.toLowerCase()))
                 .map((example) => `${relativePath}: ${example}`);
+        });
+        expect(staleReferences).toEqual([]);
+    });
+    it('does not document unsupported defaultExecutionMode config policy in public/setup docs', () => {
+        const docsToCheck = [
+            'docs/MIGRATION.md',
+            'seminar/quickref.md',
+            'seminar/slides.md',
+            'skills/omc-setup/phases/02-configure.md',
+        ];
+        const staleReferences = docsToCheck.flatMap((relativePath) => {
+            const markdown = readFileSync(join(process.cwd(), relativePath), 'utf8');
+            return markdown.includes('defaultExecutionMode') ? [`${relativePath}: defaultExecutionMode`] : [];
         });
         expect(staleReferences).toEqual([]);
     });

@@ -85,16 +85,17 @@ elif [ -n "$LATEST_VERSION" ]; then
 fi
 ```
 
-## Step 2.4: Set Default Execution Mode
+## Step 2.4: Configure Optional Ultrawork Aliases
 
 Use the AskUserQuestion tool to prompt the user:
 
-**Question:** "Which parallel execution mode should be your default when you say 'fast' or 'parallel'?"
+**Question:** "Should 'fast' and 'parallel' be added as custom aliases for ultrawork?"
 
 **Options:**
-1. **ultrawork (maximum capability)** - Uses all agent tiers including Opus for complex tasks. Best for challenging work where quality matters most. (Recommended)
+1. **No custom aliases (recommended)** - Keep built-in public triggers explicit: `ultrawork` and `ulw`.
+2. **Add speed aliases** - Add `fast` and `parallel` to `magicKeywords.ultrawork` for this config.
 
-Store the preference in `~/.claude/.omc-config.json`:
+Store the alias list in `~/.claude/.omc-config.json`:
 
 ```bash
 CONFIG_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.omc-config.json"
@@ -112,20 +113,21 @@ else
   EXISTING='{}'
 fi
 
-# Set defaultExecutionMode (replace USER_CHOICE with "ultrawork" or "")
+# Set custom ultrawork aliases.
+# Replace USER_ALIASES_JSON with either ["ultrawork","ulw"] or ["ultrawork","ulw","fast","parallel"].
 TEMP_FILE=$(mktemp "${CONFIG_FILE}.tmp.XXXXXX")
 trap 'rm -f "$TEMP_FILE"' EXIT
-if printf '%s\n' "$EXISTING" | jq --arg mode "USER_CHOICE" '. + {defaultExecutionMode: $mode, configuredAt: (now | todate)}' > "$TEMP_FILE"; then
+if printf '%s\n' "$EXISTING" | jq --argjson aliases 'USER_ALIASES_JSON' '.magicKeywords = (.magicKeywords // {}) | .magicKeywords.ultrawork = $aliases | .configuredAt = (now | todate)' > "$TEMP_FILE"; then
   mv "$TEMP_FILE" "$CONFIG_FILE"
 else
   echo "ERROR: Failed to update $CONFIG_FILE. Existing config was not modified."
   exit 1
 fi
 trap - EXIT
-echo "Default execution mode set to: USER_CHOICE"
+echo "Ultrawork aliases configured."
 ```
 
-**Note**: This preference ONLY affects generic keywords ("fast", "parallel"). Explicit keywords ("ulw") always override this preference.
+**Note**: Built-in public triggers remain `ultrawork` and `ulw`. `fast` / `parallel` work only if they are added to `magicKeywords.ultrawork`.
 
 ## Step 2.5: Install OMC CLI Tool
 
