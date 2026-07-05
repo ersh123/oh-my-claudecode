@@ -104,6 +104,18 @@ const hooksReasoningEffectBySkill = {
 const stalePublicTriggerExamples = [
     'build me a todo app',
     'autopilot build me a REST API',
+    '`build me`',
+    '`I want a`',
+    '`handle it all`',
+    '`end to end`',
+    '`e2e this`',
+    "`don't stop`",
+    '`must complete`',
+    '`until done`',
+    '`uw`',
+    '`think hard`',
+    '`think deeply`',
+    '`red green`',
     "don't stop until user auth is done",
     "don't stop until done",
     "don't stop until this works",
@@ -203,6 +215,7 @@ describe('public docs command contract', () => {
     });
     it('does not advertise stale natural-language trigger examples as current public guidance', () => {
         const docsToCheck = [
+            'docs/ARCHITECTURE.md',
             'docs/MIGRATION.md',
             'docs/GETTING-STARTED.md',
             'seminar/quickref.md',

@@ -1322,3 +1322,32 @@ Remaining risk:
 - Broader `.mjs` parser/default parity remains open outside public trigger examples.
 - Historical/shared docs and setup copy still mention broader generic trigger behavior such as `fast`/`parallel`; that needs a separate policy-backed slice.
 - Live merge will repeat focused keyword script/template tests, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/architecture-trigger-docs
+
+Candidates + WSJF:
+- TAKE: add `docs/ARCHITECTURE.md` to the public trigger stale-example contract and align its keyword table with runtime-backed public trigger examples. Value 3, risk reduction 4, urgency 3, complexity 1 => 10.0.
+- DEFER: setup/shared docs policy for generic `fast`/`parallel` and historical seminar material. Value 3, risk reduction 3, urgency 2, complexity 3 => 2.7.
+- DROP: restore deleted natural-language aliases to satisfy old architecture docs. Value 1, risk reduction 0, urgency 1, complexity 3 => 0.7.
+
+Changed:
+- `src/__tests__/public-docs-command-contract.test.ts` now scans `docs/ARCHITECTURE.md` for stale public trigger examples and rejects raw stale trigger cells such as `build me`, `I want a`, `don't stop`, `must complete`, `uw`, `think hard`, `think deeply`, and `red green`.
+- `docs/ARCHITECTURE.md` now documents current keyword-detector public examples for autopilot, ralph, ultrawork, deep-interview, ultrathink, and TDD.
+- `ROADMAP.md` records `docs/ARCHITECTURE.md` under the public docs trigger contract.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/public-docs-command-contract.test.ts --reporter=verbose` failed with 14 stale references from `docs/ARCHITECTURE.md`.
+- GREEN focused: the same command passed 8/8 after docs alignment.
+- LSP diagnostics: `get_diagnostics_for_file` returned `{}` for `src/__tests__/public-docs-command-contract.test.ts`.
+- Build: `npm run build` exited 0; an intermediate symlinked `node_modules` build caused bridge path churn, then a local hardlink `node_modules` rebuild restored path-stable generated bridge artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10326`, `numPassedTests=10319`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; `.omc/LOOP-HALT` absent; diff secret scan only matched the existing roadmap phrase `token/session/profile paths`, reviewed as a false positive redaction reference.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The slice is docs/test scoped, follows `KEYWORD_DETECTOR_PUBLIC_DOC_TRIGGER_EXAMPLES`, and does not change runtime keyword detection.
+
+Remaining risk:
+- Setup/shared docs still mention generic trigger behavior such as `fast`/`parallel`; that needs a separate policy-backed slice.
+- Live merge will repeat focused public docs tests, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
