@@ -760,7 +760,7 @@ Good skills are:
 ## Related Skills
 
 - `/oh-my-claudecode:skillify` - Extract a skill from current conversation (`/oh-my-claudecode:learner` is a deprecated alias)
-- `/oh-my-claudecode:note` - Save quick notes (less formal than skills)
+- `/oh-my-claudecode:remember` - Triage reusable knowledge into project memory, notepad, or durable docs
 - `/oh-my-claudecode:deepinit` - Generate AGENTS.md codebase hierarchy
 
 ---
@@ -833,7 +833,7 @@ What would you like to do?
 ## Related Skills
 
 - `/oh-my-claudecode:skillify` - Extract a skill from current conversation (`/oh-my-claudecode:learner` is a deprecated alias)
-- `/oh-my-claudecode:note` - Save quick notes (less formal than skills)
+- `/oh-my-claudecode:remember` - Triage reusable knowledge into project memory, notepad, or durable docs
 - `/oh-my-claudecode:deepinit` - Generate AGENTS.md codebase hierarchy
 
 ---
