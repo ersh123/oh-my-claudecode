@@ -19,71 +19,71 @@ Skills are reusable workflow templates that can be invoked via `/oh-my-claudecod
 | File | Skill | Purpose |
 |-----------|-------|---------|
 | `autopilot/SKILL.md` | autopilot | Full autonomous execution from idea to working code |
-| `autoresearch/SKILL.md` | autoresearch | Stateful evaluator-gated improvement loop |
-| `nikoflow/SKILL.md` | nikoflow | Phase-gated methodology loop with hard quality gates |
-| `ultrawork/SKILL.md` | ultrawork | Maximum parallel agent execution |
-| `ralph/SKILL.md` | ralph | Persistence until verified complete |
-| `self-improve/SKILL.md` | self-improve | Autonomous evolutionary code improvement engine |
-| `team/SKILL.md` | team | N coordinated agents with task claiming |
-| `ultraqa/SKILL.md` | ultraqa | QA cycling until goal met |
-| `ultragoal/SKILL.md` | ultragoal | Durable multi-goal workflow with persisted plan artifacts |
-| `verify/SKILL.md` | verify | Verify a change before claiming completion |
+| `autoresearch/SKILL.md` | autoresearch | Stateful single-mission improvement loop with strict evaluator contract, markdown decision logs, and max-runtime stop behavior |
+| `nikoflow/SKILL.md` | nikoflow | Phase-gated Niko Flow v2.1 methodology loop (Grilling → ADR → PRD → Ticketization → TDD → Verification) with Tactical/Standard/Deep depth tiers and hard quality gates |
+| `ultrawork/SKILL.md` | ultrawork | Parallel execution engine for high-throughput task completion |
+| `ralph/SKILL.md` | ralph | Self-referential loop until task completion with configurable verification reviewer |
+| `self-improve/SKILL.md` | self-improve | Autonomous evolutionary code improvement engine with tournament selection |
+| `team/SKILL.md` | team | N coordinated agents on shared task list using Claude Code implicit agent teams |
+| `ultraqa/SKILL.md` | ultraqa | QA cycling workflow - test, verify, fix, repeat until goal met |
+| `ultragoal/SKILL.md` | ultragoal | Durable multi-goal workflow that persists plan/ledger artifacts under .omc/ultragoal and prints Claude /goal handoff text for the active session |
+| `verify/SKILL.md` | verify | Verify that a change really works before you claim completion |
 
 ### Planning Skills
 
 | File | Skill | Purpose |
 |-----------|-------|---------|
-| `plan/SKILL.md` | omc-plan | Strategic planning with interview workflow |
-| `ralplan/SKILL.md` | ralplan | Iterative planning (Planner+Architect+Critic) with RALPLAN-DR structured deliberation (`--deliberate` for high-risk) |
-| `deep-interview/SKILL.md` | deep-interview | Socratic deep interview with mathematical ambiguity gating (Ouroboros-inspired) |
+| `plan/SKILL.md` | omc-plan | Strategic planning with optional interview workflow |
+| `ralplan/SKILL.md` | ralplan | Consensus planning entrypoint that auto-gates vague ralph/autopilot/team requests before execution |
+| `deep-interview/SKILL.md` | deep-interview | Socratic deep interview with mathematical ambiguity gating before explicit execution approval |
 
 ### Exploration Skills
 
 | File | Skill | Purpose |
 |-----------|-------|---------|
-| `deepinit/SKILL.md` | deepinit | Generate hierarchical AGENTS.md |
-| `debug/SKILL.md` | debug | Diagnose OMC session or repo state with focused reproduction |
-| `deep-dive/SKILL.md` | deep-dive | Trace then clarify requirements through a deep-dive workflow |
-| `external-context/SKILL.md` | external-context | Invoke document-specialist agents for external docs and searches |
-| `sciomc/SKILL.md` | sciomc | Parallel scientist orchestration |
-| `trace/SKILL.md` | trace | Evidence-driven tracing with competing hypotheses |
-| `wiki/SKILL.md` | wiki | Persistent markdown knowledge base |
+| `deepinit/SKILL.md` | deepinit | Deep codebase initialization with hierarchical AGENTS.md documentation |
+| `debug/SKILL.md` | debug | Diagnose the current OMC session or repo state using logs, traces, state, and focused reproduction |
+| `deep-dive/SKILL.md` | deep-dive | 2-stage pipeline: trace (causal investigation) -> deep-interview (requirements crystallization) with 3-point injection |
+| `external-context/SKILL.md` | external-context | Invoke parallel document-specialist agents for external web searches and documentation lookup |
+| `sciomc/SKILL.md` | sciomc | Orchestrate parallel scientist agents for comprehensive analysis with AUTO mode |
+| `trace/SKILL.md` | trace | Evidence-driven tracing lane that orchestrates competing tracer hypotheses in Claude built-in team mode |
+| `wiki/SKILL.md` | wiki | LLM Wiki — persistent markdown knowledge base that compounds across sessions (Karpathy model) |
 
 ### Visual Skills
 
 | File | Skill | Purpose |
 |-----------|-------|---------|
-| `visual-verdict/SKILL.md` | visual-verdict | Structured visual QA verdict for screenshot/reference comparisons |
+| `visual-verdict/SKILL.md` | visual-verdict | Structured visual QA verdict for screenshot-to-reference comparisons |
 
 ### Utility Skills
 
 | File | Skill | Purpose |
 |-----------|-------|---------|
-| `ai-slop-cleaner/SKILL.md` | ai-slop-cleaner | Regression-safe cleanup workflow for AI-generated code slop |
-| `ccg/SKILL.md` | ccg | Claude-Codex-Gemini orchestration via advisor synthesis |
-| `configure-notifications/SKILL.md` | configure-notifications | Configure Telegram, Discord, or Slack notifications |
-| `skillify/SKILL.md` | skillify | Extract reusable skill from session |
-| `learner/SKILL.md` | learner | Deprecated compatibility alias/internal implementation history for skillify |
-| `ask/SKILL.md` | ask | Ask Claude, Codex, or Gemini via `omc ask` and capture an artifact |
-| `cancel/SKILL.md` | cancel | Cancel any active OMC mode |
-| `hud/SKILL.md` | hud | Configure HUD display |
-| `local-build-reminder/SKILL.md` | local-build-reminder | Remind local fork users to rebuild after TypeScript edits |
-| `omc-doctor/SKILL.md` | omc-doctor | Diagnose installation issues |
-| `omc-reference/SKILL.md` | omc-reference | Agent catalog, tools, team routing, commits, and skills registry |
-| `setup/SKILL.md` | setup | Unified setup entrypoint for install, diagnostics, and MCP configuration |
-| `omc-setup/SKILL.md` | omc-setup | One-time setup wizard |
-| `omc-teams/SKILL.md` | omc-teams | Legacy compatibility CLI-team runtime entrypoint |
-| `mcp-setup/SKILL.md` | mcp-setup | Configure MCP servers |
-| `remember/SKILL.md` | remember | Route reusable project knowledge to memory, notepad, or docs |
-| `skill/SKILL.md` | skill | Manage local skills |
+| `ai-slop-cleaner/SKILL.md` | ai-slop-cleaner | Clean AI-generated code slop with a regression-safe, deletion-first workflow and optional reviewer-only mode |
+| `ccg/SKILL.md` | ccg | Claude-Codex-Gemini tri-model orchestration via /ask codex + /ask antigravity (or gemini), then Claude synthesizes results |
+| `configure-notifications/SKILL.md` | configure-notifications | Configure notification integrations (Telegram, Discord, Slack) via natural language |
+| `skillify/SKILL.md` | skillify | Turn a repeatable workflow from the current session into a reusable OMC skill draft |
+| `learner/SKILL.md` | learner | Extract a learned skill from the current conversation |
+| `ask/SKILL.md` | ask | Process-first advisor routing for Claude, Codex, Gemini, Antigravity, Grok, or Cursor via `omc ask`, with artifact capture and no raw CLI assembly |
+| `cancel/SKILL.md` | cancel | Cancel any active OMC mode (autopilot, ralph, nikoflow, ultrawork, ultraqa, swarm, ultrapilot, pipeline, team) |
+| `hud/SKILL.md` | hud | Configure HUD display options (layout, presets, display elements) |
+| `local-build-reminder/SKILL.md` | local-build-reminder | Remind the user to rebuild OMC after editing TypeScript when running from a local fork. Triggered automatically by the AI whenever it notices it (or the user) just changed a src/**/*.ts file in an OMC dev install. |
+| `omc-doctor/SKILL.md` | omc-doctor | Diagnose and fix oh-my-claudecode installation issues |
+| `omc-reference/SKILL.md` | omc-reference | OMC agent catalog, available tools, team pipeline routing, commit protocol, and skills registry. Auto-loads when delegating to agents, using OMC tools, orchestrating teams, making commits, or invoking skills. |
+| `setup/SKILL.md` | setup | Use first for install/update routing — sends setup, doctor, or MCP requests to the correct OMC setup flow |
+| `omc-setup/SKILL.md` | omc-setup | Install or refresh oh-my-claudecode for plugin, npm, and local-dev setups from the canonical setup flow |
+| `omc-teams/SKILL.md` | omc-teams | CLI-team runtime for claude, codex, gemini, antigravity, grok, or cursor workers in tmux panes when you need process-based parallel execution |
+| `mcp-setup/SKILL.md` | mcp-setup | Configure popular MCP servers for enhanced agent capabilities |
+| `remember/SKILL.md` | remember | Review reusable project knowledge and decide what belongs in project memory, notepad, or durable docs |
+| `skill/SKILL.md` | skill | Manage local skills - list, add, remove, search, edit, setup wizard |
 
 ### Domain Skills
 
 | File | Skill | Purpose |
 |-----------|-------|---------|
-| `project-session-manager/SKILL.md` | project-session-manager | Isolated dev environments |
-| `writer-memory/SKILL.md` | writer-memory | Agentic memory for writers |
-| `release/SKILL.md` | release | Generic release assistant — analyzes repo CI/rules, caches in `.omc/RELEASE_RULE.md`, guides the release |
+| `project-session-manager/SKILL.md` | project-session-manager | Worktree-first dev environment manager for issues, PRs, and features with optional tmux sessions |
+| `writer-memory/SKILL.md` | writer-memory | Agentic memory system for writers - track characters, relationships, scenes, and themes |
+| `release/SKILL.md` | release | Generic release assistant — analyzes repo release rules, caches them in .omc/RELEASE_RULE.md, then guides the release |
 
 `project-session-manager` also exposes the `psm` alias for shorter invocations.
 

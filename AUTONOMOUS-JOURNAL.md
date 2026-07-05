@@ -1148,3 +1148,31 @@ Remaining risk:
 - Key Files purpose text is still manually curated and may drift from frontmatter descriptions.
 - Broader command/gate docs accuracy remains open.
 - Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/keyfiles-purpose-description
+
+Candidates + WSJF:
+- TAKE: `skills/AGENTS.md` Key Files Purpose column must match each referenced skill's frontmatter `description:` exactly. Value 4, risk reduction 4, urgency 3, complexity 1 => 11.0.
+- DEFER: generated category trigger parity from richer skill metadata. Value 4, risk reduction 3, urgency 2, complexity 3 => 3.0.
+
+Changed:
+- `src/__tests__/skills-agents-docs-contract.test.ts` now parses Key Files Purpose cells and compares them with the referenced `SKILL.md` frontmatter `description:`.
+- `skills/AGENTS.md` now uses each skill's canonical frontmatter description in the Key Files Purpose column instead of manually shortened summaries.
+- `ROADMAP.md` records Key Files Purpose-cell parity against frontmatter `description:`.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/skills-agents-docs-contract.test.ts --reporter=verbose` failed with 40 mismatched Purpose cells.
+- GREEN affected: the same command passed 6/6 after the Purpose cells were replaced from frontmatter descriptions.
+- Build: `npm run build` exited 0 and generated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10278`, `numPassedTests=10271`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan produced no output; `.omc/LOOP-HALT` absent.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The new contract is docs/test scoped and derives Purpose cells from existing frontmatter descriptions instead of inventing or maintaining duplicate summaries. Generated test artifacts match the TypeScript source change.
+
+Remaining risk:
+- Category trigger keywords are still curated rather than derived from skill metadata.
+- Broader command/gate docs accuracy remains open.
+- Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
