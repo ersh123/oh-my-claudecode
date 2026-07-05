@@ -25,6 +25,47 @@ function extractKeyFileSkillDirs(markdown: string): string[] {
     .sort();
 }
 
+function parseInlineAliases(markdown: string): string[] {
+  const aliases = markdown.match(/^aliases:\s*\[([^\]]*)\]/m)?.[1] ?? '';
+
+  return aliases
+    .split(',')
+    .map((alias) => alias.trim().replace(/^['"]|['"]$/g, ''))
+    .filter(Boolean);
+}
+
+function listSkillInvocationNamesByDir(): Record<string, string[]> {
+  return Object.fromEntries(
+    listBundledSkillDirs().map((skillDir) => {
+      const markdown = readFileSync(join(process.cwd(), 'skills', skillDir, 'SKILL.md'), 'utf8');
+      const frontmatterName = markdown.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? skillDir;
+
+      return [skillDir, Array.from(new Set([skillDir, frontmatterName, ...parseInlineAliases(markdown)]))];
+    }),
+  );
+}
+
+function extractSkillCategoryNames(markdown: string): string[] {
+  const categorySection = markdown.split('## Skill Categories')[1]?.split('## Auto-Activation')[0] ?? '';
+
+  return categorySection
+    .split('\n')
+    .flatMap((line) => {
+      const match = line.match(/^\|\s*[^|]+\s*\|\s*([^|]+?)\s*\|/);
+      const skillCell = match?.[1]?.trim();
+
+      if (!skillCell || skillCell === 'Skills' || /^-+$/.test(skillCell)) {
+        return [];
+      }
+
+      return skillCell
+        .split(',')
+        .map((skillName) => skillName.replace(/\([^)]*\)/g, '').trim())
+        .filter(Boolean);
+    })
+    .sort();
+}
+
 describe('skills/AGENTS.md docs contract', () => {
   it('keeps the skill directory count aligned with bundled skills', () => {
     const match = readSkillsAgentsDoc().match(/^(\d+) skill directories/m);
@@ -42,5 +83,18 @@ describe('skills/AGENTS.md docs contract', () => {
 
   it('lists every bundled skill in the key files tables', () => {
     expect(extractKeyFileSkillDirs(readSkillsAgentsDoc())).toEqual(listBundledSkillDirs());
+  });
+
+  it('keeps the skill categories table covering every bundled skill', () => {
+    const namesByDir = listSkillInvocationNamesByDir();
+    const allowedSkillNames = new Set(Object.values(namesByDir).flat());
+    const categorizedSkillNames = extractSkillCategoryNames(readSkillsAgentsDoc());
+    const unknownSkillNames = categorizedSkillNames.filter((skillName) => !allowedSkillNames.has(skillName));
+    const missingSkillDirs = Object.entries(namesByDir)
+      .filter(([, skillNames]) => !skillNames.some((skillName) => categorizedSkillNames.includes(skillName)))
+      .map(([skillDir]) => skillDir);
+
+    expect(unknownSkillNames).toEqual([]);
+    expect(missingSkillDirs).toEqual([]);
   });
 });
