@@ -21,9 +21,9 @@ You don't need to learn any commands. I now have intelligent behaviors that acti
 
 WHAT HAPPENS AUTOMATICALLY:
 - Complex tasks -> I parallelize and delegate to specialists
-- "plan this" -> I start a planning interview
-- "don't stop until done" -> I persist until verified complete
-- "stop" or "cancel" -> I intelligently stop current operation
+- "deep-interview" -> I clarify vague requirements first
+- "ralph" -> I persist until verified complete
+- "cancelomc" or "stopomc" -> I intelligently stop current OMC operation
 
 MAGIC KEYWORDS (optional power-user shortcuts):
 Just include these words naturally in your request:
@@ -33,8 +33,8 @@ Just include these words naturally in your request:
 | ralph | Persistence mode | "ralph: fix the auth bug" |
 | ralplan | Iterative planning | "ralplan this feature" |
 | ulw | Max parallelism | "ulw refactor the API" |
-| plan | Planning interview | "plan the new endpoints" |
-| team | Coordinated agents | "/team 3:executor fix errors" |
+| deep-interview | Planning interview | "deep-interview the new endpoints" |
+| /team | Coordinated agents | "/team 3:executor fix errors" |
 
 **ralph includes ultrawork:** When you activate ralph mode, it automatically includes ultrawork's parallel execution. No need to combine keywords.
 
@@ -69,10 +69,10 @@ GOOD NEWS: Your existing commands still work!
 
 WHAT'S NEW in 3.0:
 You no longer NEED those commands. Everything is automatic now:
-- Just say "don't stop until done" instead of /ralph
-- Just say "fast" or "parallel" instead of /ultrawork
-- Just say "plan this" instead of /omc-plan
-- Just say "stop" instead of /cancel
+- Just say "ralph" instead of /ralph
+- Just say "ulw" or "ultrawork" instead of /ultrawork
+- Just say "ralplan" instead of /omc-plan
+- Just say "cancelomc" or "stopomc" instead of /cancel
 
 MAGIC KEYWORDS (power-user shortcuts):
 | Keyword | Same as old... | Example |
@@ -80,8 +80,8 @@ MAGIC KEYWORDS (power-user shortcuts):
 | ralph | /ralph | "ralph: fix the bug" |
 | ralplan | /ralplan | "ralplan this feature" |
 | ulw | /ultrawork | "ulw refactor API" |
-| omc-plan | /omc-plan | "plan the endpoints" |
-| team | (new!) | "/team 3:executor fix errors" |
+| deep-interview | /omc-plan | "deep-interview the endpoints" |
+| /team | (new!) | "/team 3:executor fix errors" |
 
 TEAMS (NEW!):
 Spawn coordinated agents with shared task lists and real-time messaging:

@@ -103,7 +103,17 @@ const hooksReasoningEffectBySkill = {
 };
 const stalePublicTriggerExamples = [
     'build me a todo app',
+    'build me a REST API',
     'autopilot build me a REST API',
+    '"build me"',
+    '"I want a"',
+    '"ouroboros"',
+    '"don\'t assume"',
+    '"don\'t stop"',
+    '- "stop" or "cancel"',
+    'Just say "don\'t stop until done"',
+    'Just say "fast" or "parallel"',
+    'Just say "stop"',
     '`build me`',
     '`I want a`',
     '`handle it all`',
@@ -216,10 +226,12 @@ describe('public docs command contract', () => {
     it('does not advertise stale natural-language trigger examples as current public guidance', () => {
         const docsToCheck = [
             'docs/ARCHITECTURE.md',
+            'docs/shared/mode-selection-guide.md',
             'docs/MIGRATION.md',
             'docs/GETTING-STARTED.md',
             'seminar/quickref.md',
             'skills/AGENTS.md',
+            'skills/omc-setup/phases/04-welcome.md',
         ];
         const staleReferences = docsToCheck.flatMap((relativePath) => {
             const markdown = readFileSync(join(process.cwd(), relativePath), 'utf8').toLowerCase();
