@@ -84829,6 +84829,24 @@ var KEYWORD_PATTERNS = {
   cursor: /\b(ask|use|delegate\s+to)\s+cursor\b/i,
   antigravity: /\b(ask|use|delegate\s+to)\s+(antigravity|agy)\b/i
 };
+var KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES = {
+  cancel: ["cancelomc", "stopomc"],
+  ralph: ["ralph"],
+  autopilot: ["autopilot", "auto pilot", "auto-pilot", "fullsend", "full auto"],
+  ultrawork: ["ultrawork", "ulw"],
+  "deep-interview": ["deep-interview", "deep interview"]
+};
+var KEYWORD_DETECTOR_PUBLIC_DOC_TRIGGER_EXAMPLES = {
+  ...KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES,
+  ccg: ["ccg", "claude-codex-gemini"],
+  ralplan: ["ralplan"],
+  tdd: ["tdd", "test first"],
+  "code-review": ["code review", "review code"],
+  "security-review": ["security review", "review security"],
+  ultrathink: ["ultrathink"],
+  deepsearch: ["deepsearch", "search the codebase", "find in codebase"],
+  analyze: ["deepanalyze", "deep-analyze"]
+};
 var OUROBOROS_BRAND_AT_START = /^\s*\/?(?:ouroboros|ooo)\b/i;
 var KEYWORD_SKIP_PREDICATES = {
   "deep-interview": (text) => OUROBOROS_BRAND_AT_START.test(text)

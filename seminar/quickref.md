@@ -72,11 +72,11 @@
 | `/oh-my-claudecode:verify` | Verification workflow |
 
 ## Natural Language (No Commands Needed)
-- "build me a todo app" → Autopilot activates
+- "autopilot: build a todo app" → Autopilot activates
 - "fix all errors fast" → Ultrawork activates (or config default)
-- "don't stop until done" → Ralph activates
+- "ralph: finish until verified" → Ralph activates
 - "plan the authentication" → Planning interview starts
-- "stop" / "cancel" → Intelligently cancels active operation
+- "cancelomc" / "stopomc" → Intelligently cancels active operation
 
 ## Delegation Categories (Auto-Detection)
 | Category | Model | Temp | Thinking | Use For |

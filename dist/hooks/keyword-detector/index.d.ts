@@ -20,6 +20,21 @@ export declare const KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES: {
     readonly ultrawork: readonly ["ultrawork", "ulw"];
     readonly 'deep-interview': readonly ["deep-interview", "deep interview"];
 };
+export declare const KEYWORD_DETECTOR_PUBLIC_DOC_TRIGGER_EXAMPLES: {
+    readonly ccg: readonly ["ccg", "claude-codex-gemini"];
+    readonly ralplan: readonly ["ralplan"];
+    readonly tdd: readonly ["tdd", "test first"];
+    readonly 'code-review': readonly ["code review", "review code"];
+    readonly 'security-review': readonly ["security review", "review security"];
+    readonly ultrathink: readonly ["ultrathink"];
+    readonly deepsearch: readonly ["deepsearch", "search the codebase", "find in codebase"];
+    readonly analyze: readonly ["deepanalyze", "deep-analyze"];
+    readonly cancel: readonly ["cancelomc", "stopomc"];
+    readonly ralph: readonly ["ralph"];
+    readonly autopilot: readonly ["autopilot", "auto pilot", "auto-pilot", "fullsend", "full auto"];
+    readonly ultrawork: readonly ["ultrawork", "ulw"];
+    readonly 'deep-interview': readonly ["deep-interview", "deep interview"];
+};
 /**
  * Canonical workflow skills detected via explicit slash invocation.
  * Mirrors `CANONICAL_WORKFLOW_SKILLS` in `skill-state/index.ts`. Listed here

@@ -972,17 +972,17 @@ Use these trigger phrases in natural language prompts to activate enhanced modes
 
 | Keyword                                                                        | Effect                                                                                        |
 | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `ultrawork`, `ulw`, `uw`                                                       | Activates parallel agent orchestration                                                        |
-| `autopilot`, `build me`, `I want a`, `handle it all`, `end to end`, `e2e this` | Full autonomous execution                                                                     |
+| `ultrawork`, `ulw`                                                             | Activates parallel agent orchestration                                                        |
+| `autopilot`, `auto pilot`, `auto-pilot`, `fullsend`, `full auto`               | Full autonomous execution                                                                     |
 | `deslop`, `anti-slop`, cleanup/refactor + slop smells                          | Anti-slop cleanup workflow (`ai-slop-cleaner`)                                                |
-| `ralph`, `don't stop`, `must complete`, `until done`                           | Persistence until verified complete                                                           |
+| `ralph`                                                                        | Persistence until verified complete                                                           |
 | `ccg`, `claude-codex-gemini`                                                   | Claude-Codex-Gemini orchestration (use `antigravity` when using the Antigravity CLI)         |
 | `ralplan`                                                                      | Iterative planning consensus with structured deliberation (`--deliberate` for high-risk mode) |
-| `deep interview`, `ouroboros`                                                  | Deep Socratic interview with mathematical clarity gating                                      |
+| `deep-interview`, `deep interview`                                             | Deep Socratic interview with mathematical clarity gating                                      |
 | `deepsearch`, `search the codebase`, `find in codebase`                        | Codebase-focused search mode                                                                  |
 | `deepanalyze`, `deep-analyze`                                                  | Deep analysis mode                                                                            |
-| `ultrathink`, `think hard`, `think deeply`                                     | Deep reasoning mode                                                                           |
-| `tdd`, `test first`, `red green`                                               | TDD workflow enforcement                                                                      |
+| `ultrathink`                                                                   | Deep reasoning mode                                                                           |
+| `tdd`, `test first`                                                            | TDD workflow enforcement                                                                      |
 | `code review`, `review code`                                                   | Comprehensive code review mode                                                                |
 | `security review`, `review security`                                           | Security-focused review mode                                                                  |
 | `cancelomc`, `stopomc`                                                         | Unified cancellation                                                                          |

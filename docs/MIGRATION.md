@@ -225,7 +225,7 @@ Work naturally. Claude detects intent and activates behaviors automatically:
 
 ```bash
 # 3.0 workflow: Just talk naturally OR use optional keywords
-"don't stop until user auth is done"                # Auto-activates ralph-loop
+"ralph: finish user auth until verified"            # Auto-activates ralph-loop
 "fast: refactor the entire API layer"               # Auto-activates ultrawork
 "plan: design the new dashboard"                    # Auto-activates planning
 "ralph ulw: migrate the database"                   # Combined: persistence + parallelism
@@ -257,7 +257,7 @@ Most 2.x commands continue to work. Here's what changed:
 
 | 2.x Command                            | 3.0 Equivalent                                     | Works?                 |
 | -------------------------------------- | -------------------------------------------------- | ---------------------- |
-| `/oh-my-claudecode:ralph "task"`       | Say "don't stop until done" OR use `ralph` keyword | ✅ YES (both ways)     |
+| `/oh-my-claudecode:ralph "task"`       | Use the `ralph` keyword                            | ✅ YES                 |
 | `/oh-my-claudecode:ultrawork "task"`   | Say "fast" or "parallel" OR use `ulw` keyword      | ✅ YES (both ways)     |
 | `/oh-my-claudecode:ultrawork-ralph`    | Say "ralph ulw:" prefix                            | ✅ YES (keyword combo) |
 | `/oh-my-claudecode:planner "task"`     | Say "plan this" OR use `plan` keyword              | ✅ YES (both ways)     |
@@ -269,7 +269,7 @@ Most 2.x commands continue to work. Here's what changed:
 | `/oh-my-claudecode:git-master`         | Say "git", "commit", "atomic commit"               | ✅ YES (auto-detect)   |
 | `/oh-my-claudecode:frontend-ui-ux`     | Say "UI", "styling", "component", "design"         | ✅ YES (auto-detect)   |
 | Legacy note memory command             | `/oh-my-claudecode:remember "content"` or say "remember this" / "save this" | Replacement works; legacy slash command removed |
-| `/oh-my-claudecode:cancel-ralph`       | Say "stop", "cancel", or "abort"                   | ✅ YES (auto-detect)   |
+| `/oh-my-claudecode:cancel-ralph`       | Say `cancelomc` or `stopomc`                        | ✅ YES (auto-detect)   |
 | `/oh-my-claudecode:omc-doctor`         | Invoke normally                                    | ✅ YES (unchanged)     |
 | All other commands                     | Work exactly as before                             | ✅ YES                 |
 
@@ -295,21 +295,17 @@ Persistence (won't stop) + Ultrawork (maximum parallelism) built-in
 **No keywords?** Claude still auto-detects:
 
 ```
-"don't stop until this works"      # Triggers ralph
+"ralph: keep going until this works"  # Triggers ralph
 "fast, I'm in a hurry"             # Triggers ultrawork
 "help me design the dashboard"     # Triggers planning
 ```
 
-### Natural Cancellation
+### Keyword Cancellation
 
-Say any of these to stop:
+Say either keyword to stop:
 
-- "stop"
-- "cancel"
-- "abort"
-- "nevermind"
-- "enough"
-- "halt"
+- `cancelomc`
+- `stopomc`
 
 Claude intelligently determines what to stop:
 
@@ -320,7 +316,7 @@ If in planning       → End planning interview
 If multiple active   → Stop the most recent
 ```
 
-No more `/oh-my-claudecode:cancel-ralph` - just say "cancel"!
+No more `/oh-my-claudecode:cancel-ralph` - use the unified cancel keywords.
 
 ### Migration Steps
 
@@ -612,7 +608,7 @@ Smart cancellation that auto-detects active mode:
 
 ```bash
 /oh-my-claudecode:cancel
-# Or just say: "stop", "cancel", "abort"
+# Or say: "cancelomc" / "stopomc"
 ```
 
 **Auto-detects and cancels:** autopilot, ralph, ultrawork, ultraqa, pipeline
@@ -727,12 +723,12 @@ Once upgraded, you automatically gain access to:
 "fast: implement feature"       # reads defaultExecutionMode config
 ```
 
-**Natural language (still works):**
+**Keyword examples:**
 
 ```bash
-"don't stop until done"         # ralph
+"ralph: finish until verified"  # ralph
 "parallel execution"            # reads defaultExecutionMode
-"build me a todo app"           # autopilot
+"autopilot: build a todo app"   # autopilot
 ```
 
 ### Verification
@@ -834,7 +830,7 @@ Claude: "I'm activating ultrawork for maximum parallelism"
 **3.0+ Workflow:**
 
 ```
-"there's a memory leak in the worker process - don't stop until we fix it"
+"ralph: debug the memory leak in the worker process until verified"
     ↓
 Claude: "I'm activating ralph-loop to ensure completion"
 ```
