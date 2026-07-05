@@ -181,7 +181,7 @@ OMC automatically checks for updates every 24 hours. To update manually, re-run 
 Once OMC is installed, run your first task immediately. Open Claude Code and type:
 
 ```bash
-autopilot build me a hello world app
+autopilot build a hello world app
 ```
 
 That single line is enough for OMC to run the full development pipeline automatically.

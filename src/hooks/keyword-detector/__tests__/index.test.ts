@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES,
+  KEYWORD_DETECTOR_PUBLIC_DOC_TRIGGER_EXAMPLES,
   removeCodeBlocks,
   sanitizeForKeywordDetection,
   extractPromptText,
@@ -32,6 +33,19 @@ describe('keyword-detector', () => {
     ][]) {
       for (const trigger of triggers) {
         it(`detects "${trigger}" as ${type}`, () => {
+          expect(detectKeywordsWithType(trigger).some((match) => match.type === type)).toBe(true);
+        });
+      }
+    }
+  });
+
+  describe('public documentation trigger examples', () => {
+    for (const [type, triggers] of Object.entries(KEYWORD_DETECTOR_PUBLIC_DOC_TRIGGER_EXAMPLES) as [
+      KeywordType,
+      readonly string[],
+    ][]) {
+      for (const trigger of triggers) {
+        it(`detects public doc example "${trigger}" as ${type}`, () => {
           expect(detectKeywordsWithType(trigger).some((match) => match.type === type)).toBe(true);
         });
       }

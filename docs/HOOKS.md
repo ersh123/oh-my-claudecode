@@ -394,12 +394,12 @@ These keywords invoke a skill and create a state file.
 | Keyword | Skill | Description |
 |---------|-------|-------------|
 | `cancelomc`, `stopomc` | cancel | Cancels all active modes |
-| `ralph`, `don't stop`, `must complete`, `until done` | ralph | Persistent execution until verification completes |
-| `autopilot`, `build me`, `I want a`, `handle it all`, `end to end`, `auto-pilot`, `full auto`, `fullsend`, `e2e this` | autopilot | Fully autonomous execution |
-| `ultrawork`, `ulw`, `uw` | ultrawork | Maximum parallel execution |
+| `ralph` | ralph | Persistent execution until verification completes |
+| `autopilot`, `auto pilot`, `auto-pilot`, `fullsend`, `full auto` | autopilot | Fully autonomous execution |
+| `ultrawork`, `ulw` | ultrawork | Maximum parallel execution |
 | `ccg`, `claude-codex-gemini` | ccg | Claude-Codex-Gemini tri-model orchestration (use `antigravity` workers when using the Antigravity CLI) |
 | `ralplan` | ralplan | Consensus-based iterative planning |
-| `deep interview`, `ouroboros` | deep-interview | Socratic deep interview |
+| `deep-interview`, `deep interview` | deep-interview | Socratic deep interview |
 
 ### AI Slop Cleanup Keywords
 
@@ -423,7 +423,7 @@ Activate agents with natural language instead of slash commands.
 
 | Keyword | Effect | Behavior |
 |---------|--------|----------|
-| `tdd`, `test first`, `red green` | TDD mode | Enforces test-first writing |
+| `tdd`, `test first` | TDD mode | Enforces test-first writing |
 | `code review`, `review code` | Code review mode | Runs comprehensive code review |
 | `security review`, `review security` | Security review mode | Runs security-focused review |
 
@@ -433,9 +433,9 @@ These keywords inject an inline mode message rather than invoking a skill.
 
 | Keyword | Effect |
 |---------|--------|
-| `ultrathink`, `think hard`, `think deeply` | Activates extended reasoning mode |
+| `ultrathink` | Activates extended reasoning mode |
 | `deepsearch`, `search the codebase`, `find in codebase` | Activates codebase-focused search mode |
-| `deep-analyze`, `deepanalyze` | Activates deep analysis mode |
+| `deepanalyze`, `deep-analyze` | Activates deep analysis mode |
 
 ### Localized Triggers (Korean / Japanese)
 

@@ -1259,3 +1259,34 @@ Evidence:
 Remaining risk:
 - Broader docs (`docs/REFERENCE.md`, `docs/HOOKS.md`, `docs/MIGRATION.md`) may still advertise old natural-language trigger phrases.
 - Live merge will repeat focused docs and keyword-detector tests, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/public-docs-trigger-parity
+
+Candidates + WSJF:
+- TAKE: public keyword docs must match runtime-backed public trigger examples. Value 4, risk reduction 4, urgency 3, complexity 2 => 5.5.
+- DEFER: standalone `.mjs` keyword-detector parity and historical/shared trigger policy. Value 4, risk reduction 3, urgency 2, complexity 4 => 2.25.
+- DROP: revive old natural-language triggers only to match stale docs. Value 1, risk reduction 1, urgency 1, complexity 3 => 1.0.
+
+Changed:
+- `src/hooks/keyword-detector/index.ts` now exports `KEYWORD_DETECTOR_PUBLIC_DOC_TRIGGER_EXAMPLES`, extending the skills-only trigger SoT to the public HOOKS/REFERENCE docs surface.
+- `src/hooks/keyword-detector/__tests__/index.test.ts` proves every public doc trigger example detects as its expected keyword type.
+- `src/__tests__/public-docs-command-contract.test.ts` now parses public markdown tables and pins `docs/HOOKS.md`, `docs/REFERENCE.md`, and current examples in `docs/MIGRATION.md`, `docs/GETTING-STARTED.md`, `seminar/quickref.md`, and `skills/AGENTS.md`.
+- Public docs no longer advertise `build me`, `I want a`, `don't stop`, `must complete`, `until done`, bare `stop`/`cancel`/`abort`, `uw`, `ouroboros`, `red green`, `think hard`, or `think deeply` as current keyword-detector examples.
+- `ROADMAP.md` records the expanded public docs trigger contract while keeping docs/.mjs parity open.
+
+Evidence:
+- RED focused: `npx vitest run src/hooks/keyword-detector/__tests__/index.test.ts src/__tests__/public-docs-command-contract.test.ts --reporter=verbose` failed with stale HOOKS rows, stale REFERENCE rows, and 10 stale current examples.
+- GREEN focused: the same command passed 473/473 after docs and tests were aligned.
+- Build: `npm run build` exited 0 and regenerated `dist/*` / `bridge/cli.cjs`.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10324`, `numPassedTests=10317`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan produced no output; `.omc/LOOP-HALT` absent.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The contract is docs/test scoped, uses a runtime export as the SoT, and reports missing vs mismatched markdown rows separately.
+
+Remaining risk:
+- `scripts/keyword-detector.mjs` and `templates/hooks/keyword-detector.mjs` still have their own parity surface.
+- Historical/shared docs and setup copy still mention broader generic trigger behavior such as `fast`/`parallel`; that needs a separate policy-backed slice.
+- Live merge will repeat focused public docs tests, build, typecheck, baseline, diff scans, and `loop-last-good` movement.

@@ -40,6 +40,17 @@ export const KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES = {
     ultrawork: ['ultrawork', 'ulw'],
     'deep-interview': ['deep-interview', 'deep interview'],
 };
+export const KEYWORD_DETECTOR_PUBLIC_DOC_TRIGGER_EXAMPLES = {
+    ...KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES,
+    ccg: ['ccg', 'claude-codex-gemini'],
+    ralplan: ['ralplan'],
+    tdd: ['tdd', 'test first'],
+    'code-review': ['code review', 'review code'],
+    'security-review': ['security review', 'review security'],
+    ultrathink: ['ultrathink'],
+    deepsearch: ['deepsearch', 'search the codebase', 'find in codebase'],
+    analyze: ['deepanalyze', 'deep-analyze'],
+};
 /**
  * Matches the upstream Ouroboros CLI invocation form at the start of the
  * prompt: `ouroboros <sub>`, `ooo <sub>`, or `/ouroboros:<sub>`. Used as a

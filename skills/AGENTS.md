@@ -135,7 +135,7 @@ Any configurable options.
 /oh-my-claudecode:skill-name arg1 arg2
 
 # Auto-detected from keywords
-"autopilot build me a REST API"  # Triggers autopilot skill
+"autopilot build a REST API"  # Triggers autopilot skill
 ```
 
 #### Creating a New Skill
