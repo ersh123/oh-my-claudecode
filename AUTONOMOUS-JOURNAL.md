@@ -1204,3 +1204,31 @@ Remaining risk:
 - Category Trigger Keywords cells remain curated prose, not an exact generated view.
 - Broader command/gate docs accuracy remains open.
 - Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/skills-category-trigger-keywords
+
+Candidates + WSJF:
+- TAKE: `skills/AGENTS.md` Skill Categories Trigger Keywords cells must include the real frontmatter triggers for listed skills. Value 4, risk reduction 4, urgency 3, complexity 1 => 11.0.
+- DEFER: exact parity for non-frontmatter auto-detection phrases. Value 3, risk reduction 3, urgency 2, complexity 3 => 2.7.
+
+Changed:
+- `src/__tests__/skills-agents-docs-contract.test.ts` now parses Skill Categories rows, quoted trigger keyword cells, and each listed skill's top-level frontmatter `triggers:`.
+- `skills/AGENTS.md` now lists the declared `deep-dive`, `wiki`, and `configure-notifications` trigger phrases in their category Trigger Keywords cells.
+- `ROADMAP.md` records Category Trigger Keywords coverage for listed skill frontmatter triggers.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/skills-agents-docs-contract.test.ts --reporter=verbose` failed with 20 missing category trigger phrases for `deep-dive`, `wiki`, and `configure-notifications`.
+- GREEN affected: the same command passed 8/8 after category trigger cells were updated.
+- Build: `npm run build` exited 0 and generated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10280`, `numPassedTests=10273`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan produced no output; `.omc/LOOP-HALT` absent.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The contract is docs/test scoped, derives required phrases from real top-level skill frontmatter, and only expands category keyword cells for skills that already declare real triggers.
+
+Remaining risk:
+- Non-frontmatter auto-detection phrases remain curated rather than mechanically derived.
+- Broader command/gate docs accuracy remains open.
+- Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.

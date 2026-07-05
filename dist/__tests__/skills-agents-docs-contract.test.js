@@ -69,21 +69,36 @@ function listSkillInvocationMetadataByDir() {
     }));
 }
 function extractSkillCategoryNames(markdown) {
+    return extractSkillCategoryRows(markdown)
+        .flatMap((row) => row.skillNames)
+        .sort();
+}
+function extractQuotedStrings(value) {
+    return Array.from(value.matchAll(/"([^"]+)"/g), (match) => match[1]).sort();
+}
+function extractSkillCategoryRows(markdown) {
     const categorySection = markdown.split('## Skill Categories')[1]?.split('## Auto-Activation')[0] ?? '';
     return categorySection
         .split('\n')
         .flatMap((line) => {
-        const match = line.match(/^\|\s*[^|]+\s*\|\s*([^|]+?)\s*\|/);
-        const skillCell = match?.[1]?.trim();
-        if (!skillCell || skillCell === 'Skills' || /^-+$/.test(skillCell)) {
+        const match = line.match(/^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/);
+        const category = match?.[1]?.trim() ?? '';
+        const skillCell = match?.[2]?.trim();
+        const triggerKeywords = match?.[3]?.trim() ?? '';
+        if (!skillCell || category === 'Category' || /^-+$/.test(category)) {
             return [];
         }
-        return skillCell
-            .split(',')
-            .map((skillName) => skillName.trim())
-            .filter(Boolean);
-    })
-        .sort();
+        return [
+            {
+                category,
+                skillNames: skillCell
+                    .split(',')
+                    .map((skillName) => skillName.trim())
+                    .filter(Boolean),
+                triggerKeywords: extractQuotedStrings(triggerKeywords),
+            },
+        ];
+    });
 }
 function extractAutoActivationSkillNames(markdown) {
     const autoActivationSection = markdown.split('## Auto-Activation')[1] ?? '';
@@ -173,6 +188,19 @@ describe('skills/AGENTS.md docs contract', () => {
             .map(({ frontmatterName, triggers }) => `${frontmatterName}: ${triggers.join(', ')}`)
             .sort();
         expect(missingTriggeredSkills).toEqual([]);
+    });
+    it('keeps category trigger keyword cells covering listed skill frontmatter triggers', () => {
+        const metadataByDir = listSkillInvocationMetadataByDir();
+        const missingCategoryTriggers = extractSkillCategoryRows(readSkillsAgentsDoc())
+            .flatMap((row) => row.skillNames.flatMap((skillName) => resolveCategorizedSkillName(skillName, metadataByDir).flatMap((skillDir) => {
+            const markdown = readFileSync(join(process.cwd(), 'skills', skillDir, 'SKILL.md'), 'utf8');
+            const triggers = parseFrontmatterTriggers(markdown);
+            return triggers
+                .filter((trigger) => !row.triggerKeywords.includes(trigger))
+                .map((trigger) => `${row.category}/${skillName}: ${trigger}`);
+        })))
+            .sort();
+        expect(missingCategoryTriggers).toEqual([]);
     });
 });
 //# sourceMappingURL=skills-agents-docs-contract.test.js.map
