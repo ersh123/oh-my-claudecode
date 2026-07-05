@@ -81,9 +81,11 @@ Skills are reusable workflow templates that can be invoked via `/oh-my-claudecod
 
 | File | Skill | Purpose |
 |-----------|-------|---------|
-| `project-session-manager/SKILL.md` | project-session-manager (+ `psm` alias) | Isolated dev environments |
+| `project-session-manager/SKILL.md` | project-session-manager | Isolated dev environments |
 | `writer-memory/SKILL.md` | writer-memory | Agentic memory for writers |
 | `release/SKILL.md` | release | Generic release assistant — analyzes repo CI/rules, caches in `.omc/RELEASE_RULE.md`, guides the release |
+
+`project-session-manager` also exposes the `psm` alias for shorter invocations.
 
 ## For AI Agents
 
