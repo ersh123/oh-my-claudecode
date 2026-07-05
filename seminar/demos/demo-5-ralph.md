@@ -461,10 +461,10 @@ Total: 3 iterations, 2 self-corrections, 1m 20s
 
 ### Variation 1: Ralph with Structured PRD
 ```
-/oh-my-claudecode:ralph-init
+/oh-my-claudecode:ralph "implement OAuth with multiple providers"
 ```
 
-"Ralph-init creates a Product Requirements Document. Ralph then works against that PRD with structured verification."
+"Ralph creates or refines a Product Requirements Document. Ralph then works against that PRD with structured verification."
 
 ### Variation 2: Show Ralph State
 ```bash

@@ -388,7 +388,7 @@ After migration, verify your setup:
    ```
 
 3. **Test a simple command**:
-   Run `/oh-my-claudecode:omc-help` in Claude Code to ensure the plugin is loaded correctly.
+   Run `/oh-my-claudecode:omc-doctor` in Claude Code to ensure the plugin is loaded correctly.
 
 ### New Features in 3.0
 
@@ -470,7 +470,7 @@ Or use `/oh-my-claudecode:remember` to save discoveries manually:
 **Ralph Loop now uses Product Requirements Documents:**
 
 ```bash
-/oh-my-claudecode:ralph-init "implement OAuth with multiple providers"
+/oh-my-claudecode:ralph "implement OAuth with multiple providers"
     ↓
 Auto-creates PRD with user stories
     ↓
@@ -930,7 +930,7 @@ A: Keywords are explicit shortcuts. Natural language triggers auto-detection. Bo
 ## Need Help?
 
 - **Diagnose issues**: Run `/oh-my-claudecode:omc-doctor`
-- **See all commands**: Run `/oh-my-claudecode:omc-help`
+- **See all commands**: Open [REFERENCE.md](REFERENCE.md)
 - **View real-time status**: Run `/oh-my-claudecode:hud setup`
 - **Review detailed changelog**: See [CHANGELOG.md](../CHANGELOG.md)
 - **Report bugs**: [GitHub Issues](https://github.com/Yeachan-Heo/oh-my-claudecode/issues)

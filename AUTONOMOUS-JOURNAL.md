@@ -981,3 +981,33 @@ Remaining risk:
 - `skills/AGENTS.md` category tables remain curated rather than exhaustive.
 - Broader command/gate docs accuracy remains open.
 - Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/no-stale-public-command-docs
+
+Candidates + WSJF:
+- TAKE: public docs must not advertise removed `omc-help` and `ralph-init` command names. Value 5, risk reduction 5, urgency 4, complexity 1 => 14.0. `docs/MIGRATION.md` and seminar docs still presented those names as usable entrypoints.
+- DEFER: global contract requiring every historical `/oh-my-claudecode:<name>` in public docs to map to a current skill or command wrapper. Value 6, risk reduction 6, urgency 3, complexity 6 => 2.5. Initial RED found 55 legacy references, too broad for this slice.
+
+Changed:
+- `docs/MIGRATION.md` now uses `/oh-my-claudecode:omc-doctor` for setup verification, `/oh-my-claudecode:ralph <task>` for PRD-driven Ralph, and `docs/REFERENCE.md` for the command list.
+- `seminar/quickref.md`, `seminar/slides.md`, and `seminar/demos/demo-5-ralph.md` no longer advertise removed `omc-help` or `ralph-init` names.
+- `src/__tests__/public-docs-command-contract.test.ts` now guards public markdown docs against removed `omc-help` and `ralph-init` command names alongside the previous removed `note` checks.
+- `ROADMAP.md` records the expanded public docs command contract while keeping broader docs accuracy open.
+
+Evidence:
+- RED broad probe: an initial all-namespaced-command contract found 55 legacy references, so it was narrowed to the proven removed names for this slice.
+- RED focused: `npx vitest run src/__tests__/public-docs-command-contract.test.ts --reporter=verbose` failed on `docs/MIGRATION.md`, `seminar/demos/demo-5-ralph.md`, `seminar/quickref.md`, and `seminar/slides.md`.
+- GREEN affected: the same command passed 3/3 after docs were updated.
+- Build: `npm run build` exited 0 and generated compiled test artifacts without bridge path churn after using a real ignored `node_modules/` directory in the worktree.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10273`, `numPassedTests=10266`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan reported `0` hits.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The change is docs/test scoped, replaces removed public entrypoints with existing surfaces, and explicitly defers the wider historical command-name sweep.
+
+Remaining risk:
+- Many older migration/seminar examples still reference historical command names that may need a separate policy and rewrite pass.
+- This slice only blocks the two removed names already proven stale in current user-facing docs.
+- Live merge will repeat focused public-docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
