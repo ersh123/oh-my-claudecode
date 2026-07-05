@@ -1351,3 +1351,33 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Setup/shared docs still mention generic trigger behavior such as `fast`/`parallel`; that needs a separate policy-backed slice.
 - Live merge will repeat focused public docs tests, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/setup-shared-trigger-docs
+
+Candidates + WSJF:
+- TAKE: add setup/shared docs to the public trigger stale-example contract and align their shortcut guidance with runtime-backed public trigger examples. Value 3, risk reduction 4, urgency 3, complexity 1 => 10.0.
+- DEFER: generic `fast`/`parallel` config-policy docs across migration/getting-started/seminar material. Value 3, risk reduction 3, urgency 2, complexity 3 => 2.7.
+- DROP: restore broad natural-language triggers such as `build me`, `don't stop`, `stop`, or `fast` only to match old docs. Value 1, risk reduction 0, urgency 1, complexity 3 => 0.7.
+
+Changed:
+- `src/__tests__/public-docs-command-contract.test.ts` now scans `docs/shared/mode-selection-guide.md` and `skills/omc-setup/phases/04-welcome.md` for stale public trigger examples.
+- `docs/shared/mode-selection-guide.md` now documents explicit public examples for deep-interview, autopilot, ralph, ultrawork, and `/team` instead of removed broad natural-language aliases.
+- `skills/omc-setup/phases/04-welcome.md` now points new and upgrade users to current public trigger examples such as `deep-interview`, `ralph`, `ulw`/`ultrawork`, `ralplan`, `cancelomc`/`stopomc`, and `/team`.
+- `ROADMAP.md` records the expanded docs trigger contract and keeps generic `fast`/`parallel` config-policy docs as the next docs slice.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/public-docs-command-contract.test.ts --reporter=verbose` failed with 12 stale references from setup/shared docs.
+- GREEN focused: the same command passed 8/8 after docs alignment.
+- LSP diagnostics: `get_diagnostics_for_file` returned `{}` for `src/__tests__/public-docs-command-contract.test.ts`.
+- Build: `npm run build` exited 0 and produced no bridge path churn with a local hardlink `node_modules`.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10326`, `numPassedTests=10319`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan produced no output; `.omc/LOOP-HALT` absent.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The slice is docs/test scoped, uses the existing public trigger SoT, and removes only stale public-facing examples without changing runtime keyword detection.
+
+Remaining risk:
+- Generic `fast`/`parallel` config-policy docs remain open in migration/getting-started/seminar material.
+- Live merge will repeat focused public docs tests, build, typecheck, baseline, diff scans, and `loop-last-good` movement.

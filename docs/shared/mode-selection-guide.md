@@ -4,10 +4,10 @@
 
 | If you want...                                                        | Use this                       | Keyword                                        |
 | --------------------------------------------------------------------- | ------------------------------ | ---------------------------------------------- |
-| Clarify vague requirements first                                      | `deep-interview`               | "deep interview", "ouroboros", "don't assume"  |
-| Full autonomous build from idea                                       | `autopilot`                    | "autopilot", "build me", "I want a"            |
+| Clarify vague requirements first                                      | `deep-interview`               | "deep-interview", "deep interview"             |
+| Full autonomous build from idea                                       | `autopilot`                    | "autopilot", "auto pilot", "full auto"         |
 | Parallel autonomous (3-5x faster)                                     | `team` (replaces `ultrapilot`) | `/team N:executor "task"`                      |
-| Persistence until verified done                                       | `ralph`                        | "ralph", "don't stop"                          |
+| Persistence until verified done                                       | `ralph`                        | "ralph"                                        |
 | Parallel execution, manual oversight                                  | `ultrawork`                    | "ulw", "ultrawork"                             |
 | Cost-efficient execution                                              | `` (modifier)                  | "eco", "budget"                                |
 | Many similar independent tasks                                        | `team` (replaces `swarm`)      | `/team N:executor "task"`                      |
@@ -84,13 +84,13 @@ When a goal-like request enters an OMC session:
 
 | User Request                            | Best Mode       | Why                             |
 | --------------------------------------- | --------------- | ------------------------------- |
-| "Build me a REST API"                   | autopilot       | Single coherent deliverable     |
+| "autopilot: build a REST API"           | autopilot       | Single coherent deliverable     |
 | "Build frontend, backend, and database" | team 3:executor | Clear component boundaries      |
 | "Fix all 47 TypeScript errors"          | team 5:executor | Many independent similar tasks  |
 | "Refactor auth module thoroughly"       | ralph           | Need persistence + verification |
 | "Quick parallel execution"              | ultrawork       | Manual oversight preferred      |
 | "Save tokens while fixing errors"       | + ultrawork     | Cost-conscious parallel         |
-| "Don't stop until done"                 | ralph           | Persistence keyword detected    |
+| "ralph: finish auth refactor"           | ralph           | Persistence keyword detected    |
 
 ## Mode Types
 
