@@ -1011,3 +1011,30 @@ Remaining risk:
 - Many older migration/seminar examples still reference historical command names that may need a separate policy and rewrite pass.
 - This slice only blocks the two removed names already proven stale in current user-facing docs.
 - Live merge will repeat focused public-docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/quickref-current-commands
+
+Candidates + WSJF:
+- TAKE: seminar quickref Key Commands must only advertise current bundled skills or command wrappers. Value 4, risk reduction 4, urgency 3, complexity 1 => 11.0. The quickref still pointed users to absent `analyze`, `deepsearch`, and `tdd` command names.
+- DEFER: full historical docs command sweep. Value 6, risk reduction 6, urgency 3, complexity 6 => 2.5. The broad probe previously found many legacy references, and changing them needs policy on historical examples vs current entrypoints.
+
+Changed:
+- `seminar/quickref.md` now uses current command wrappers for Key Commands: `/oh-my-claudecode:debug`, `/oh-my-claudecode:deep-dive`, and `/oh-my-claudecode:verify`.
+- `src/__tests__/public-docs-command-contract.test.ts` extracts the quickref Key Commands table and verifies every listed `/oh-my-claudecode:<name>` exists as a bundled skill alias or `commands/*.md` wrapper.
+- `ROADMAP.md` records the quickref Key Commands contract while keeping broader docs accuracy open.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/public-docs-command-contract.test.ts --reporter=verbose` failed with stale command names `analyze`, `deepsearch`, and `tdd`.
+- GREEN affected: the same command passed 4/4 after the quickref was updated.
+- Build: `npm run build` exited 0 and generated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10274`, `numPassedTests=10267`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan reported `0` hits; `.omc/LOOP-HALT` absent.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The invariant is narrow to the quickref Key Commands table and derives allowed names from existing bundled skill aliases plus command wrappers, so it blocks stale learner-facing commands without rewriting historical docs.
+
+Remaining risk:
+- Other historical docs still reference legacy command names and need a separate policy before broad cleanup.
+- Live merge will repeat focused public-docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.

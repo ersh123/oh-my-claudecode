@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { listBuiltinSkillNames } from '../features/builtin-skills/skills.js';
 const removedNoteCommand = ['/oh-my-claudecode', 'note'].join(':');
 const removedPublicCommandNames = ['omc-help', 'ralph-init'];
 function listMarkdownFiles(relativeRoot) {
@@ -27,6 +28,15 @@ function listUserFacingDocs() {
 function containsRemovedCommandName(markdown, commandName) {
     return new RegExp(`/oh-my-claudecode:${commandName}\\b|/${commandName}\\b|\\b${commandName}\\b`).test(markdown);
 }
+function listCommandWrapperNames() {
+    return readdirSync(join(process.cwd(), 'commands'))
+        .filter((fileName) => fileName.endsWith('.md'))
+        .map((fileName) => fileName.replace(/\.md$/, ''));
+}
+function extractSeminarQuickrefKeyCommands(markdown) {
+    const keyCommandsSection = markdown.split('## Key Commands')[1]?.split('## Natural Language')[0] ?? '';
+    return [...keyCommandsSection.matchAll(/\/oh-my-claudecode:([a-z0-9-]+)/g)].map((match) => match[1]);
+}
 describe('public docs command contract', () => {
     it('does not advertise the removed note slash command', () => {
         const staleReferences = listUserFacingDocs().filter((relativePath) => readFileSync(join(process.cwd(), relativePath), 'utf8').includes(removedNoteCommand));
@@ -45,6 +55,12 @@ describe('public docs command contract', () => {
                 .map((commandName) => `${relativePath}: ${commandName}`);
         });
         expect(staleReferences).toEqual([]);
+    });
+    it('keeps seminar quickref key commands backed by bundled skills or wrappers', () => {
+        const installedCommandNames = new Set([...listBuiltinSkillNames({ includeAliases: true }), ...listCommandWrapperNames()]);
+        const quickref = readFileSync(join(process.cwd(), 'seminar/quickref.md'), 'utf8');
+        const staleCommandNames = extractSeminarQuickrefKeyCommands(quickref).filter((commandName) => !installedCommandNames.has(commandName));
+        expect(staleCommandNames).toEqual([]);
     });
 });
 //# sourceMappingURL=public-docs-command-contract.test.js.map
