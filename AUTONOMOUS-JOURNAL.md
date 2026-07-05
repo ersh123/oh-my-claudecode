@@ -829,3 +829,33 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Broader command/gate docs accuracy remains open.
 - Live merge will repeat focused docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/docs-command-wrapper-parity
+
+Candidates + WSJF:
+- TAKE: pin `docs/REFERENCE.md` Slash Commands rows to bundled `commands/*.md` wrappers. Value 6, risk reduction 6, urgency 4, complexity 1 => 16.0. Plugin manifest exposes `commands: "./commands/"`, but the reference omitted 13 bundled wrappers.
+- DEFER: decide whether skininthegamebros-only skills should also affect plugin command wrapper docs/registration. Value 5, risk reduction 5, urgency 3, complexity 4 => 3.25. The current runtime/manifest behavior registers all wrappers, and this slice is docs-only.
+- DEFER: full command/gate accuracy audit. Value 7, risk reduction 6, urgency 4, complexity 5 => 3.4. Useful, but broader than one mechanical docs contract.
+
+Changed:
+- `docs/REFERENCE.md` now documents every bundled `commands/*.md` wrapper in the Slash Commands table, including `autoresearch`, `ccg`, `debug`, `external-context`, `hud`, `learner`, `remember`, `self-improve`, `skill`, `skillify`, `verify`, `wiki`, and `writer-memory`.
+- `src/__tests__/tier0-docs-consistency.test.ts` now parses the `REFERENCE.md` Slash Commands section and fails when a bundled command wrapper is missing.
+- Generated `dist/__tests__/tier0-docs-consistency.test.js` artifacts were rebuilt.
+- `ROADMAP.md` records the command-wrapper docs parity check while keeping broader command/gate docs accuracy open.
+
+Evidence:
+- RED: `npx vitest run src/__tests__/tier0-docs-consistency.test.ts --reporter=verbose` failed with the missing command wrappers from the Slash Commands section.
+- GREEN affected: `npx vitest run src/__tests__/tier0-docs-consistency.test.ts --reporter=verbose` passed 19/19 after the docs rows were added.
+- Build: `npm run build` exited 0 and regenerated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10266`, `numPassedTests=10259`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan reported `0` hits.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The change is docs/test scoped and uses the bundled command wrapper files as the source of truth. Skill-only workflow rows without `commands/*.md` files remain allowed in the reference, because they are not plugin command wrappers.
+
+Remaining risk:
+- Broader command/gate docs accuracy remains open.
+- Behavior around skininthegamebros-only skills and plugin command wrapper registration was observed but not changed.
+- Live merge will repeat focused docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.

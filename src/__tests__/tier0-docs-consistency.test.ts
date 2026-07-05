@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { listBuiltinSkillNames } from '../features/builtin-skills/skills.js';
@@ -10,6 +10,13 @@ const PROJECT_ROOT = join(__dirname, '../..');
 
 function readProjectFile(...segments: string[]): string {
   return readFileSync(join(PROJECT_ROOT, ...segments), 'utf-8');
+}
+
+function listCommandWrapperNames(): string[] {
+  return readdirSync(join(PROJECT_ROOT, 'commands'))
+    .filter((file) => file.endsWith('.md'))
+    .map((file) => file.replace(/\.md$/, ''))
+    .sort();
 }
 
 function extractReferenceSkillNames(referenceDoc: string): string[] {
@@ -28,6 +35,18 @@ function extractReferenceSkillNames(referenceDoc: string): string[] {
   return [...(table?.[1] ?? '').matchAll(/^\| `([^`]+)`\s*\|/gm)]
     .map((match) => match[1])
     .sort();
+}
+
+function extractReferenceSlashCommandNames(referenceDoc: string): string[] {
+  const heading = referenceDoc.match(/^## Slash Commands$/m);
+  expect(heading?.index).toBeGreaterThanOrEqual(0);
+
+  const sectionStart = heading?.index ?? 0;
+  const sectionAndRest = referenceDoc.slice(sectionStart);
+  const nextSection = sectionAndRest.slice(1).search(/^## /m);
+  const section = nextSection >= 0 ? sectionAndRest.slice(0, nextSection + 1) : sectionAndRest;
+
+  return [...new Set([...section.matchAll(/`\/oh-my-claudecode:([a-z0-9-]+)/g)].map((match) => match[1]))].sort();
 }
 
 describe('Tier-0 contract docs consistency', () => {
@@ -58,6 +77,15 @@ describe('Tier-0 contract docs consistency', () => {
     expect(tocCount?.[1]).toBe(String(skillNames.length));
     expect(headingCount?.[1]).toBe(String(skillNames.length));
     expect(documentedSkillNames).toEqual(skillNames);
+  });
+
+  it('documents every bundled plugin command wrapper in REFERENCE.md slash commands', () => {
+    const documentedCommandNames = extractReferenceSlashCommandNames(referenceDoc);
+    const missingCommandNames = listCommandWrapperNames().filter(
+      (commandName) => !documentedCommandNames.includes(commandName),
+    );
+
+    expect(missingCommandNames).toEqual([]);
   });
 
   it('documents all Tier-0 slash commands in REFERENCE.md', () => {
