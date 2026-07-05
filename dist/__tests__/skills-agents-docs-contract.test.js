@@ -10,11 +10,17 @@ function listBundledSkillDirs() {
 function readSkillsAgentsDoc() {
     return readFileSync(join(process.cwd(), 'skills/AGENTS.md'), 'utf8');
 }
+function extractSkillFrontmatter(markdown) {
+    return markdown.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? markdown;
+}
+function stripYamlScalarQuotes(value) {
+    return value.trim().replace(/^['"]|['"]$/g, '');
+}
 function extractSkillFrontmatterName(markdown, fallback) {
-    return markdown.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? fallback;
+    return extractSkillFrontmatter(markdown).match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? fallback;
 }
 function extractSkillFrontmatterDescription(markdown) {
-    return (markdown.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? '').replace(/^['"]|['"]$/g, '');
+    return stripYamlScalarQuotes(extractSkillFrontmatter(markdown).match(/^description:\s*(.+)$/m)?.[1] ?? '');
 }
 function extractKeyFileRows(markdown) {
     const keyFilesSection = markdown.split('## Key Files')[1]?.split('## For AI Agents')[0] ?? '';
@@ -34,12 +40,24 @@ function extractKeyFileSkillDirs(markdown) {
         .map((relativePath) => relativePath.split('/')[0])
         .sort();
 }
-function parseInlineAliases(markdown) {
-    const aliases = markdown.match(/^aliases:\s*\[([^\]]*)\]/m)?.[1] ?? '';
-    return aliases
-        .split(',')
-        .map((alias) => alias.trim().replace(/^['"]|['"]$/g, ''))
+function parseFrontmatterList(markdown, fieldName) {
+    const frontmatter = extractSkillFrontmatter(markdown);
+    const inlineValues = frontmatter.match(new RegExp(`^${fieldName}:\\s*\\[([^\\]]*)\\]`, 'm'))?.[1] ?? '';
+    const blockValues = frontmatter.match(new RegExp(`^${fieldName}:\\s*\\n((?:\\s*-\\s*.+\\n?)+)`, 'm'))?.[1] ?? '';
+    const rawValues = inlineValues
+        ? inlineValues.split(',')
+        : blockValues
+            .split('\n')
+            .map((line) => line.match(/^\s*-\s*(.+)$/)?.[1] ?? '');
+    return rawValues
+        .map(stripYamlScalarQuotes)
         .filter(Boolean);
+}
+function parseInlineAliases(markdown) {
+    return parseFrontmatterList(markdown, 'aliases');
+}
+function parseFrontmatterTriggers(markdown) {
+    return parseFrontmatterList(markdown, 'triggers').filter((trigger) => trigger !== '--' && !/^<[^>]+>$/.test(trigger));
 }
 function listSkillInvocationMetadataByDir() {
     return Object.fromEntries(listBundledSkillDirs().map((skillDir) => {
@@ -65,6 +83,12 @@ function extractSkillCategoryNames(markdown) {
             .map((skillName) => skillName.trim())
             .filter(Boolean);
     })
+        .sort();
+}
+function extractAutoActivationSkillNames(markdown) {
+    const autoActivationSection = markdown.split('## Auto-Activation')[1] ?? '';
+    return Array.from(autoActivationSection.matchAll(/^\|\s*([^|]+?)\s*\|\s*[^|]+?\s*\|$/gm), (match) => match[1].trim())
+        .filter((skillName) => skillName !== 'Skill' && !/^-+$/.test(skillName))
         .sort();
 }
 function resolveCategorizedSkillName(skillName, metadataByDir) {
@@ -135,6 +159,20 @@ describe('skills/AGENTS.md docs contract', () => {
         expect(duplicateSkillDirs).toEqual([]);
         expect(unknownSkillNames).toEqual([]);
         expect(missingSkillDirs).toEqual([]);
+    });
+    it('lists every skill with real frontmatter triggers in auto-activation docs', () => {
+        const autoActivationSkillNames = extractAutoActivationSkillNames(readSkillsAgentsDoc());
+        const missingTriggeredSkills = listBundledSkillDirs()
+            .map((skillDir) => {
+            const markdown = readFileSync(join(process.cwd(), 'skills', skillDir, 'SKILL.md'), 'utf8');
+            const frontmatterName = extractSkillFrontmatterName(markdown, skillDir);
+            const triggers = parseFrontmatterTriggers(markdown);
+            return { frontmatterName, triggers };
+        })
+            .filter(({ frontmatterName, triggers }) => triggers.length > 0 && !autoActivationSkillNames.includes(frontmatterName))
+            .map(({ frontmatterName, triggers }) => `${frontmatterName}: ${triggers.join(', ')}`)
+            .sort();
+        expect(missingTriggeredSkills).toEqual([]);
     });
 });
 //# sourceMappingURL=skills-agents-docs-contract.test.js.map

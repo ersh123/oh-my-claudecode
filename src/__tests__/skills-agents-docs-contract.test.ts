@@ -13,6 +13,14 @@ function readSkillsAgentsDoc(): string {
   return readFileSync(join(process.cwd(), 'skills/AGENTS.md'), 'utf8');
 }
 
+function extractSkillFrontmatter(markdown: string): string {
+  return markdown.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? markdown;
+}
+
+function stripYamlScalarQuotes(value: string): string {
+  return value.trim().replace(/^['"]|['"]$/g, '');
+}
+
 interface KeyFileRow {
   relativePath: string;
   skillName: string;
@@ -20,11 +28,11 @@ interface KeyFileRow {
 }
 
 function extractSkillFrontmatterName(markdown: string, fallback: string): string {
-  return markdown.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? fallback;
+  return extractSkillFrontmatter(markdown).match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? fallback;
 }
 
 function extractSkillFrontmatterDescription(markdown: string): string {
-  return (markdown.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? '').replace(/^['"]|['"]$/g, '');
+  return stripYamlScalarQuotes(extractSkillFrontmatter(markdown).match(/^description:\s*(.+)$/m)?.[1] ?? '');
 }
 
 function extractKeyFileRows(markdown: string): KeyFileRow[] {
@@ -49,13 +57,27 @@ function extractKeyFileSkillDirs(markdown: string): string[] {
     .sort();
 }
 
-function parseInlineAliases(markdown: string): string[] {
-  const aliases = markdown.match(/^aliases:\s*\[([^\]]*)\]/m)?.[1] ?? '';
+function parseFrontmatterList(markdown: string, fieldName: string): string[] {
+  const frontmatter = extractSkillFrontmatter(markdown);
+  const inlineValues = frontmatter.match(new RegExp(`^${fieldName}:\\s*\\[([^\\]]*)\\]`, 'm'))?.[1] ?? '';
+  const blockValues = frontmatter.match(new RegExp(`^${fieldName}:\\s*\\n((?:\\s*-\\s*.+\\n?)+)`, 'm'))?.[1] ?? '';
+  const rawValues = inlineValues
+    ? inlineValues.split(',')
+    : blockValues
+      .split('\n')
+      .map((line) => line.match(/^\s*-\s*(.+)$/)?.[1] ?? '');
 
-  return aliases
-    .split(',')
-    .map((alias) => alias.trim().replace(/^['"]|['"]$/g, ''))
+  return rawValues
+    .map(stripYamlScalarQuotes)
     .filter(Boolean);
+}
+
+function parseInlineAliases(markdown: string): string[] {
+  return parseFrontmatterList(markdown, 'aliases');
+}
+
+function parseFrontmatterTriggers(markdown: string): string[] {
+  return parseFrontmatterList(markdown, 'triggers').filter((trigger) => trigger !== '--' && !/^<[^>]+>$/.test(trigger));
 }
 
 interface SkillInvocationMetadata {
@@ -95,6 +117,14 @@ function extractSkillCategoryNames(markdown: string): string[] {
         .map((skillName) => skillName.trim())
         .filter(Boolean);
     })
+    .sort();
+}
+
+function extractAutoActivationSkillNames(markdown: string): string[] {
+  const autoActivationSection = markdown.split('## Auto-Activation')[1] ?? '';
+
+  return Array.from(autoActivationSection.matchAll(/^\|\s*([^|]+?)\s*\|\s*[^|]+?\s*\|$/gm), (match) => match[1].trim())
+    .filter((skillName) => skillName !== 'Skill' && !/^-+$/.test(skillName))
     .sort();
 }
 
@@ -188,5 +218,22 @@ describe('skills/AGENTS.md docs contract', () => {
     expect(duplicateSkillDirs).toEqual([]);
     expect(unknownSkillNames).toEqual([]);
     expect(missingSkillDirs).toEqual([]);
+  });
+
+  it('lists every skill with real frontmatter triggers in auto-activation docs', () => {
+    const autoActivationSkillNames = extractAutoActivationSkillNames(readSkillsAgentsDoc());
+    const missingTriggeredSkills = listBundledSkillDirs()
+      .map((skillDir) => {
+        const markdown = readFileSync(join(process.cwd(), 'skills', skillDir, 'SKILL.md'), 'utf8');
+        const frontmatterName = extractSkillFrontmatterName(markdown, skillDir);
+        const triggers = parseFrontmatterTriggers(markdown);
+
+        return { frontmatterName, triggers };
+      })
+      .filter(({ frontmatterName, triggers }) => triggers.length > 0 && !autoActivationSkillNames.includes(frontmatterName))
+      .map(({ frontmatterName, triggers }) => `${frontmatterName}: ${triggers.join(', ')}`)
+      .sort();
+
+    expect(missingTriggeredSkills).toEqual([]);
   });
 });

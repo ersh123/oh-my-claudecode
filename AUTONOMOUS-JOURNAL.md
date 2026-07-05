@@ -1176,3 +1176,31 @@ Remaining risk:
 - Category trigger keywords are still curated rather than derived from skill metadata.
 - Broader command/gate docs accuracy remains open.
 - Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/skills-auto-triggers
+
+Candidates + WSJF:
+- TAKE: `skills/AGENTS.md` Auto-Activation table must list every bundled skill with real frontmatter `triggers:`. Value 4, risk reduction 4, urgency 3, complexity 1 => 11.0.
+- DEFER: exact category Trigger Keywords wording parity. Value 3, risk reduction 3, urgency 2, complexity 3 => 2.7.
+
+Changed:
+- `src/__tests__/skills-agents-docs-contract.test.ts` now parses the top YAML frontmatter only, extracts inline or block `triggers:`, filters placeholder template triggers, and checks Auto-Activation docs cover every triggered bundled skill.
+- `skills/AGENTS.md` now lists `configure-notifications`, `deep-dive`, and `wiki` in Auto-Activation with their declared trigger phrases.
+- `ROADMAP.md` records Auto-Activation coverage for real frontmatter triggers.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/skills-agents-docs-contract.test.ts --reporter=verbose` failed on missing `configure-notifications`, `deep-dive`, and `wiki` Auto-Activation rows.
+- GREEN affected: the same command passed 7/7 after the missing rows were added.
+- Build: `npm run build` exited 0 and generated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10279`, `numPassedTests=10272`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan produced no output; `.omc/LOOP-HALT` absent.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The contract is docs/test scoped, parses only top-level skill frontmatter, ignores placeholder template triggers, and adds only the missing real trigger rows to Auto-Activation docs.
+
+Remaining risk:
+- Category Trigger Keywords cells remain curated prose, not an exact generated view.
+- Broader command/gate docs accuracy remains open.
+- Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
