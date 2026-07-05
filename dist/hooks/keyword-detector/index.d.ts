@@ -13,6 +13,13 @@ export interface DetectedKeyword {
     keyword: string;
     position: number;
 }
+export declare const KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES: {
+    readonly cancel: readonly ["cancelomc", "stopomc"];
+    readonly ralph: readonly ["ralph"];
+    readonly autopilot: readonly ["autopilot", "auto pilot", "auto-pilot", "fullsend", "full auto"];
+    readonly ultrawork: readonly ["ultrawork", "ulw"];
+    readonly 'deep-interview': readonly ["deep-interview", "deep interview"];
+};
 /**
  * Canonical workflow skills detected via explicit slash invocation.
  * Mirrors `CANONICAL_WORKFLOW_SKILLS` in `skill-state/index.ts`. Listed here

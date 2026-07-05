@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES } from '../hooks/keyword-detector/index.js';
 
 function listBundledSkillDirs(): string[] {
   return readdirSync(join(process.cwd(), 'skills'), { withFileTypes: true })
@@ -30,6 +31,11 @@ interface KeyFileRow {
 interface SkillCategoryRow {
   category: string;
   skillNames: string[];
+  triggerKeywords: string[];
+}
+
+interface AutoActivationRow {
+  skillName: string;
   triggerKeywords: string[];
 }
 
@@ -144,11 +150,70 @@ function extractSkillCategoryRows(markdown: string): SkillCategoryRow[] {
 }
 
 function extractAutoActivationSkillNames(markdown: string): string[] {
+  return extractAutoActivationRows(markdown)
+    .map((row) => row.skillName)
+    .sort();
+}
+
+function extractAutoActivationRows(markdown: string): AutoActivationRow[] {
   const autoActivationSection = markdown.split('## Auto-Activation')[1] ?? '';
 
-  return Array.from(autoActivationSection.matchAll(/^\|\s*([^|]+?)\s*\|\s*[^|]+?\s*\|$/gm), (match) => match[1].trim())
-    .filter((skillName) => skillName !== 'Skill' && !/^-+$/.test(skillName))
-    .sort();
+  return Array.from(
+    autoActivationSection.matchAll(/^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/gm),
+    (match): AutoActivationRow => ({
+      skillName: match[1].trim(),
+      triggerKeywords: extractQuotedStrings(match[2]),
+    }),
+  )
+    .filter((row) => row.skillName !== 'Skill' && !/^-+$/.test(row.skillName))
+    .sort((left, right) => left.skillName.localeCompare(right.skillName));
+}
+
+function listExpectedAutoActivationTriggersBySkill(): Record<string, string[]> {
+  const frontmatterTriggersBySkill = Object.fromEntries(
+    listBundledSkillDirs()
+      .map((skillDir): [string, string[]] => {
+        const markdown = readFileSync(join(process.cwd(), 'skills', skillDir, 'SKILL.md'), 'utf8');
+        const frontmatterName = extractSkillFrontmatterName(markdown, skillDir);
+
+        return [frontmatterName, parseFrontmatterTriggers(markdown).sort()];
+      })
+      .filter(([, triggers]) => triggers.length > 0),
+  );
+  const keywordDetectorTriggersBySkill = Object.fromEntries(
+    Object.entries(KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES).map(([skillName, triggers]) => [
+      skillName,
+      [...triggers].sort(),
+    ]),
+  );
+  const triggersBySkill = new Map<string, Set<string>>();
+
+  for (const [skillName, triggers] of [
+    ...Object.entries(frontmatterTriggersBySkill),
+    ...Object.entries(keywordDetectorTriggersBySkill),
+  ]) {
+    const currentTriggers = triggersBySkill.get(skillName) ?? new Set<string>();
+
+    for (const trigger of triggers) {
+      currentTriggers.add(trigger);
+    }
+
+    triggersBySkill.set(skillName, currentTriggers);
+  }
+
+  return Object.fromEntries(
+    Array.from(triggersBySkill.entries())
+      .map(([skillName, triggers]): [string, string[]] => [skillName, [...triggers].sort()])
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function listKeywordDetectorDocTriggers(skillName: string): string[] {
+  return [
+    ...(KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES[
+      skillName as keyof typeof KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES
+    ] ?? []),
+  ];
 }
 
 function resolveCategorizedSkillName(
@@ -260,6 +325,27 @@ describe('skills/AGENTS.md docs contract', () => {
     expect(missingTriggeredSkills).toEqual([]);
   });
 
+  it('keeps auto-activation trigger phrases aligned with runtime trigger metadata', () => {
+    const autoActivationTriggersBySkill = Object.fromEntries(
+      extractAutoActivationRows(readSkillsAgentsDoc()).map((row) => [row.skillName, row.triggerKeywords]),
+    );
+    const expectedAutoActivationTriggersBySkill = listExpectedAutoActivationTriggersBySkill();
+    const mismatchedRows = Object.entries(expectedAutoActivationTriggersBySkill)
+      .filter(
+        ([skillName, expectedTriggers]) =>
+          JSON.stringify(autoActivationTriggersBySkill[skillName] ?? []) !== JSON.stringify(expectedTriggers),
+      )
+      .map(
+        ([skillName, expectedTriggers]) =>
+          `${skillName}: expected ${expectedTriggers.join(', ')}; documented ${(autoActivationTriggersBySkill[skillName] ?? []).join(', ')}`,
+      );
+
+    expect(Object.keys(autoActivationTriggersBySkill).sort()).toEqual(
+      Object.keys(expectedAutoActivationTriggersBySkill).sort(),
+    );
+    expect(mismatchedRows).toEqual([]);
+  });
+
   it('keeps category trigger keyword cells covering listed skill frontmatter triggers', () => {
     const metadataByDir = listSkillInvocationMetadataByDir();
     const missingCategoryTriggers = extractSkillCategoryRows(readSkillsAgentsDoc())
@@ -267,7 +353,11 @@ describe('skills/AGENTS.md docs contract', () => {
         row.skillNames.flatMap((skillName) =>
           resolveCategorizedSkillName(skillName, metadataByDir).flatMap((skillDir) => {
             const markdown = readFileSync(join(process.cwd(), 'skills', skillDir, 'SKILL.md'), 'utf8');
-            const triggers = parseFrontmatterTriggers(markdown);
+            const frontmatterName = extractSkillFrontmatterName(markdown, skillDir);
+            const triggers = [
+              ...parseFrontmatterTriggers(markdown),
+              ...listKeywordDetectorDocTriggers(frontmatterName),
+            ];
 
             return triggers
               .filter((trigger) => !row.triggerKeywords.includes(trigger))

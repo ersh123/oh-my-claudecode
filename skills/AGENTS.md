@@ -191,12 +191,12 @@ None - pure markdown files.
 
 | Category | Skills | Trigger Keywords |
 |----------|--------|------------------|
-| Execution | autopilot, autoresearch, nikoflow, ralph, self-improve, team, ultragoal, ultraqa, ultrawork, verify | "autopilot", "ulw", "ralph", "team" |
+| Execution | autopilot, autoresearch, nikoflow, ralph, self-improve, team, ultragoal, ultraqa, ultrawork, verify | "autopilot", "auto pilot", "auto-pilot", "fullsend", "full auto", "ultrawork", "ulw", "ralph" |
 | Cleanup | ai-slop-cleaner | "deslop", "anti-slop", cleanup/refactor + slop smells |
-| Planning | omc-plan, ralplan, deep-interview | "plan this", "interview me", "ouroboros" |
+| Planning | omc-plan, ralplan, deep-interview | "plan this", "deep interview", "deep-interview" |
 | Exploration | debug, deep-dive, deepinit, external-context, sciomc, trace, wiki | "deepinit", "research", "deep dive", "deep-dive", "trace and interview", "investigate deeply", "wiki", "wiki this", "wiki add", "wiki lint", "wiki query" |
 | Visual | visual-verdict | screenshot/reference comparison |
-| Utility | ask, cancel, ccg, configure-notifications, hud, learner, local-build-reminder, mcp-setup, omc-doctor, omc-reference, omc-setup, omc-teams, remember, setup, skill, skillify | "stop", "cancel", "abort", "configure notifications", "setup notifications", "configure telegram", "setup telegram", "telegram bot", "configure discord", "setup discord", "discord webhook", "configure slack", "setup slack", "slack webhook" |
+| Utility | ask, cancel, ccg, configure-notifications, hud, learner, local-build-reminder, mcp-setup, omc-doctor, omc-reference, omc-setup, omc-teams, remember, setup, skill, skillify | "cancelomc", "stopomc", "configure notifications", "setup notifications", "configure telegram", "setup telegram", "telegram bot", "configure discord", "setup discord", "discord webhook", "configure slack", "setup slack", "slack webhook" |
 | Domain | psm, writer-memory, release | psm context |
 
 `learner` remains a deprecated compatibility skill; prefer `skillify` for new skill extraction workflows.
@@ -207,14 +207,14 @@ Some skills activate automatically based on context:
 
 | Skill | Auto-Trigger Condition |
 |-------|----------------------|
-| autopilot | "autopilot", "build me", "I want a" |
-| ultrawork | "ulw", "ultrawork" |
-| ralph | "ralph", "don't stop until" |
-| deep-interview | "deep interview", "interview me", "ouroboros", "don't assume" |
+| autopilot | "autopilot", "auto pilot", "auto-pilot", "fullsend", "full auto" |
+| ultrawork | "ultrawork", "ulw" |
+| ralph | "ralph" |
+| deep-interview | "deep-interview", "deep interview" |
 | deep-dive | "deep dive", "deep-dive", "trace and interview", "investigate deeply" |
 | wiki | "wiki", "wiki this", "wiki add", "wiki lint", "wiki query" |
 | configure-notifications | "configure notifications", "setup notifications", "configure telegram", "setup telegram", "telegram bot", "configure discord", "setup discord", "discord webhook", "configure slack", "setup slack", "slack webhook" |
-| cancel | "stop", "cancel", "abort" |
+| cancel | "cancelomc", "stopomc" |
 
 <!-- MANUAL:
 - Team runtime wait semantics: `omc_run_team_wait.timeout_ms` only limits the wait call and does not stop workers.
