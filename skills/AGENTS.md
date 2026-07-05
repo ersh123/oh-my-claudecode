@@ -211,6 +211,9 @@ Some skills activate automatically based on context:
 | ultrawork | "ulw", "ultrawork" |
 | ralph | "ralph", "don't stop until" |
 | deep-interview | "deep interview", "interview me", "ouroboros", "don't assume" |
+| deep-dive | "deep dive", "deep-dive", "trace and interview", "investigate deeply" |
+| wiki | "wiki", "wiki this", "wiki add", "wiki lint", "wiki query" |
+| configure-notifications | "configure notifications", "setup notifications", "configure telegram", "setup telegram", "telegram bot", "configure discord", "setup discord", "discord webhook", "configure slack", "setup slack", "slack webhook" |
 | cancel | "stop", "cancel", "abort" |
 
 <!-- MANUAL:
