@@ -1121,3 +1121,30 @@ Remaining risk:
 - Category membership and purpose text are still curated rather than generated from skill metadata.
 - Broader command/gate docs accuracy remains open.
 - Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/keyfiles-machine-readable
+
+Candidates + WSJF:
+- TAKE: `skills/AGENTS.md` Key Files Skill column must match each skill's frontmatter `name:` exactly. Value 4, risk reduction 4, urgency 3, complexity 1 => 11.0.
+- DEFER: generated Key Files purpose text from frontmatter descriptions. Value 4, risk reduction 3, urgency 2, complexity 3 => 3.0.
+
+Changed:
+- `src/__tests__/skills-agents-docs-contract.test.ts` now parses Key Files table rows and compares each Skill cell with the referenced `SKILL.md` frontmatter name.
+- `skills/AGENTS.md` now lists `project-session-manager` as the exact Skill cell and moves the `psm` alias note below the Domain Skills table.
+- `ROADMAP.md` records Key Files Skill-cell parity against frontmatter `name:`.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/skills-agents-docs-contract.test.ts --reporter=verbose` failed on `project-session-manager/SKILL.md: project-session-manager (+ \`psm\` alias)`.
+- GREEN affected: the same command passed 5/5 after the alias note moved out of the Skill cell.
+- Build: `npm run build` exited 0 and generated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10277`, `numPassedTests=10270`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The contract is docs/test scoped, preserves the `psm` alias note, and makes Key Files rows machine-readable without runtime changes.
+
+Remaining risk:
+- Key Files purpose text is still manually curated and may drift from frontmatter descriptions.
+- Broader command/gate docs accuracy remains open.
+- Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.

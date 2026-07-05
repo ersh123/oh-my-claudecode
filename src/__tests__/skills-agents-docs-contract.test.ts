@@ -13,10 +13,28 @@ function readSkillsAgentsDoc(): string {
   return readFileSync(join(process.cwd(), 'skills/AGENTS.md'), 'utf8');
 }
 
-function extractKeyFileSkillPaths(markdown: string): string[] {
+interface KeyFileRow {
+  relativePath: string;
+  skillName: string;
+}
+
+function extractSkillFrontmatterName(markdown: string, fallback: string): string {
+  return markdown.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? fallback;
+}
+
+function extractKeyFileRows(markdown: string): KeyFileRow[] {
   const keyFilesSection = markdown.split('## Key Files')[1]?.split('## For AI Agents')[0] ?? '';
 
-  return Array.from(keyFilesSection.matchAll(/`([^`]+\/SKILL\.md)`/g), (match) => match[1]).sort();
+  return Array.from(keyFilesSection.matchAll(/^\|\s*`([^`]+\/SKILL\.md)`\s*\|\s*([^|]+?)\s*\|/gm), (match) => ({
+    relativePath: match[1],
+    skillName: match[2].trim(),
+  })).sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+}
+
+function extractKeyFileSkillPaths(markdown: string): string[] {
+  return extractKeyFileRows(markdown)
+    .map((row) => row.relativePath)
+    .sort();
 }
 
 function extractKeyFileSkillDirs(markdown: string): string[] {
@@ -44,7 +62,7 @@ function listSkillInvocationMetadataByDir(): Record<string, SkillInvocationMetad
   return Object.fromEntries(
     listBundledSkillDirs().map((skillDir) => {
       const markdown = readFileSync(join(process.cwd(), 'skills', skillDir, 'SKILL.md'), 'utf8');
-      const frontmatterName = markdown.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? skillDir;
+      const frontmatterName = extractSkillFrontmatterName(markdown, skillDir);
       const primaryNames = Array.from(new Set([skillDir, frontmatterName]));
       const aliases = parseInlineAliases(markdown);
 
@@ -108,6 +126,20 @@ describe('skills/AGENTS.md docs contract', () => {
 
   it('lists every bundled skill in the key files tables', () => {
     expect(extractKeyFileSkillDirs(readSkillsAgentsDoc())).toEqual(listBundledSkillDirs());
+  });
+
+  it('keeps the key files skill column matching each skill frontmatter name', () => {
+    const mismatchedRows = extractKeyFileRows(readSkillsAgentsDoc())
+      .filter(({ relativePath, skillName }) => {
+        const skillDir = relativePath.split('/')[0];
+        const markdown = readFileSync(join(process.cwd(), 'skills', relativePath), 'utf8');
+        const frontmatterName = extractSkillFrontmatterName(markdown, skillDir);
+
+        return skillName !== frontmatterName;
+      })
+      .map(({ relativePath, skillName }) => `${relativePath}: ${skillName}`);
+
+    expect(mismatchedRows).toEqual([]);
   });
 
   it('keeps the skill categories table covering every bundled skill', () => {
