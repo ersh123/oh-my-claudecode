@@ -3,7 +3,7 @@
 
 # skills
 
-30 skill directories for workflow automation and specialized behaviors.
+41 skill directories for workflow automation and specialized behaviors.
 
 ## Purpose
 
@@ -31,7 +31,6 @@ Skills are reusable workflow templates that can be invoked via `/oh-my-claudecod
 | `plan/SKILL.md` | omc-plan | Strategic planning with interview workflow |
 | `ralplan/SKILL.md` | ralplan | Iterative planning (Planner+Architect+Critic) with RALPLAN-DR structured deliberation (`--deliberate` for high-risk) |
 | `deep-interview/SKILL.md` | deep-interview | Socratic deep interview with mathematical ambiguity gating (Ouroboros-inspired) |
-| `ralph-init/SKILL.md` | ralph-init | Initialize PRD for structured ralph |
 
 ### Exploration Skills
 
@@ -59,7 +58,6 @@ Skills are reusable workflow templates that can be invoked via `/oh-my-claudecod
 | `omc-doctor/SKILL.md` | omc-doctor | Diagnose installation issues |
 | `setup/SKILL.md` | setup | Unified setup entrypoint for install, diagnostics, and MCP configuration |
 | `omc-setup/SKILL.md` | omc-setup | One-time setup wizard |
-| `omc-help/SKILL.md` | omc-help | Usage guide |
 | `mcp-setup/SKILL.md` | mcp-setup | Configure MCP servers |
 | `skill/SKILL.md` | skill | Manage local skills |
 
@@ -177,9 +175,9 @@ None - pure markdown files.
 |----------|--------|------------------|
 | Execution | autopilot, ultrawork, ralph, team, ultraqa | "autopilot", "ulw", "ralph", "team" |
 | Cleanup | ai-slop-cleaner | "deslop", "anti-slop", cleanup/refactor + slop smells |
-| Planning | omc-plan, ralplan, deep-interview, ralph-init | "plan this", "interview me", "ouroboros" |
+| Planning | omc-plan, ralplan, deep-interview | "plan this", "interview me", "ouroboros" |
 | Exploration | deepinit, sciomc, external-context | "deepinit", "research" |
-| Utility | skillify, learner (deprecated alias), cancel, hud, setup, omc-doctor, omc-setup, omc-help, mcp-setup | "stop", "cancel" |
+| Utility | skillify, learner (deprecated alias), cancel, hud, setup, omc-doctor, omc-setup, omc-reference, mcp-setup | "stop", "cancel" |
 | Domain | psm, writer-memory, release | psm context |
 
 ## Auto-Activation
