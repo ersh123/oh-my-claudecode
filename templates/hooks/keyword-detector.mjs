@@ -1091,8 +1091,7 @@ async function main() {
 
     // TDD keywords
     if (hasActionableKeyword(cleanPrompt, /\b(tdd)\b|(테스트\s?퍼스트)|(テスト\s?ファースト)/i) ||
-        hasActionableKeyword(cleanPrompt, /\btest\s+first\b/i) ||
-        hasActionableKeyword(cleanPrompt, /\bred\s+green\b/i)) {
+        hasActionableKeyword(cleanPrompt, /\btest\s+first\b/i)) {
       matches.push({ name: 'tdd', args: '' });
     }
 
