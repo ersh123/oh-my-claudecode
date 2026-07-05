@@ -98,7 +98,7 @@ ralph: migrate auth to modern TypeScript + JWT
 - Identifies: Multiple issues (plain text passwords, no types, sessions instead of JWT, etc.)
 
 **Presenter talking points:**
-- "Ralph activates - this means 'don't stop until verified complete'"
+- "Ralph activates - this means 'ralph: finish until verified' style persistence"
 - "Starting with deep analysis of what needs to change"
 - "Notice: Multiple problems detected - this is a complex refactoring"
 
