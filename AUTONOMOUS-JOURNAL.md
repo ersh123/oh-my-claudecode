@@ -1413,3 +1413,35 @@ Remaining risk:
 - `skills/deep-interview/SKILL.md` still contains a separate deep-interview-local `defaultExecutionMode` example; it was outside this public/setup config-policy contract.
 - Historical seminar notes/demo/slides still contain broader old trigger narration and legacy mode names; clean them in a separate slice.
 - Live merge will repeat focused docs/setup tests, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 - dogfood/seminar-trigger-longform-docs
+
+Candidates + WSJF:
+- TAKE: extend the public-docs stale trigger guard to seminar longform notes/slides and replace current-behavior stale trigger examples with supported explicit keywords. Value 3, risk reduction 3, urgency 2, complexity 1 => 8.0.
+- DEFER: broader seminar demo scripts cleanup across `seminar/demos/**`, screenshots README, and legacy mode names. Value 3, risk reduction 2, urgency 2, complexity 3 => 2.3.
+- DROP: re-enable broad natural-language triggers such as `build me`, `fast parallel`, and `don't stop` to match seminar material. Value 1, risk reduction 0, urgency 1, complexity 4 => 0.5.
+
+Changed:
+- `src/__tests__/public-docs-command-contract.test.ts` now scans `seminar/notes.md` and `seminar/slides.md` for stale public trigger examples.
+- `seminar/notes.md` now uses explicit supported examples such as `autopilot: build a REST API`, `ralph: finish until verified`, `ulw fix errors`, and `eco batch fixes`, and no longer presents broad natural-language routing as current behavior.
+- `seminar/slides.md` now removes stale trigger claims for `build me`, `create me`, `make me`, `handle it all`, `I want a/an...`, and `don't stop`.
+- `ROADMAP.md` records seminar longform docs under the public docs trigger contract.
+
+Evidence:
+- RED focused 1: `npx vitest run src/__tests__/public-docs-command-contract.test.ts --reporter=verbose` failed with 5 stale references from `seminar/notes.md` and `seminar/slides.md`.
+- RED focused 2: after widening `stalePublicTriggerExamples`, the same command failed with 5 additional stale longform references: `'build me a...'`, `'fast parallel'`, `'don't stop'`, `fast parallel fixes`, and `efficient batch fixes`.
+- RED focused 3: manual diff review found broader natural-language current-behavior claims; after widening the guard, the same command failed with 8 more stale references including `Natural language works:`, `Natural language is first-class.`, `describe what you want in natural language`, `build me, create me, make me`, `handle it all`, and `I want a/an...`.
+- GREEN focused: the same command passed 9/9 after docs alignment.
+- Stale grep: the targeted stale-pattern search over `seminar/notes.md` and `seminar/slides.md` produced no output.
+- Build: `npm run build` exited 0 and produced no bridge path churn with a local hardlink `node_modules`.
+- Typecheck: `npx tsc` exited 0.
+- Focused regression: `npx vitest run src/__tests__/public-docs-command-contract.test.ts src/__tests__/setup-contracts-regression.test.ts src/__tests__/repair-plugin-cache-script.test.ts --reporter=verbose` passed 36/36.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10327`, `numPassedTests=10320`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan produced no output; `.omc/LOOP-HALT` absent.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The slice is docs/test scoped, expands the existing stale public-trigger contract to seminar longform docs, removes current-behavior claims for unsupported natural-language triggers, and leaves runtime detection unchanged.
+
+Remaining risk:
+- `seminar/demos/**` and screenshot/demo narration may still contain historical broad trigger language or legacy mode names; keep that as a separate slice.
