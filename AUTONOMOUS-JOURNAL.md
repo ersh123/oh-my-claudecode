@@ -890,3 +890,33 @@ Remaining risk:
 - Broader command/gate docs accuracy remains open.
 - The doctor skill still contains intentional legacy `.sh` detection/removal guidance; this slice only fixed stale plugin-content inventories.
 - Live merge will repeat focused doctor test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/no-stale-note-command-docs
+
+Candidates + WSJF:
+- TAKE: active skill docs must not advertise removed `/oh-my-claudecode:note`. Value 5, risk reduction 6, urgency 4, complexity 1 => 15.0. The bundled `note` command is absent, so learner/skill docs were pointing users to a dead command path.
+- DEFER: broader historical docs cleanup for `/oh-my-claudecode:note`. Value 4, risk reduction 4, urgency 2, complexity 3 => 3.3. Historical migration/shared feature docs may need a separate policy instead of silent rewrite.
+- DROP: restore a `note` command only for docs compatibility. Value 1, risk reduction 1, urgency 1, complexity 3 => 1.0. The current routing has `/oh-my-claudecode:remember` for memory triage, and no runtime need proved a restored alias.
+
+Changed:
+- `skills/skill/SKILL.md` and `skills/learner/SKILL.md` now point users to `/oh-my-claudecode:remember` instead of the removed `/oh-my-claudecode:note`.
+- `src/skills/__tests__/skill-docs-contract.test.ts` scans bundled active skill docs and fails on stale `/oh-my-claudecode:note` references.
+- Generated `dist/skills/__tests__/skill-docs-contract.test.js` artifacts were rebuilt.
+- `ROADMAP.md` records the active skill-docs contract while keeping broader docs accuracy open.
+
+Evidence:
+- RED: `npx vitest run src/skills/__tests__/skill-docs-contract.test.ts --reporter=verbose` failed with stale references in `skills/learner/SKILL.md` and `skills/skill/SKILL.md`.
+- GREEN affected: the same command passed 1/1 after docs were updated.
+- Build: `npm run build` exited 0 and generated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10268`, `numPassedTests=10261`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan reported `0` hits.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The change is docs/test scoped, and the new guard targets active bundled skill docs only. Historical docs are left untouched for a separate policy decision.
+
+Remaining risk:
+- Historical/shared docs still mention `/oh-my-claudecode:note` in places that may be intentional migration context.
+- Broader command/gate docs accuracy remains open.
+- Live merge will repeat focused skill-docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
