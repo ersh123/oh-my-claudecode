@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { KEYWORD_DETECTOR_PUBLIC_DOC_TRIGGER_EXAMPLES } from '../hooks/keyword-detector/index.js';
 
 const SCRIPT_PATH = join(process.cwd(), 'scripts', 'keyword-detector.mjs');
 const TEMPLATE_SCRIPT_PATH = join(process.cwd(), 'templates', 'hooks', 'keyword-detector.mjs');
@@ -44,7 +45,95 @@ function getRalplanStatePath(cwd: string, sessionId: string) {
   return join(cwd, '.omc', 'state', 'sessions', sessionId, 'ralplan-state.json');
 }
 
+type PublicDocScriptKeyword = keyof typeof KEYWORD_DETECTOR_PUBLIC_DOC_TRIGGER_EXAMPLES;
+
+const PUBLIC_DOC_SCRIPT_EXPECTED_MARKERS: Record<PublicDocScriptKeyword, string> = {
+  cancel: '[MAGIC KEYWORD: CANCEL]',
+  ralph: '[MAGIC KEYWORD: RALPH]',
+  autopilot: '[MAGIC KEYWORD: AUTOPILOT]',
+  ultrawork: '[MAGIC KEYWORD: ULTRAWORK]',
+  'deep-interview': '[MAGIC KEYWORD: DEEP-INTERVIEW]',
+  ccg: '[MAGIC KEYWORD: CCG]',
+  ralplan: '[MAGIC KEYWORD: RALPLAN]',
+  tdd: '<tdd-mode>',
+  'code-review': '<code-review-mode>',
+  'security-review': '<security-review-mode>',
+  ultrathink: '<think-mode>',
+  deepsearch: '<search-mode>',
+  analyze: '<analyze-mode>',
+};
+
+const STALE_PUBLIC_DOC_SCRIPT_TRIGGER_EXAMPLES: Array<{ prompt: string; forbiddenMarker: string }> = [
+  { prompt: "don't stop until done", forbiddenMarker: '[MAGIC KEYWORD: RALPH]' },
+  { prompt: 'must complete this task', forbiddenMarker: '[MAGIC KEYWORD: RALPH]' },
+  { prompt: 'build me a todo app', forbiddenMarker: '[MAGIC KEYWORD: AUTOPILOT]' },
+  { prompt: 'I want a website', forbiddenMarker: '[MAGIC KEYWORD: AUTOPILOT]' },
+  { prompt: 'handle it all', forbiddenMarker: '[MAGIC KEYWORD: AUTOPILOT]' },
+  { prompt: 'end to end', forbiddenMarker: '[MAGIC KEYWORD: AUTOPILOT]' },
+  { prompt: 'e2e this', forbiddenMarker: '[MAGIC KEYWORD: AUTOPILOT]' },
+  { prompt: 'uw fix tests', forbiddenMarker: '[MAGIC KEYWORD: ULTRAWORK]' },
+  { prompt: 'red green refactor this', forbiddenMarker: '<tdd-mode>' },
+  { prompt: 'think hard about this', forbiddenMarker: '<think-mode>' },
+  { prompt: 'think deeply about this', forbiddenMarker: '<think-mode>' },
+  { prompt: 'search code for auth', forbiddenMarker: '<search-mode>' },
+  { prompt: 'search files for auth', forbiddenMarker: '<search-mode>' },
+  { prompt: 'find all files auth', forbiddenMarker: '<search-mode>' },
+  { prompt: 'ouroboros auto clarify requirements', forbiddenMarker: '[MAGIC KEYWORD: DEEP-INTERVIEW]' },
+];
+
+let isolatedRunCounter = 0;
+
+function runIsolatedKeywordDetector(prompt: string, scriptPath: string) {
+  const cwd = mkdtempSync(join(tmpdir(), 'keyword-detector-public-doc-script-'));
+  try {
+    const sessionId = `session-public-doc-script-${isolatedRunCounter++}`;
+    return runKeywordDetector(prompt, cwd, sessionId, scriptPath);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
 describe('keyword-detector.mjs mode-message dispatch', () => {
+  it('keeps standalone .mjs public trigger examples aligned with the TypeScript source of truth', () => {
+    const scriptPaths = [
+      ['plugin script', SCRIPT_PATH],
+      ['install template', TEMPLATE_SCRIPT_PATH],
+    ] as const;
+
+    for (const [skillName, triggers] of Object.entries(
+      KEYWORD_DETECTOR_PUBLIC_DOC_TRIGGER_EXAMPLES,
+    ) as Array<[PublicDocScriptKeyword, readonly string[]]>) {
+      for (const trigger of triggers) {
+        for (const [label, scriptPath] of scriptPaths) {
+          const output = runIsolatedKeywordDetector(trigger, scriptPath);
+          const context = output.hookSpecificOutput?.additionalContext ?? '';
+
+          expect(context, `${label} should route "${trigger}" as ${skillName}`).toContain(
+            PUBLIC_DOC_SCRIPT_EXPECTED_MARKERS[skillName],
+          );
+        }
+      }
+    }
+  });
+
+  it('does not keep stale public trigger examples alive in standalone .mjs hooks', () => {
+    const scriptPaths = [
+      ['plugin script', SCRIPT_PATH],
+      ['install template', TEMPLATE_SCRIPT_PATH],
+    ] as const;
+
+    for (const { prompt, forbiddenMarker } of STALE_PUBLIC_DOC_SCRIPT_TRIGGER_EXAMPLES) {
+      for (const [label, scriptPath] of scriptPaths) {
+        const output = runIsolatedKeywordDetector(prompt, scriptPath);
+        const context = output.hookSpecificOutput?.additionalContext ?? '';
+
+        expect(context, `${label} should not route stale trigger "${prompt}"`).not.toContain(
+          forbiddenMarker,
+        );
+      }
+    }
+  });
+
   it('injects search mode for deepsearch without emitting a magic skill invocation', () => {
     const output = runKeywordDetector('deepsearch the codebase for keyword dispatch');
     const context = output.hookSpecificOutput?.additionalContext ?? '';

@@ -1290,3 +1290,35 @@ Remaining risk:
 - `scripts/keyword-detector.mjs` and `templates/hooks/keyword-detector.mjs` still have their own parity surface.
 - Historical/shared docs and setup copy still mention broader generic trigger behavior such as `fast`/`parallel`; that needs a separate policy-backed slice.
 - Live merge will repeat focused public docs tests, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/keyword-mjs-trigger-parity
+
+Candidates + WSJF:
+- TAKE: standalone keyword-detector `.mjs` hooks must follow `KEYWORD_DETECTOR_PUBLIC_DOC_TRIGGER_EXAMPLES` and reject stale public trigger phrases. Value 4, risk reduction 4, urgency 3, complexity 2 => 5.5.
+- DEFER: full `.mjs`/TS parser audit beyond public trigger examples. Value 4, risk reduction 4, urgency 2, complexity 4 => 2.5.
+- DEFER: historical/shared docs trigger-policy cleanup. Value 3, risk reduction 3, urgency 2, complexity 3 => 2.7.
+
+Changed:
+- `src/__tests__/keyword-detector-script.test.ts` now imports `KEYWORD_DETECTOR_PUBLIC_DOC_TRIGGER_EXAMPLES` and checks both `scripts/keyword-detector.mjs` and `templates/hooks/keyword-detector.mjs` against the TS/public-doc trigger SoT.
+- The same test rejects stale standalone triggers: `don't stop`, `must complete`, `build me`, `I want a`, `handle it all`, `end to end`, `e2e this`, `uw`, `red green`, `think hard`, `think deeply`, broad `search code/files`, broad `find all files`, and prompt-start `ouroboros`.
+- `scripts/keyword-detector.mjs` now removes those stale aliases and skips upstream Ouroboros CLI invocations before routing deep-interview.
+- `templates/hooks/keyword-detector.mjs` no longer routes `red green` as TDD.
+- `ROADMAP.md` records the closed keyword-detector `.mjs` trigger parity slice while keeping the broader `.mjs` audit open.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/keyword-detector-script.test.ts --reporter=verbose` failed because `scripts/keyword-detector.mjs` still routed `don't stop until done` to `[MAGIC KEYWORD: RALPH]`.
+- GREEN focused: the same command passed 77/77 after stale aliases were removed from standalone hooks.
+- Affected installer-template test: `npx vitest run src/installer/__tests__/hook-templates.test.ts --reporter=verbose` passed 11/11.
+- Build: `npm run build` exited 0 and regenerated compiled artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10326`, `numPassedTests=10319`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan produced no output; `.omc/LOOP-HALT` absent.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The test now ties standalone `.mjs` trigger behavior to the runtime public-doc SoT and removes only stale natural-language aliases, leaving explicit keywords and localized aliases intact.
+
+Remaining risk:
+- Broader `.mjs` parser/default parity remains open outside public trigger examples.
+- Historical/shared docs and setup copy still mention broader generic trigger behavior such as `fast`/`parallel`; that needs a separate policy-backed slice.
+- Live merge will repeat focused keyword script/template tests, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
