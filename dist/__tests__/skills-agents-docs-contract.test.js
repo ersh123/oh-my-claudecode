@@ -13,11 +13,15 @@ function readSkillsAgentsDoc() {
 function extractSkillFrontmatterName(markdown, fallback) {
     return markdown.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? fallback;
 }
+function extractSkillFrontmatterDescription(markdown) {
+    return (markdown.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? '').replace(/^['"]|['"]$/g, '');
+}
 function extractKeyFileRows(markdown) {
     const keyFilesSection = markdown.split('## Key Files')[1]?.split('## For AI Agents')[0] ?? '';
-    return Array.from(keyFilesSection.matchAll(/^\|\s*`([^`]+\/SKILL\.md)`\s*\|\s*([^|]+?)\s*\|/gm), (match) => ({
+    return Array.from(keyFilesSection.matchAll(/^\|\s*`([^`]+\/SKILL\.md)`\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$/gm), (match) => ({
         relativePath: match[1],
         skillName: match[2].trim(),
+        purpose: match[3].trim(),
     })).sort((left, right) => left.relativePath.localeCompare(right.relativePath));
 }
 function extractKeyFileSkillPaths(markdown) {
@@ -95,6 +99,16 @@ describe('skills/AGENTS.md docs contract', () => {
             return skillName !== frontmatterName;
         })
             .map(({ relativePath, skillName }) => `${relativePath}: ${skillName}`);
+        expect(mismatchedRows).toEqual([]);
+    });
+    it('keeps the key files purpose column matching each skill frontmatter description', () => {
+        const mismatchedRows = extractKeyFileRows(readSkillsAgentsDoc())
+            .filter(({ relativePath, purpose }) => {
+            const markdown = readFileSync(join(process.cwd(), 'skills', relativePath), 'utf8');
+            const frontmatterDescription = extractSkillFrontmatterDescription(markdown);
+            return purpose !== frontmatterDescription;
+        })
+            .map(({ relativePath, purpose }) => `${relativePath}: ${purpose}`);
         expect(mismatchedRows).toEqual([]);
     });
     it('keeps the skill categories table covering every bundled skill', () => {
