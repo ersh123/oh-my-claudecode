@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 const removedNoteCommand = ['/oh-my-claudecode', 'note'].join(':');
+const removedPublicCommandNames = ['omc-help', 'ralph-init'];
 function listMarkdownFiles(relativeRoot) {
     const absoluteRoot = join(process.cwd(), relativeRoot);
     if (!existsSync(absoluteRoot)) {
@@ -23,6 +24,9 @@ function listUserFacingDocs() {
         ...listMarkdownFiles('seminar'),
     ].filter((relativePath) => existsSync(join(process.cwd(), relativePath)));
 }
+function containsRemovedCommandName(markdown, commandName) {
+    return new RegExp(`/oh-my-claudecode:${commandName}\\b|/${commandName}\\b|\\b${commandName}\\b`).test(markdown);
+}
 describe('public docs command contract', () => {
     it('does not advertise the removed note slash command', () => {
         const staleReferences = listUserFacingDocs().filter((relativePath) => readFileSync(join(process.cwd(), relativePath), 'utf8').includes(removedNoteCommand));
@@ -32,6 +36,15 @@ describe('public docs command contract', () => {
         const skillInventory = readFileSync(join(process.cwd(), 'skills/AGENTS.md'), 'utf8');
         expect(skillInventory).not.toContain('`note/SKILL.md`');
         expect(skillInventory).not.toMatch(/\bnote,\s+cancel\b/);
+    });
+    it('does not advertise removed public slash command names', () => {
+        const staleReferences = listUserFacingDocs().flatMap((relativePath) => {
+            const markdown = readFileSync(join(process.cwd(), relativePath), 'utf8');
+            return removedPublicCommandNames
+                .filter((commandName) => containsRemovedCommandName(markdown, commandName))
+                .map((commandName) => `${relativePath}: ${commandName}`);
+        });
+        expect(staleReferences).toEqual([]);
     });
 });
 //# sourceMappingURL=public-docs-command-contract.test.js.map

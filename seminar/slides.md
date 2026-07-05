@@ -1206,7 +1206,7 @@ npm install -g oh-my-claudecode
 
 **Getting Help**
 ```
-/oh-my-claudecode:omc-help    - Usage guide
+docs/REFERENCE.md             - Usage guide
 /oh-my-claudecode:omc-doctor  - Diagnose issues
 ```
 
@@ -1337,9 +1337,9 @@ autopilot: build something amazing
 
 | Skill | Purpose | Trigger |
 |-------|---------|---------|
-| help | Show usage guide | `/help` |
+| omc-doctor | Diagnose install/config | `/omc-doctor` |
 | omc-setup | Setup wizard | `/omc-setup` |
-| ralph-init | Initialize PRD | `/ralph-init` |
+| ralph | PRD-driven completion loop | `/ralph <task>` |
 | release | Release workflow | `/release` |
 | review | Review plan | "review plan" |
 | research | Scientist orchestration | "research", "statistics" |

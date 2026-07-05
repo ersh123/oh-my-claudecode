@@ -62,7 +62,7 @@
 | `/oh-my-claudecode:omc-setup` | Initial setup wizard |
 | `/oh-my-claudecode:hud setup` | Enable HUD statusline |
 | `/oh-my-claudecode:omc-doctor` | Diagnose issues |
-| `/oh-my-claudecode:omc-help` | Show usage guide |
+| `docs/REFERENCE.md` | Show usage guide |
 | `/oh-my-claudecode:cancel` | Stop current operation |
 | `/oh-my-claudecode:remember` | Store or organize reusable project knowledge |
 | `/oh-my-claudecode:learner` | Extract reusable skill |
