@@ -39,7 +39,7 @@
 
 **The Vision**
 - "What if your AI assistant could ORCHESTRATE the work instead of just DOING the work?"
-- "What if you could say 'build me a REST API' and specialists for planning, implementation, testing, and documentation all kicked in automatically?"
+- "What if you could say 'autopilot: build a REST API' and specialists for planning, implementation, testing, and documentation all kicked in automatically?"
 - "What if the AI could run multiple specialists in parallel, route tasks to the right model tier, and persist until verification passes?"
 
 **The Reveal**
@@ -64,7 +64,7 @@
 ### Key Points
 - The conductor metaphor: orchestrates specialists rather than doing everything
 - Mental model shift from interactive assistant to autonomous orchestrator
-- Architecture: natural language → intent detection → skill routing → agent delegation
+- Architecture: explicit keyword → intent detection → skill routing → agent delegation
 - Zero configuration: works out of the box with intelligent defaults
 - Three core innovations: multi-agent orchestration, model tier routing, execution modes
 
@@ -142,7 +142,7 @@
 - "All of this from one command: 'autopilot: build task management API'"
 
 **When to Use** (Slide 11)
-- "Perfect for: New features, greenfield projects, 'build me a...' requests"
+- "Perfect for: New features, greenfield projects, explicitly autopilot-prefixed requests"
 - "Not ideal for: Quick bug fixes, single file changes, exploratory debugging"
 - "If you're starting something from scratch, autopilot is your best friend."
 
@@ -296,7 +296,7 @@
 
 ### Audience Engagement
 - "Quick question: Which mode sounds most useful for YOUR daily work?" (Take 2-3 responses)
-- "The beauty is you don't have to memorize this. Say 'fast parallel fixes' and OMC activates ultrawork. Say 'efficient batch fixes' and it activates ."
+- "The beauty is you don't have to memorize this. Say 'ulw fix errors' and OMC activates ultrawork. Say 'eco batch fixes' and ecomode activates."
 - Watch for confused faces during technical explanations - offer to elaborate if needed
 
 ---
@@ -518,7 +518,7 @@ Narrate:
 ```
 
 **Talking Points**
-- "Ralph is your 'don't stop until done' mode. Perfect for stubborn bugs or end-of-day cleanup."
+- "Ralph is your 'ralph: finish until verified' mode. Perfect for stubborn bugs or end-of-day cleanup."
 
 ### Transition
 "You've seen the power. Now let's talk about the developer experience that makes this all accessible."
@@ -545,15 +545,15 @@ Narrate:
 **Talking Points**
 
 **Magic Keywords** (Slide 34)
-- "You don't need to memorize commands. Natural language works:"
-- "Say 'build me a dashboard' → autopilot activates"
-- "Say 'don't stop until done' → ralph activates"
-- "Say 'fix all errors fast' → ultrawork activates"
-- "Say 'efficient batch fixes' →  activates"
+- "You don't need to memorize commands. Supported examples are explicit:"
+- "Say 'autopilot: build a dashboard' → autopilot activates"
+- "Say 'ralph: finish until verified' → ralph activates"
+- "Say 'ulw fix all errors' → ultrawork activates"
+- "Say 'eco batch fixes' → ecomode activates"
 - ""
 - "Power users have shortcuts:"
 - "`ulw` = ultrawork, `eco` = `ralplan` = ralph + planning"
-- "But shortcuts are optional. Natural language is first-class."
+- "Explicit mode names are first-class; shortcuts are optional."
 
 **The HUD** (Slide 35)
 - "The HUD gives real-time visibility into the agent swarm:"
@@ -620,7 +620,7 @@ npm install -g oh-my-claudecode
 claude-code "/oh-my-claudecode:omc-setup"
 
 # Step 3: Start using it
-claude-code "autopilot: build me a todo app"
+claude-code "autopilot: build a todo app"
 ```
 
 **What Setup Does** (Slide 40)
@@ -650,7 +650,7 @@ claude-code "autopilot: build me a todo app"
 - Shift from interactive assistant to autonomous orchestrator
 - Five execution modes for different scenarios
 - 28 specialized agents with smart model routing
-- Zero learning curve, works with natural language
+- Low learning curve, explicit keyword examples
 - Free and open-source (MIT license)
 
 **Talking Points**
@@ -768,7 +768,7 @@ The codebase exploration works universally since it uses grep, glob, and LSP und
 ### 7. "How do I know which mode to use?"
 
 **Answer:**
-"Honestly? You don't need to think about it. Just describe what you want in natural language and OMC auto-detects the right mode.
+"Honestly? Start from the work shape, then use the explicit public keyword that matches the mode.
 
 But if you want to be explicit:
 - NEW FEATURE, GREENFIELD: autopilot or ultrapilot
@@ -778,12 +778,12 @@ But if you want to be explicit:
 - MUST COMPLETE: ralph
 
 The magic keywords make it easy:
-- 'build me a...' → autopilot
-- 'fast parallel' → ultrawork
-- 'efficient batch' → 
-- 'don't stop' → ralph
+- 'autopilot: build a feature' → autopilot
+- 'ulw fix errors' → ultrawork
+- 'eco batch fixes' → ecomode
+- 'ralph: finish until verified' → ralph
 
-After a week of use, you'll develop intuition. But day one? Just describe the goal naturally."
+After a week of use, you'll develop intuition. Day one? Use one of the explicit examples above and keep the task concrete."
 
 ### 8. "What happens if a demo fails?"
 
@@ -818,12 +818,12 @@ There's been interest in a 'CI mode' that's fully non-interactive. If that's som
 ### 10. "What's the learning curve?"
 
 **Answer:**
-"Zero. Genuinely zero.
+"Low. Genuinely low.
 
-The entire design philosophy is 'natural language first.' You don't need to learn commands, agents, or modes.
+The design philosophy is explicit-keyword first. You learn a handful of public keywords, not command syntax, agents, or internal modes.
 
 Day one: 'autopilot: build a todo app'
-That's it. Everything else is automatic.
+That's it. The orchestration after mode selection is automatic.
 
 The magic keywords (ulw, eco, ralplan) are shortcuts for power users. You can be productive for months without learning them.
 
@@ -924,7 +924,7 @@ Extend demos:
 - Spend less time on agent system (slides 24-28)
 - More time on analogies and before/after comparisons
 - Focus on autopilot demo (skip technical modes)
-- Emphasize zero learning curve and natural language
+- Emphasize low learning curve and explicit keyword examples
 
 ---
 
@@ -948,7 +948,7 @@ After the seminar:
 - Demos win hearts, architecture wins minds
 - Energy is contagious - if you're excited, they'll be excited
 - The "before vs after" comparison is your strongest tool
-- Natural language first - emphasize zero learning curve constantly
+- Explicit keyword first - emphasize low learning curve constantly
 
 **Your Goal:**
 By the end, every person should:

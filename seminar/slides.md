@@ -139,7 +139,7 @@ Note: This is the core mental model. Claude stops being a generalist trying to d
 | **Model selection** | Always same model | Smart routing (Haiku/Sonnet/Opus) |
 | **Persistence** | Gives up easily | Continues until verified |
 | **Cost** | Expensive | 30-50% savings |
-| **Learning curve** | Command memorization | Natural language |
+| **Learning curve** | Command memorization | Explicit mode keywords |
 
 **Example - "Fix all TypeScript errors":**
 
@@ -286,10 +286,8 @@ Note: Each phase has clear entry and exit criteria. Autopilot won't move forward
 
 **Trigger Keywords:**
 ```
-autopilot, auto pilot, autonomous
-build me, create me, make me
-full auto, handle it all
-I want a/an...
+autopilot, auto pilot
+auto-pilot, fullsend, full auto
 ```
 
 **Example Commands:**
@@ -973,7 +971,7 @@ ralph ulw: migrate database
   +-------- persistence
 ```
 
-Note: Keywords are optional - natural language works fine. Keywords just give you explicit control.
+Note: Use the public keywords for explicit control. The examples above show the supported forms.
 
 ---
 
@@ -1305,9 +1303,9 @@ autopilot: build something amazing
 
 | Skill | Purpose | Trigger |
 |-------|---------|---------|
-| autopilot | Full autonomous execution | "autopilot", "build me" |
+| autopilot | Full autonomous execution | "autopilot" |
 | ultrapilot | Parallel autopilot | "ultrapilot", "parallel build" |
-| ralph | Persistence mode | "ralph", "don't stop" |
+| ralph | Persistence mode | "ralph" |
 | ultrawork | Maximum parallelism | "ulw", "ultrawork" |
 |  | Token-efficient mode | "eco", "budget" |
 | swarm | Coordinated agents | `/swarm N:agent` |
