@@ -212,14 +212,14 @@ Active skills: ultrawork + default + git-master
 
 **Slash commands:**
 ```bash
-/oh-my-claudecode:autopilot build me a todo app
+/oh-my-claudecode:autopilot build a todo app
 /oh-my-claudecode:ralph refactor the auth module
 /oh-my-claudecode:team 3:executor "implement fullstack app"
 ```
 
 **Magic keywords** — include a keyword in natural language and the skill activates automatically:
 ```bash
-autopilot build me a todo app      # activates autopilot
+autopilot build a todo app         # activates autopilot
 ralph: refactor the auth module    # activates ralph
 ultrawork implement OAuth          # activates ultrawork
 ```
@@ -228,14 +228,14 @@ ultrawork implement OAuth          # activates ultrawork
 
 #### autopilot
 Full autonomous 5-stage pipeline from idea to working code.
-- Trigger: `autopilot`, `build me`, `I want a`
+- Trigger: `autopilot`, `auto pilot`, `auto-pilot`, `fullsend`, `full auto`
 ```bash
-autopilot build me a REST API with authentication
+autopilot build a REST API with authentication
 ```
 
 #### ralph
 Repeating loop that does not stop until work is verified complete. The `verifier` agent confirms completion before the loop exits.
-- Trigger: `ralph`, `don't stop`, `must complete`
+- Trigger: `ralph`
 ```bash
 ralph: refactor the authentication module
 ```
@@ -290,18 +290,18 @@ ralplan this feature
 
 | Keyword | Effect |
 |---------|--------|
-| `ultrawork`, `ulw`, `uw` | Parallel agent orchestration |
-| `autopilot`, `build me`, `I want a`, `handle it all`, `end to end`, `e2e this` | Autonomous execution pipeline |
-| `ralph`, `don't stop`, `must complete`, `until done` | Loop until verified complete |
+| `ultrawork`, `ulw` | Parallel agent orchestration |
+| `autopilot`, `auto pilot`, `auto-pilot`, `fullsend`, `full auto` | Autonomous execution pipeline |
+| `ralph` | Loop until verified complete |
 | `ccg`, `claude-codex-gemini` | 3-model orchestration (use `antigravity` workers when using the Antigravity CLI) |
 | `ralplan` | Consensus-based planning |
-| `deep interview`, `ouroboros` | Socratic deep interview |
+| `deep-interview`, `deep interview` | Socratic deep interview |
 | `code review`, `review code` | Comprehensive code review mode |
 | `security review`, `review security` | Security-focused review mode |
 | `deepsearch`, `search the codebase`, `find in codebase` | Codebase search mode |
 | `deepanalyze`, `deep-analyze` | Deep analysis mode |
-| `ultrathink`, `think hard`, `think deeply` | Deep reasoning mode |
-| `tdd`, `test first`, `red green` | TDD workflow |
+| `ultrathink` | Deep reasoning mode |
+| `tdd`, `test first` | TDD workflow |
 | `deslop`, `anti-slop` | AI expression cleanup |
 | `cancelomc`, `stopomc` | Cancel active execution mode |
 
