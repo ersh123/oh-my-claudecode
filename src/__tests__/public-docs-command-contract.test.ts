@@ -366,6 +366,22 @@ describe('public docs command contract', () => {
     expect(staleReferences).toEqual([]);
   });
 
+  it('does not present legacy ultrapilot as current seminar guidance', () => {
+    const docsToCheck = [
+      'seminar/quickref.md',
+      'seminar/notes.md',
+      'seminar/slides.md',
+      'seminar/demos/demo-1-autopilot.md',
+    ];
+    const staleReferences = docsToCheck.flatMap((relativePath) =>
+      readFileSync(join(process.cwd(), relativePath), 'utf8')
+        .split('\n')
+        .flatMap((line, index) => (line.toLowerCase().includes('ultrapilot') ? [`${relativePath}:${index + 1}`] : [])),
+    );
+
+    expect(staleReferences).toEqual([]);
+  });
+
   it('does not document unsupported defaultExecutionMode config policy in public/setup docs', () => {
     const docsToCheck = [
       'docs/MIGRATION.md',

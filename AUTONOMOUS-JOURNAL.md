@@ -1475,3 +1475,32 @@ Reviewer verdict (manual Codex-only local diff review):
 
 Remaining risk:
 - Legacy `ultrapilot` remains in seminar quickref/slides/notes/demo guidance; keep it as the next separate docs slice.
+
+## 2026-07-05 - dogfood/seminar-ultrapilot-docs
+
+Candidates + WSJF:
+- TAKE: remove legacy `ultrapilot` as current seminar guidance and pin seminar docs against reintroducing it. Value 3, risk reduction 3, urgency 2, complexity 2 => 4.0.
+- DEFER: broader seminar `swarm` / `eco` cleanup and old state-path review. Value 3, risk reduction 2, urgency 2, complexity 3 => 2.3.
+- DROP: remove runtime deprecated `ultrapilot` alias support. Value 1, risk reduction 0, urgency 1, complexity 4 => 0.5.
+
+Changed:
+- `src/__tests__/public-docs-command-contract.test.ts` now rejects `ultrapilot` in the seminar quickref, notes, slides, and autopilot demo.
+- `seminar/quickref.md`, `seminar/slides.md`, `seminar/notes.md`, and `seminar/demos/demo-1-autopilot.md` now route multi-lane project guidance to explicit `/team` and fast parallel fixes to current `ultrawork` / `eco` language.
+- `ROADMAP.md` records the seminar legacy-mode contract and keeps `swarm` / `eco` cleanup as the next docs risk.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/public-docs-command-contract.test.ts --reporter=verbose` failed with 32 seminar `ultrapilot` references.
+- GREEN focused: the same command passed 10/10 after seminar docs alignment.
+- Stale grep: `rg -n -i "ultrapilot" seminar/quickref.md seminar/notes.md seminar/slides.md seminar/demos/*.md seminar/screenshots/README.md` produced no output.
+- Build: `npm run build` exited 0 and produced no bridge path churn with a local hardlink `node_modules`.
+- Typecheck: `npx tsc` exited 0.
+- Focused regression: `npx vitest run src/__tests__/public-docs-command-contract.test.ts src/__tests__/setup-contracts-regression.test.ts src/__tests__/repair-plugin-cache-script.test.ts --reporter=verbose` passed 37/37.
+- Full suite baseline gate: repeated final `npm run test:baseline` exited 0; JSON summary `success=true`, `total=10328`, `passed=10321`, `failed=0`, `pending=7`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan produced no output; `.omc/LOOP-HALT` absent.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The slice is docs/test scoped, removes stale seminar current-mode guidance for deprecated `ultrapilot`, pins the contract to seminar docs only, preserves runtime deprecated alias behavior, and leaves bridge/runtime output unchanged.
+
+Remaining risk:
+- Seminar material still contains legacy `swarm` guidance and rough `eco` wording; keep that as the next docs slice.

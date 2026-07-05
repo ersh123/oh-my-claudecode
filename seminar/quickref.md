@@ -13,7 +13,7 @@
 | Mode | Keyword | Use Case | Example |
 |------|---------|----------|---------|
 | Autopilot | `autopilot` | Full autonomous build | `autopilot: build a REST API` |
-| Ultrapilot | `ultrapilot` | Parallel autopilot (3-5x) | `ultrapilot: build dashboard` |
+| Team | `/team` | Coordinated multi-agent work | `/team 3:executor "build dashboard"` |
 | Ultrawork | `ulw` | Parallel task fixing | `ulw fix all errors` |
 | Ecomode | `eco` | Budget-friendly parallel | `eco: implement feature` |
 | Swarm | `swarm` | N coordinated agents | `/swarm 5:executor "fix errors"` |
@@ -95,8 +95,8 @@
 - `problems.md` - Blockers and challenges
 
 ## State Files
-- `.omc/state/ultrapilot-state.json` - Ultrapilot session
-- `.omc/state/ultrapilot-ownership.json` - File ownership
+- `.omc/state/team/{team-name}/` - Team coordination state
+- `.omc/team/{team-name}/worktrees/` - Team worker worktrees when enabled
 - `.omc/state/swarm-{id}.json` - Swarm coordination
 - `.omc/state/pipeline-{id}.json` - Pipeline progress
 
@@ -140,7 +140,7 @@ Before claiming completion:
 ---
 **Pro Tips:**
 - Start with **autopilot** for new projects - it handles everything
-- Use **ultrapilot** when you need speed (3-5x faster, parallel workers)
+- Use **team** when independent work lanes need coordinated workers
 - Use **ralph** when you absolutely need completion guarantee
 - Use **eco** when managing token budgets on large tasks
 - Use **swarm** for distributed work across many files

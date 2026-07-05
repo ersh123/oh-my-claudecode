@@ -271,7 +271,7 @@ A: You can guide it with constraints: "autopilot: build a REST API using Go and 
 A: For this demo, roughly 150K-300K tokens (~$1-2 with Sonnet). But you get production-ready code with tests, not just a first draft.
 
 **Q: Can it handle larger projects?**
-A: Yes! Autopilot scales. We've built entire microservices, fullstack apps, and refactored legacy codebases. For very large projects, consider ultrapilot (next level up).
+A: Yes. Autopilot scales for end-to-end work. For very large projects with clear independent lanes, use `/team` so workers can be assigned and verified separately.
 
 **Q: What happens if it gets stuck?**
 A: Ralph mode (Demo 5) adds even more persistence. But autopilot already has retry logic and architect verification to prevent getting stuck.

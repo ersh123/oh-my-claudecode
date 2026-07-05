@@ -303,33 +303,33 @@ Note: Autopilot combines all the best capabilities - planning, persistence, para
 
 ---
 
-## Mode 2: Ultrapilot - What Is It?
+## Mode 2: Team - What Is It?
 
-**Parallel autopilot with up to 5 concurrent workers**
+**Explicit multi-agent orchestration with coordinated workers**
 
-3-5x faster than standard autopilot for suitable tasks.
+Use it when the work can be split into independent lanes with clear ownership.
 
 ```
-"ultrapilot: build a full-stack todo app"
+/team 5:executor "build a full-stack todo app"
 ```
 
-**Key Innovation:** File ownership partitioning
+**Key Innovation:** Task ownership and integration gates
 
-- Each worker gets exclusive file sets
-- No conflicts between workers
-- Shared files handled by coordinator
+- Each worker gets a bounded task lane
+- Shared files require leader coordination
+- Verification happens after integration
 
-Note: Ultrapilot is for when you need autopilot-level autonomy but want maximum speed through parallelization.
+Note: Team is explicit. Use `/team ...` when coordination overhead is worth it.
 
 ---
 
-## Mode 2: Ultrapilot - How It Works
+## Mode 2: Team - How It Works
 
 ```
-User Input: "Build a full-stack todo app"
+User Input: /team 5:executor "Build a full-stack todo app"
                     |
                     v
-          [ULTRAPILOT COORDINATOR]
+             [TEAM ORCHESTRATOR]
                     |
         Task Decomposition + File Partitioning
                     |
@@ -355,7 +355,7 @@ Note: The decomposition phase is critical - it uses the Architect agent to ident
 
 ---
 
-## Mode 2: Ultrapilot - When To Use It
+## Mode 2: Team - When To Use It
 
 **Best For:**
 - Multi-component systems (frontend + backend + database)
@@ -363,20 +363,20 @@ Note: The decomposition phase is critical - it uses the Architect agent to ident
 - Multi-service architectures
 - Parallel test generation
 
-**Speed Comparison:**
+**Fit Checklist:**
 
-| Task | Autopilot | Ultrapilot |
-|------|-----------|------------|
-| Full-stack app | ~75 min | ~15 min |
-| Multi-service refactor | ~32 min | ~8 min |
-| Test coverage | ~50 min | ~10 min |
+| Good Fit | Poor Fit |
+|----------|----------|
+| Independent components | One small file |
+| Clear ownership boundaries | Unclear requirements |
+| Verifiable integration step | Heavy shared-state edits |
 
 **Trigger:**
 ```
-ultrapilot, parallel build, swarm build
+/team N:executor "task"
 ```
 
-Note: If your task has 3+ independent components, ultrapilot will likely be faster than autopilot.
+Note: If your task has several independent components, Team gives the leader explicit worker lanes and verification points.
 
 ---
 
@@ -1168,7 +1168,7 @@ Note: Most users never need to configure anything - defaults work well for typic
 | Use Case | Best Mode | Why |
 |----------|-----------|-----|
 | **Backend API development** | autopilot | Full end-to-end workflow |
-| **Frontend component library** | ultrapilot | Many independent components |
+| **Frontend component library** | team | Many independent components |
 | **Database migrations** | ralph | Needs persistence through errors |
 | **CI/CD pipeline setup** | pipeline:implement | Sequential stages |
 | **Documentation generation** | swarm:writer | Parallel doc writing |
@@ -1304,7 +1304,7 @@ autopilot: build something amazing
 | Skill | Purpose | Trigger |
 |-------|---------|---------|
 | autopilot | Full autonomous execution | "autopilot" |
-| ultrapilot | Parallel autopilot | "ultrapilot", "parallel build" |
+| team | Coordinated multi-agent work | `/team N:executor "task"` |
 | ralph | Persistence mode | "ralph" |
 | ultrawork | Maximum parallelism | "ulw", "ultrawork" |
 |  | Token-efficient mode | "eco", "budget" |
