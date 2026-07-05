@@ -1445,3 +1445,33 @@ Reviewer verdict (manual Codex-only local diff review):
 
 Remaining risk:
 - `seminar/demos/**` and screenshot/demo narration may still contain historical broad trigger language or legacy mode names; keep that as a separate slice.
+
+## 2026-07-05 - dogfood/seminar-demo-trigger-docs
+
+Candidates + WSJF:
+- TAKE: extend the public-docs stale trigger guard to seminar demo scripts and screenshot guidance, then replace the remaining ralph demo broad-trigger phrase. Value 3, risk reduction 3, urgency 2, complexity 1 => 8.0.
+- DEFER: legacy `ultrapilot` seminar cleanup across quickref, slides, notes, and demos. Value 3, risk reduction 3, urgency 2, complexity 3 => 2.7.
+- DROP: keep demo scripts outside stale trigger guard because they are presenter-only. Value 1, risk reduction 0, urgency 1, complexity 1 => 2.0.
+
+Changed:
+- `src/__tests__/public-docs-command-contract.test.ts` now scans `seminar/demos/*.md` and `seminar/screenshots/README.md` for stale public trigger examples.
+- The same contract now rejects `don't stop until verified complete`.
+- `seminar/demos/demo-5-ralph.md` now describes Ralph with explicit `ralph: finish until verified` style persistence.
+- `ROADMAP.md` records demo/screenshot docs under the public docs trigger contract.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/public-docs-command-contract.test.ts --reporter=verbose` failed with `seminar/demos/demo-5-ralph.md: don't stop until verified complete`.
+- GREEN focused: the same command passed 9/9 after demo copy alignment.
+- Stale grep: the targeted stale-pattern search over `seminar/demos` and `seminar/screenshots` produced no output.
+- Build: `npm run build` exited 0 and produced no bridge path churn with a local hardlink `node_modules`.
+- Typecheck: `npx tsc` exited 0.
+- Focused regression: `npx vitest run src/__tests__/public-docs-command-contract.test.ts src/__tests__/setup-contracts-regression.test.ts src/__tests__/repair-plugin-cache-script.test.ts --reporter=verbose` passed 36/36.
+- Full suite baseline gate: `npm run test:baseline` exited 0; JSON summary `success=true`, `total=10327`, `passed=10320`, `failed=0`, `pending=7`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan produced no output; `.omc/LOOP-HALT` absent.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The slice is docs/test scoped, extends the existing stale trigger guard to demo material, removes the unsupported Ralph natural-language claim, and leaves runtime detection unchanged.
+
+Remaining risk:
+- Legacy `ultrapilot` remains in seminar quickref/slides/notes/demo guidance; keep it as the next separate docs slice.
