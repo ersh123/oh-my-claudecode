@@ -99,7 +99,7 @@
 - "Three things make OMC unique:"
 - "1. MULTI-AGENT ORCHESTRATION: Tasks automatically decompose and distribute to specialists"
 - "2. SMART MODEL ROUTING: Simple tasks use cheap Haiku, complex tasks use powerful Opus - saves 30-50% on costs"
-- "3. EXECUTION MODES: Autopilot, Ultrapilot, Swarm, Pipeline, Ecomode - each optimized for different scenarios"
+- "3. EXECUTION MODES: Autopilot, Team, Swarm, Pipeline, Ecomode - each optimized for different scenarios"
 
 ### Transition
 "That third innovation - execution modes - is where things get really interesting. Let's dive deep into each one."
@@ -150,36 +150,36 @@
 - "I recently said: 'autopilot: add OAuth authentication to my Express API'"
 - "It explored the codebase, found the auth patterns, generated a plan, implemented passport.js integration, wrote tests, verified with security-reviewer. Total human input: one sentence."
 
-### Mode 2: Ultrapilot (4 min, Slides 12-14)
+### Mode 2: Team (4 min, Slides 12-14)
 
 **Opening Line**
-"Ultrapilot is autopilot on steroids - up to 5 concurrent workers executing in parallel."
+"Team is explicit multi-agent orchestration - multiple coordinated workers with leader-owned verification."
 
 **Key Points**
-- 3-5x faster than autopilot via parallelism
-- File ownership coordinator prevents conflicts
+- Explicit worker lanes for independent work
+- Leader coordination prevents shared-file conflicts
 - Ideal for multi-component systems
-- Task decomposition engine breaks work into independent chunks
+- Task decomposition breaks work into independent chunks
 
 **Talking Points**
 
 **The Pit Crew Analogy** (Slide 12)
 - "Think of a Formula 1 pit crew. When a car comes in, you don't have one person change all four tires sequentially. Four people work simultaneously, each on one tire."
-- "Ultrapilot does the same. If you're building a fullstack app, one worker handles the database layer, another the API routes, another the frontend components, another the tests - all at once."
+- "Team mode does the same. If you're building a fullstack app, one worker can handle the database layer, another the API routes, another the frontend components, another the tests - all under one leader."
 
 **The Coordination Challenge** (Slide 13)
 - "The hard part isn't running agents in parallel - it's preventing them from stepping on each other."
-- "Ultrapilot has a file ownership coordinator. Each worker 'claims' the files they're working on. Shared files go through conflict resolution."
+- "Team has a coordination layer. Each worker gets a bounded lane. Shared files go through the leader instead of becoming a silent merge conflict."
 - "Task decomposition engine analyzes dependencies: 'Database schema must complete before API routes can start' - it builds a dependency graph and schedules optimally."
 
 **When to Use** (Slide 14)
 - "Perfect for: Fullstack features, multi-component systems, large refactorings"
 - "Not ideal for: Single-file changes, tasks with heavy interdependencies, exploratory work"
-- "If you trigger ultrapilot on a simple bug fix, you're using a sledgehammer on a thumbtack."
+- "If you trigger Team on a simple bug fix, you're paying coordination overhead for no real gain."
 
 **Performance Numbers**
-- "Real-world metrics: Building a CRUD API with auth, validation, and tests took autopilot 8 minutes. Ultrapilot did it in 2.5 minutes."
-- "But here's the caveat: ultrapilot uses more tokens because of parallel agents. That's where our next mode comes in."
+- "Don't promise a fixed speed multiplier. Team wins when the task naturally splits and the integration gate is clear."
+- "But here's the caveat: team coordination uses more budget and attention. That's where our next mode comes in."
 
 ### Mode 3: Swarm (4 min, Slides 15-17)
 
@@ -209,10 +209,10 @@
 - "Not ideal for: Sequential workflows, interdependent tasks, single complex tasks"
 - "If your tasks can be done in any order and don't depend on each other, swarm shines."
 
-**Comparison with Ultrapilot**
-- "Ultrapilot: Coordinator orchestrates workers on a complex multi-stage project"
+**Comparison with Team**
+- "Team: Coordinator orchestrates workers on a complex multi-stage project"
 - "Swarm: Workers self-organize on many independent tasks"
-- "Ultrapilot is a construction crew building a house. Swarm is a cleaning crew each tackling different rooms."
+- "Team is a construction crew building a house. Swarm is a cleaning crew each tackling different rooms."
 
 ### Mode 4: Pipeline (4 min, Slides 18-20)
 
@@ -286,7 +286,7 @@
 | Mode | Speed | Cost | Parallelism | Best For |
 |------|-------|------|-------------|----------|
 | Autopilot | Medium | Medium | Adaptive | New features, greenfield |
-| Ultrapilot | Fastest | Highest | High (5 workers) | Multi-component systems |
+| Team | High | High | Explicit workers | Multi-component systems |
 | Swarm | Fast | Medium-High | Dynamic (2-10) | Batch fixes, homogeneous tasks |
 | Pipeline | Medium | Medium | Sequential | Reviews, audits, research |
 | Ecomode | Medium | Lowest | Efficient | Budget-conscious, batch ops |
@@ -658,7 +658,7 @@ claude-code "autopilot: build a todo app"
 **The Big Picture** (Slide 41)
 - "OMC transforms Claude Code from a single assistant into a coordinated team."
 - "You go from micromanaging every step to stating goals and getting results."
-- "The five execution modes cover everything: greenfield (autopilot), parallel (ultrawork/ultrapilot), batch (swarm), sequential (pipeline), budget ()."
+- "The five execution modes cover everything: greenfield (autopilot), parallel fixes (ultrawork), coordinated teams (/team), batch (swarm), sequential (pipeline), budget-conscious work (eco)."
 - "28 agents with 3-tier model routing save you 30-50% on costs while getting work done faster."
 
 **Resources** (Slide 42)
@@ -771,8 +771,9 @@ The codebase exploration works universally since it uses grep, glob, and LSP und
 "Honestly? Start from the work shape, then use the explicit public keyword that matches the mode.
 
 But if you want to be explicit:
-- NEW FEATURE, GREENFIELD: autopilot or ultrapilot
-- PARALLEL FIXES: ultrawork (speed) or  (cost)
+- NEW FEATURE, GREENFIELD: autopilot
+- MULTI-LANE PROJECT: /team
+- PARALLEL FIXES: ultrawork (speed) or eco (cost)
 - BATCH HOMOGENEOUS TASKS: swarm
 - SEQUENTIAL WORKFLOW: pipeline
 - MUST COMPLETE: ralph
@@ -900,7 +901,7 @@ Your last 30 seconds set the memory. End with energy:
 ## Emergency Backup Plans
 
 ### If Demos Completely Fail
-"I had demos prepared, but Murphy's Law strikes. Instead, let me walk you through this recorded session where I built a complete CRUD API in 3 minutes using ultrapilot."
+"I had demos prepared, but Murphy's Law strikes. Instead, let me walk you through this recorded session where I split a CRUD API across `/team 4:executor` lanes and verified the integration."
 
 [Have high-quality recordings ready on USB drive]
 
@@ -916,7 +917,7 @@ Extend demos:
 
 ### If Audience Is Highly Technical
 - Spend more time on architecture (slide 6)
-- Deep dive into task decomposition in ultrapilot
+- Deep dive into task decomposition in Team
 - Show the actual agent prompts from the codebase
 - Discuss the state management and coordination protocols
 
