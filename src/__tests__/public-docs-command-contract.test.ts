@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { listBuiltinSkillNames } from '../features/builtin-skills/skills.js';
 
 const removedNoteCommand = ['/oh-my-claudecode', 'note'].join(':');
 const removedPublicCommandNames = ['omc-help', 'ralph-init'];
@@ -38,6 +39,18 @@ function containsRemovedCommandName(markdown: string, commandName: string): bool
   ).test(markdown);
 }
 
+function listCommandWrapperNames(): string[] {
+  return readdirSync(join(process.cwd(), 'commands'))
+    .filter((fileName) => fileName.endsWith('.md'))
+    .map((fileName) => fileName.replace(/\.md$/, ''));
+}
+
+function extractSeminarQuickrefKeyCommands(markdown: string): string[] {
+  const keyCommandsSection = markdown.split('## Key Commands')[1]?.split('## Natural Language')[0] ?? '';
+
+  return [...keyCommandsSection.matchAll(/\/oh-my-claudecode:([a-z0-9-]+)/g)].map((match) => match[1]);
+}
+
 describe('public docs command contract', () => {
   it('does not advertise the removed note slash command', () => {
     const staleReferences = listUserFacingDocs().filter((relativePath) =>
@@ -64,5 +77,15 @@ describe('public docs command contract', () => {
     });
 
     expect(staleReferences).toEqual([]);
+  });
+
+  it('keeps seminar quickref key commands backed by bundled skills or wrappers', () => {
+    const installedCommandNames = new Set([...listBuiltinSkillNames({ includeAliases: true }), ...listCommandWrapperNames()]);
+    const quickref = readFileSync(join(process.cwd(), 'seminar/quickref.md'), 'utf8');
+    const staleCommandNames = extractSeminarQuickrefKeyCommands(quickref).filter(
+      (commandName) => !installedCommandNames.has(commandName),
+    );
+
+    expect(staleCommandNames).toEqual([]);
   });
 });

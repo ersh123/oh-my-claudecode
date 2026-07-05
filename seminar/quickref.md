@@ -66,10 +66,10 @@
 | `/oh-my-claudecode:cancel` | Stop current operation |
 | `/oh-my-claudecode:remember` | Store or organize reusable project knowledge |
 | `/oh-my-claudecode:learner` | Extract reusable skill |
-| `/oh-my-claudecode:analyze` | Deep analysis/debugging |
-| `/oh-my-claudecode:deepsearch` | Thorough codebase search |
+| `/oh-my-claudecode:debug` | Debugging workflow |
+| `/oh-my-claudecode:deep-dive` | Deep investigation workflow |
 | `/oh-my-claudecode:ultraqa` | QA cycling (test/fix/repeat) |
-| `/oh-my-claudecode:tdd` | Test-driven development mode |
+| `/oh-my-claudecode:verify` | Verification workflow |
 
 ## Natural Language (No Commands Needed)
 - "build me a todo app" → Autopilot activates
