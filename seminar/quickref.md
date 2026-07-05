@@ -73,7 +73,7 @@
 
 ## Natural Language (No Commands Needed)
 - "autopilot: build a todo app" → Autopilot activates
-- "fix all errors fast" → Ultrawork activates (or config default)
+- "ulw fix all errors" → Ultrawork activates
 - "ralph: finish until verified" → Ralph activates
 - "plan the authentication" → Planning interview starts
 - "cancelomc" / "stopomc" → Intelligently cancels active operation
@@ -104,7 +104,9 @@
 **File:** `~/.claude/.omc-config.json`
 ```json
 {
-  "defaultExecutionMode": "ultrawork",  // or ""
+  "magicKeywords": {
+    "ultrawork": ["ultrawork", "ulw"]
+  },
   "maxParallelAgents": 5,
   "verificationEnabled": true
 }
@@ -123,7 +125,7 @@ Before claiming completion:
 - **Combine modes:** `ralph ulw`, `ralph eco`, `ralplan` (ralph + plan)
 - **Explicit keywords override defaults:** `eco` beats config, `ulw` beats config
 - **Conflict resolution:** Both `ulw` and `eco` → `eco` wins (more restrictive)
-- **Generic "fast"/"parallel"** → Uses config `defaultExecutionMode` (default: `ultrawork`)
+- **Want "fast"/"parallel" aliases?** Add them to `magicKeywords.ultrawork` in `config.jsonc`
 - **State cleanup:** `/cancel --all` clears all states
 - **Resume background:** Use `resume-session` tool for interrupted agents
 - **LSP diagnostics:** Full project type checking with `lsp_diagnostics_directory`

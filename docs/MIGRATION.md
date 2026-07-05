@@ -226,7 +226,7 @@ Work naturally. Claude detects intent and activates behaviors automatically:
 ```bash
 # 3.0 workflow: Just talk naturally OR use optional keywords
 "ralph: finish user auth until verified"            # Auto-activates ralph-loop
-"fast: refactor the entire API layer"               # Auto-activates ultrawork
+"ulw: refactor the entire API layer"                # Auto-activates ultrawork
 "plan: design the new dashboard"                    # Auto-activates planning
 "ralph ulw: migrate the database"                   # Combined: persistence + parallelism
 "find all database schema files"                    # Auto-activates search mode
@@ -258,7 +258,7 @@ Most 2.x commands continue to work. Here's what changed:
 | 2.x Command                            | 3.0 Equivalent                                     | Works?                 |
 | -------------------------------------- | -------------------------------------------------- | ---------------------- |
 | `/oh-my-claudecode:ralph "task"`       | Use the `ralph` keyword                            | ✅ YES                 |
-| `/oh-my-claudecode:ultrawork "task"`   | Say "fast" or "parallel" OR use `ulw` keyword      | ✅ YES (both ways)     |
+| `/oh-my-claudecode:ultrawork "task"`   | Use `ulw` / `ultrawork`; add custom aliases in `magicKeywords.ultrawork` if needed | ✅ YES |
 | `/oh-my-claudecode:ultrawork-ralph`    | Say "ralph ulw:" prefix                            | ✅ YES (keyword combo) |
 | `/oh-my-claudecode:planner "task"`     | Say "plan this" OR use `plan` keyword              | ✅ YES (both ways)     |
 | `/oh-my-claudecode:plan "description"` | Start planning naturally                           | ✅ YES                 |
@@ -296,7 +296,7 @@ Persistence (won't stop) + Ultrawork (maximum parallelism) built-in
 
 ```
 "ralph: keep going until this works"  # Triggers ralph
-"fast, I'm in a hurry"             # Triggers ultrawork
+"ulw: I'm in a hurry"              # Triggers ultrawork
 "help me design the dashboard"     # Triggers planning
 ```
 
@@ -394,7 +394,7 @@ After migration, verify your setup:
 
 ```
 Before: "OK, I need to use /oh-my-claudecode:ultrawork for speed..."
-After:  "I'm in a hurry, go fast!"
+After:  "ulw: refactor this module"
         ↓
         Claude: "I'm activating ultrawork mode..."
 ```
@@ -656,13 +656,13 @@ When multiple execution mode keywords are present:
 | Priority | Condition | Result |
 |----------|-----------|--------|
 | 1 (highest) | Single explicit keyword | That mode wins |
-| 2 | Generic "fast"/"parallel" only | Read from config (`defaultExecutionMode`) |
-| 3 (lowest) | No config file | Default to `ultrawork` |
+| 2 | Custom alias from `magicKeywords.ultrawork` | Ultrawork wins |
+| 3 (lowest) | No matching keyword or alias | No execution mode is injected |
 
 **Explicit mode keywords:** `ulw`, `ultrawork`
-**Generic keywords:** `fast`, `parallel`
+**Custom aliases:** configure `magicKeywords.ultrawork` if you want words such as `fast` or `parallel`.
 
-Users set their default mode preference via `/oh-my-claudecode:omc-setup`.
+Users can set custom ultrawork aliases via `/oh-my-claudecode:omc-setup` or `config.jsonc`.
 
 ### Migration Steps
 
@@ -676,17 +676,19 @@ All existing configurations, plans, and workflows continue working unchanged.
 
 ### New Configuration Options
 
-#### Default Execution Mode
+#### Custom Ultrawork Aliases
 
-Set your preferred execution mode in `~/.claude/.omc-config.json`:
+Set optional ultrawork aliases in `config.jsonc`:
 
-```json
+```jsonc
 {
-  "defaultExecutionMode": "ultrawork"
+  "magicKeywords": {
+    "ultrawork": ["ultrawork", "ulw", "fast", "parallel"]
+  }
 }
 ```
 
-When you use generic keywords like "fast" or "parallel" without explicit mode keywords, this setting determines which mode activates.
+Built-in public examples remain `ulw` / `ultrawork`; custom aliases apply only after they are configured.
 
 ### Breaking Changes
 
@@ -720,14 +722,14 @@ Once upgraded, you automatically gain access to:
 
 ```bash
 "ulw: fix all errors"           # ultrawork (explicit)
-"fast: implement feature"       # reads defaultExecutionMode config
+"ultrawork: implement feature"  # ultrawork (explicit)
 ```
 
 **Keyword examples:**
 
 ```bash
 "ralph: finish until verified"  # ralph
-"parallel execution"            # reads defaultExecutionMode
+"ulw: fix all errors"           # ultrawork
 "autopilot: build a todo app"   # autopilot
 ```
 

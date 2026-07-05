@@ -1381,3 +1381,35 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Generic `fast`/`parallel` config-policy docs remain open in migration/getting-started/seminar material.
 - Live merge will repeat focused public docs tests, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/fast-parallel-doc-policy
+
+Candidates + WSJF:
+- TAKE: remove unsupported `defaultExecutionMode` and direct `fast`/`parallel` ultrawork trigger claims from public/setup docs, replacing them with explicit `ulw` examples and supported `magicKeywords.ultrawork` customization. Value 4, risk reduction 4, urgency 3, complexity 2 => 5.5.
+- DEFER: historical seminar longform trigger cleanup across notes/demo narration and legacy mode names. Value 3, risk reduction 3, urgency 2, complexity 3 => 2.7.
+- DROP: implement a runtime `defaultExecutionMode` feature just to match stale docs. Value 1, risk reduction 1, urgency 1, complexity 5 => 0.6.
+
+Changed:
+- `src/__tests__/public-docs-command-contract.test.ts` now rejects direct stale `fast`/`parallel` ultrawork claims and rejects `defaultExecutionMode` in public/setup docs.
+- `docs/MIGRATION.md` now documents built-in ultrawork triggers as `ulw` / `ultrawork` and shows `fast` / `parallel` only as optional aliases under `magicKeywords.ultrawork`.
+- `seminar/quickref.md` and `seminar/slides.md` now use supported `magicKeywords.ultrawork` config examples instead of `defaultExecutionMode`.
+- `skills/omc-setup/phases/02-configure.md` now configures optional ultrawork aliases via `magicKeywords.ultrawork` instead of writing unsupported `defaultExecutionMode`.
+- `ROADMAP.md` records the supported config surface and moves next docs work to historical seminar longform trigger cleanup.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/public-docs-command-contract.test.ts --reporter=verbose` failed with 5 direct stale `fast`/`parallel` references and 4 `defaultExecutionMode` references.
+- GREEN focused: the same command passed 9/9 after docs/setup alignment.
+- Setup/docs regression: `npx vitest run src/__tests__/public-docs-command-contract.test.ts src/__tests__/setup-contracts-regression.test.ts src/__tests__/repair-plugin-cache-script.test.ts --reporter=verbose` passed 36/36.
+- Build: `npm run build` exited 0 and produced no bridge path churn with a local hardlink `node_modules`.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10327`, `numPassedTests=10320`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan produced no output; `.omc/LOOP-HALT` absent.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The slice is docs/setup/test scoped, removes an unsupported config key from public guidance, and leaves runtime keyword detection unchanged.
+
+Remaining risk:
+- `skills/deep-interview/SKILL.md` still contains a separate deep-interview-local `defaultExecutionMode` example; it was outside this public/setup config-policy contract.
+- Historical seminar notes/demo/slides still contain broader old trigger narration and legacy mode names; clean them in a separate slice.
+- Live merge will repeat focused docs/setup tests, build, typecheck, baseline, diff scans, and `loop-last-good` movement.

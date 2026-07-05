@@ -1135,7 +1135,9 @@ Note: Zero learning curve means you can start using OMC immediately after instal
 // ~/.claude/settings.json
 {
   "omc": {
-    "defaultExecutionMode": "ultrawork",  // or ""
+    "magicKeywords": {
+      "ultrawork": ["ultrawork", "ulw"]
+    },
     "autopilot": {
       "maxIterations": 10,
       "maxQaCycles": 5,
