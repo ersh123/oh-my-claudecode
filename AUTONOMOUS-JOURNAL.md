@@ -859,3 +859,34 @@ Remaining risk:
 - Broader command/gate docs accuracy remains open.
 - Behavior around skininthegamebros-only skills and plugin command wrapper registration was observed but not changed.
 - Live merge will repeat focused docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/doctor-known-plugin-names
+
+Candidates + WSJF:
+- TAKE: pin `omc-doctor` legacy-content inventories to bundled plugin files. Value 6, risk reduction 7, urgency 4, complexity 1 => 17.0. The doctor skill warned about legacy agents/commands/skills using stale hardcoded lists, including a dead `deepsearch.md` command and missing current wrappers.
+- DEFER: broader command/gate docs audit. Value 7, risk reduction 6, urgency 4, complexity 5 => 3.4. Still useful, but this slice isolates one mechanical diagnosis contract.
+- DROP: compare doctor skill inventory to runtime-visible skill aliases. Value 2, risk reduction 1, urgency 2, complexity 2 => 2.5. Legacy file cleanup should match bundled directories, not the user-facing loader alias/filter view.
+
+Changed:
+- `skills/omc-doctor/SKILL.md` now lists current bundled agent markdown files, raw skill directories, and command wrappers for legacy curl-installed content checks.
+- `src/skills/__tests__/omc-doctor-skill.test.ts` now parses the doctor skill Known-plugin blocks and compares them to `agents/*.md`, `skills/*/SKILL.md`, and `commands/*.md`.
+- Generated `dist/skills/__tests__/omc-doctor-skill.test.js` artifacts were rebuilt.
+- `ROADMAP.md` records the doctor legacy-content inventory guard while keeping broader command/gate docs accuracy open.
+
+Evidence:
+- RED parser correction: the first test parser read only the first code span, then was fixed to read the whole Known-plugin block.
+- RED inventory-backed: `npx vitest run src/skills/__tests__/omc-doctor-skill.test.ts --reporter=verbose` failed because the doctor agent list missed `tracer.md`.
+- GREEN affected: the same command passed 4/4 after the agent, skill, and command inventories were updated.
+- Build: `npm run build` exited 0 and regenerated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10267`, `numPassedTests=10260`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan reported `0` hits.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The change is docs/test scoped. The new guard uses raw bundled files as the source of truth, which matches the doctor skill's legacy filesystem cleanup purpose and avoids mixing in runtime alias/filter behavior.
+
+Remaining risk:
+- Broader command/gate docs accuracy remains open.
+- The doctor skill still contains intentional legacy `.sh` detection/removal guidance; this slice only fixed stale plugin-content inventories.
+- Live merge will repeat focused doctor test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
