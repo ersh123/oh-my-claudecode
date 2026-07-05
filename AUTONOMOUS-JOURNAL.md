@@ -920,3 +920,34 @@ Remaining risk:
 - Historical/shared docs still mention `/oh-my-claudecode:note` in places that may be intentional migration context.
 - Broader command/gate docs accuracy remains open.
 - Live merge will repeat focused skill-docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/no-stale-note-public-docs
+
+Candidates + WSJF:
+- TAKE: public docs and quickrefs must not advertise the removed note slash command. Value 5, risk reduction 6, urgency 4, complexity 1 => 15.0. `docs/MIGRATION.md`, `docs/shared/features.md`, and `seminar/quickref.md` still presented `/note` as usable.
+- TAKE: `skills/AGENTS.md` must not list removed `note/SKILL.md`. Value 4, risk reduction 5, urgency 3, complexity 1 => 12.0. It was the same stale user-facing docs surface and had no corresponding skill directory.
+- DEFER: full regeneration or mechanical parity for all `skills/AGENTS.md` inventory rows/counts. Value 6, risk reduction 5, urgency 3, complexity 4 => 3.5. Useful, but wider than the removed-note correction.
+
+Changed:
+- `docs/MIGRATION.md` now maps the legacy note memory path to `/oh-my-claudecode:remember` and no longer claims the legacy slash command still works.
+- `docs/shared/features.md` now points users to `/oh-my-claudecode:remember <content>` and direct notepad MCP tools instead of removed `/note` flags.
+- `seminar/quickref.md` now lists `/oh-my-claudecode:remember` for reusable project knowledge.
+- `skills/AGENTS.md` no longer lists removed `note/SKILL.md` or `note` in the Utility category.
+- `src/__tests__/public-docs-command-contract.test.ts` scans public markdown docs for the removed slash command and checks the skill inventory docs do not list the removed note skill.
+
+Evidence:
+- RED: `npx vitest run src/__tests__/public-docs-command-contract.test.ts --reporter=verbose` failed on `docs/MIGRATION.md`, `docs/shared/features.md`, `seminar/quickref.md`, and `skills/AGENTS.md`.
+- GREEN affected: the same command passed 2/2 after docs were updated.
+- Build: `npm run build` exited 0 and generated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10270`, `numPassedTests=10263`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan reported `0` hits.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The replacement points to the existing `/remember` command and avoids documenting removed `/note` flags as supported. The new test excludes roadmap/journal evidence and targets public docs.
+
+Remaining risk:
+- `skills/AGENTS.md` still has older generated inventory/count drift beyond the removed note row.
+- Broader command/gate docs accuracy remains open.
+- Live merge will repeat focused public-docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.

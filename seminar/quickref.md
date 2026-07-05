@@ -64,7 +64,7 @@
 | `/oh-my-claudecode:omc-doctor` | Diagnose issues |
 | `/oh-my-claudecode:omc-help` | Show usage guide |
 | `/oh-my-claudecode:cancel` | Stop current operation |
-| `/oh-my-claudecode:note` | Save compaction-resilient note |
+| `/oh-my-claudecode:remember` | Store or organize reusable project knowledge |
 | `/oh-my-claudecode:learner` | Extract reusable skill |
 | `/oh-my-claudecode:analyze` | Deep analysis/debugging |
 | `/oh-my-claudecode:deepsearch` | Thorough codebase search |
