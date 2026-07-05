@@ -189,11 +189,12 @@ None - pure markdown files.
 
 | Category | Skills | Trigger Keywords |
 |----------|--------|------------------|
-| Execution | autopilot, ultrawork, ralph, team, ultraqa | "autopilot", "ulw", "ralph", "team" |
+| Execution | autopilot, autoresearch, nikoflow, ralph, self-improve, team, ultragoal, ultraqa, ultrawork, verify | "autopilot", "ulw", "ralph", "team" |
 | Cleanup | ai-slop-cleaner | "deslop", "anti-slop", cleanup/refactor + slop smells |
 | Planning | omc-plan, ralplan, deep-interview | "plan this", "interview me", "ouroboros" |
-| Exploration | deepinit, sciomc, external-context | "deepinit", "research" |
-| Utility | skillify, learner (deprecated alias), cancel, hud, setup, omc-doctor, omc-setup, omc-reference, mcp-setup | "stop", "cancel" |
+| Exploration | debug, deep-dive, deepinit, external-context, sciomc, trace, wiki | "deepinit", "research" |
+| Visual | visual-verdict | screenshot/reference comparison |
+| Utility | ask, cancel, ccg, configure-notifications, hud, learner (deprecated alias), local-build-reminder, mcp-setup, omc-doctor, omc-reference, omc-setup, omc-teams, remember, setup, skill, skillify | "stop", "cancel" |
 | Domain | psm, writer-memory, release | psm context |
 
 ## Auto-Activation

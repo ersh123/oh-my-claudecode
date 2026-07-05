@@ -1066,3 +1066,31 @@ Remaining risk:
 - The bottom Skill Categories table is still curated and may not be exhaustive.
 - Broader command/gate docs accuracy remains open.
 - Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/skills-category-coverage
+
+Candidates + WSJF:
+- TAKE: `skills/AGENTS.md` Skill Categories table must cover every bundled skill dir via canonical name or allowed alias. Value 4, risk reduction 4, urgency 3, complexity 1 => 11.0.
+- DEFER: deeper category metadata, purpose parity, or generated category docs. Value 5, risk reduction 4, urgency 3, complexity 3 => 4.0.
+
+Changed:
+- `src/__tests__/skills-agents-docs-contract.test.ts` now reads each `skills/*/SKILL.md` frontmatter name and inline aliases, then checks the Skill Categories table covers every bundled skill directory.
+- `skills/AGENTS.md` now includes the previously missing category entries, including `ask`, `autoresearch`, `ccg`, `configure-notifications`, `debug`, `deep-dive`, `local-build-reminder`, `nikoflow`, `omc-teams`, `remember`, `self-improve`, `skill`, `trace`, `ultragoal`, `verify`, `visual-verdict`, and `wiki`.
+- `ROADMAP.md` records the expanded skills-agents docs contract while keeping deeper category metadata/purpose parity open.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/skills-agents-docs-contract.test.ts --reporter=verbose` failed with 17 missing Skill Categories dirs.
+- GREEN affected: the same command passed 4/4 after `skills/AGENTS.md` was updated.
+- Build: `npm run build` exited 0 and generated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10276`, `numPassedTests=10269`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan reported `0` hits; `.omc/LOOP-HALT` absent.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The new contract is mechanical, docs-only, and accepts declared aliases such as `omc-plan` and `psm` without touching runtime behavior.
+
+Remaining risk:
+- Category labels and purpose groupings are still curated, not generated from richer metadata.
+- Broader command/gate docs accuracy remains open.
+- Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
