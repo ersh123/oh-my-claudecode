@@ -19,6 +19,12 @@ function extractKeyFileSkillPaths(markdown: string): string[] {
   return Array.from(keyFilesSection.matchAll(/`([^`]+\/SKILL\.md)`/g), (match) => match[1]).sort();
 }
 
+function extractKeyFileSkillDirs(markdown: string): string[] {
+  return extractKeyFileSkillPaths(markdown)
+    .map((relativePath) => relativePath.split('/')[0])
+    .sort();
+}
+
 describe('skills/AGENTS.md docs contract', () => {
   it('keeps the skill directory count aligned with bundled skills', () => {
     const match = readSkillsAgentsDoc().match(/^(\d+) skill directories/m);
@@ -32,5 +38,9 @@ describe('skills/AGENTS.md docs contract', () => {
     );
 
     expect(missingSkillDocs).toEqual([]);
+  });
+
+  it('lists every bundled skill in the key files tables', () => {
+    expect(extractKeyFileSkillDirs(readSkillsAgentsDoc())).toEqual(listBundledSkillDirs());
   });
 });

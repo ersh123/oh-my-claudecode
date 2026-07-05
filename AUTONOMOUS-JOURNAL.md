@@ -1038,3 +1038,31 @@ Reviewer verdict (manual Codex-only local diff review):
 Remaining risk:
 - Other historical docs still reference legacy command names and need a separate policy before broad cleanup.
 - Live merge will repeat focused public-docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/skills-agents-keyfiles-exhaustive
+
+Candidates + WSJF:
+- TAKE: `skills/AGENTS.md` Key Files must enumerate every real bundled skill directory. Value 5, risk reduction 5, urgency 3, complexity 1 => 13.0. The headline said 41 skill dirs, but the Key Files tables listed only 25.
+- DEFER: make the bottom Skill Categories table exhaustive and generated. Value 5, risk reduction 4, urgency 3, complexity 3 => 4.0. Useful, but separate from the mechanical Key Files contract.
+
+Changed:
+- `skills/AGENTS.md` Key Files now includes the 16 previously omitted skill dirs: `autoresearch`, `ccg`, `configure-notifications`, `debug`, `deep-dive`, `external-context`, `local-build-reminder`, `nikoflow`, `omc-reference`, `omc-teams`, `remember`, `self-improve`, `trace`, `ultragoal`, `verify`, and `wiki`.
+- `src/__tests__/skills-agents-docs-contract.test.ts` now compares sorted Key Files skill dirs against the sorted real `skills/*` directories.
+- `ROADMAP.md` records exhaustive Key Files coverage while keeping broader category/table parity open.
+
+Evidence:
+- RED focused: `npx vitest run src/__tests__/skills-agents-docs-contract.test.ts --reporter=verbose` failed because 16 bundled skill dirs were missing from Key Files.
+- GREEN affected: the same command passed 3/3 after `skills/AGENTS.md` was updated.
+- Build: `npm run build` exited 0 and generated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10275`, `numPassedTests=10268`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; `.omc/LOOP-HALT` absent.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The new test is mechanical and derives the expected list from the repo's actual `skills/*` directories, so future missing Key Files rows fail without requiring a generated docs rewrite.
+
+Remaining risk:
+- The bottom Skill Categories table is still curated and may not be exhaustive.
+- Broader command/gate docs accuracy remains open.
+- Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.

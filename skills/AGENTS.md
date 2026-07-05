@@ -19,10 +19,15 @@ Skills are reusable workflow templates that can be invoked via `/oh-my-claudecod
 | File | Skill | Purpose |
 |-----------|-------|---------|
 | `autopilot/SKILL.md` | autopilot | Full autonomous execution from idea to working code |
+| `autoresearch/SKILL.md` | autoresearch | Stateful evaluator-gated improvement loop |
+| `nikoflow/SKILL.md` | nikoflow | Phase-gated methodology loop with hard quality gates |
 | `ultrawork/SKILL.md` | ultrawork | Maximum parallel agent execution |
 | `ralph/SKILL.md` | ralph | Persistence until verified complete |
+| `self-improve/SKILL.md` | self-improve | Autonomous evolutionary code improvement engine |
 | `team/SKILL.md` | team | N coordinated agents with task claiming |
 | `ultraqa/SKILL.md` | ultraqa | QA cycling until goal met |
+| `ultragoal/SKILL.md` | ultragoal | Durable multi-goal workflow with persisted plan artifacts |
+| `verify/SKILL.md` | verify | Verify a change before claiming completion |
 
 ### Planning Skills
 
@@ -37,7 +42,12 @@ Skills are reusable workflow templates that can be invoked via `/oh-my-claudecod
 | File | Skill | Purpose |
 |-----------|-------|---------|
 | `deepinit/SKILL.md` | deepinit | Generate hierarchical AGENTS.md |
+| `debug/SKILL.md` | debug | Diagnose OMC session or repo state with focused reproduction |
+| `deep-dive/SKILL.md` | deep-dive | Trace then clarify requirements through a deep-dive workflow |
+| `external-context/SKILL.md` | external-context | Invoke document-specialist agents for external docs and searches |
 | `sciomc/SKILL.md` | sciomc | Parallel scientist orchestration |
+| `trace/SKILL.md` | trace | Evidence-driven tracing with competing hypotheses |
+| `wiki/SKILL.md` | wiki | Persistent markdown knowledge base |
 
 ### Visual Skills
 
@@ -50,15 +60,21 @@ Skills are reusable workflow templates that can be invoked via `/oh-my-claudecod
 | File | Skill | Purpose |
 |-----------|-------|---------|
 | `ai-slop-cleaner/SKILL.md` | ai-slop-cleaner | Regression-safe cleanup workflow for AI-generated code slop |
+| `ccg/SKILL.md` | ccg | Claude-Codex-Gemini orchestration via advisor synthesis |
+| `configure-notifications/SKILL.md` | configure-notifications | Configure Telegram, Discord, or Slack notifications |
 | `skillify/SKILL.md` | skillify | Extract reusable skill from session |
 | `learner/SKILL.md` | learner | Deprecated compatibility alias/internal implementation history for skillify |
 | `ask/SKILL.md` | ask | Ask Claude, Codex, or Gemini via `omc ask` and capture an artifact |
 | `cancel/SKILL.md` | cancel | Cancel any active OMC mode |
 | `hud/SKILL.md` | hud | Configure HUD display |
+| `local-build-reminder/SKILL.md` | local-build-reminder | Remind local fork users to rebuild after TypeScript edits |
 | `omc-doctor/SKILL.md` | omc-doctor | Diagnose installation issues |
+| `omc-reference/SKILL.md` | omc-reference | Agent catalog, tools, team routing, commits, and skills registry |
 | `setup/SKILL.md` | setup | Unified setup entrypoint for install, diagnostics, and MCP configuration |
 | `omc-setup/SKILL.md` | omc-setup | One-time setup wizard |
+| `omc-teams/SKILL.md` | omc-teams | Legacy compatibility CLI-team runtime entrypoint |
 | `mcp-setup/SKILL.md` | mcp-setup | Configure MCP servers |
+| `remember/SKILL.md` | remember | Route reusable project knowledge to memory, notepad, or docs |
 | `skill/SKILL.md` | skill | Manage local skills |
 
 ### Domain Skills
