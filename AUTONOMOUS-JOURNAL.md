@@ -1232,3 +1232,30 @@ Remaining risk:
 - Non-frontmatter auto-detection phrases remain curated rather than mechanically derived.
 - Broader command/gate docs accuracy remains open.
 - Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/skills-auto-detection-sot
+
+Candidates + WSJF:
+- TAKE: documented keyword-detector trigger examples become a source of truth and `skills/AGENTS.md` Auto-Activation gets exact parity. Value 4, risk reduction 4, urgency 3, complexity 1 => 11.0.
+- DEFER: broader REFERENCE/HOOKS/MIGRATION trigger parity. Value 4, risk reduction 3, urgency 2, complexity 3 => 3.0.
+
+Changed:
+- `src/hooks/keyword-detector/index.ts` now exports `KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES` for non-frontmatter documented auto-detection examples.
+- `src/hooks/keyword-detector/__tests__/index.test.ts` proves every documented keyword-detector example actually detects as its workflow type.
+- `src/__tests__/skills-agents-docs-contract.test.ts` now combines frontmatter `triggers:` plus keyword-detector examples for Auto-Activation exact phrase parity and category Trigger Keywords coverage.
+- `skills/AGENTS.md` no longer advertises stale phrases such as `build me`, `I want a`, `don't stop until`, `interview me`, `don't assume`, or bare `stop`/`cancel`/`abort` as auto-trigger examples.
+
+Evidence:
+- RED focused docs: `npx vitest run src/__tests__/skills-agents-docs-contract.test.ts --reporter=verbose` failed on 4 stale Auto-Activation rows, then on 9 missing category trigger examples.
+- RED keyword-detector: bare `ouroboros` failed as a documented trigger example because prompt-start Ouroboros CLI invocations are intentionally suppressed by `KEYWORD_SKIP_PREDICATES`; it was removed from the documented SoT.
+- GREEN keyword-detector: `npx vitest run src/hooks/keyword-detector/__tests__/index.test.ts --reporter=dot` passed 438/438.
+- GREEN focused docs: `npx vitest run src/__tests__/skills-agents-docs-contract.test.ts --reporter=verbose` passed 9/9 after `skills/AGENTS.md` was aligned.
+- Build: first `npm run build` exposed TS2339 from widened `Object.entries(...).map(...)` tuple typing; after typing the map result as `[string, string[]]`, `npm run build` exited 0.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10293`, `numPassedTests=10286`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan produced no output; `.omc/LOOP-HALT` absent.
+- Live merge verification is pending for this slice.
+
+Remaining risk:
+- Broader docs (`docs/REFERENCE.md`, `docs/HOOKS.md`, `docs/MIGRATION.md`) may still advertise old natural-language trigger phrases.
+- Live merge will repeat focused docs and keyword-detector tests, build, typecheck, baseline, diff scans, and `loop-last-good` movement.

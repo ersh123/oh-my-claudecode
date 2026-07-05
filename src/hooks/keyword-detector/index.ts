@@ -68,6 +68,14 @@ const KEYWORD_PATTERNS: Record<KeywordType, RegExp> = {
   antigravity: /\b(ask|use|delegate\s+to)\s+(antigravity|agy)\b/i
 };
 
+export const KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES = {
+  cancel: ['cancelomc', 'stopomc'],
+  ralph: ['ralph'],
+  autopilot: ['autopilot', 'auto pilot', 'auto-pilot', 'fullsend', 'full auto'],
+  ultrawork: ['ultrawork', 'ulw'],
+  'deep-interview': ['deep-interview', 'deep interview'],
+} as const satisfies Partial<Record<KeywordType, readonly string[]>>;
+
 /**
  * Matches the upstream Ouroboros CLI invocation form at the start of the
  * prompt: `ouroboros <sub>`, `ooo <sub>`, or `/ouroboros:<sub>`. Used as a
