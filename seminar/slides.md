@@ -380,31 +380,31 @@ Note: If your task has several independent components, Team gives the leader exp
 
 ---
 
-## Mode 3: Swarm - What Is It?
+## Mode 3: Ultrawork - What Is It?
 
-**N coordinated agents with atomic task claiming**
+**Fast parallel execution for independent fixes**
 
 ```
-/swarm 5:executor "fix all TypeScript errors"
+ulw fix all TypeScript errors
 ```
 
 **Architecture:**
-- SQLite-based task pool
-- Atomic claiming via transactions
-- 5-minute lease timeout with auto-release
-- Heartbeat monitoring for fault tolerance
+- Detects independent files or modules
+- Assigns bounded work lanes
+- Integrates results through verification
+- Falls back when ownership is unclear
 
-Note: Swarm is like having a team of developers tackling a shared task list. Anyone can grab the next task.
+Note: Ultrawork is for speed on clear independent fixes. Use Team when you need explicit worker count and coordinated ownership.
 
 ---
 
-## Mode 3: Swarm - How It Works
+## Mode 3: Ultrawork - How It Works
 
 ```
-/swarm 5:executor "fix all TypeScript errors"
+ulw fix all TypeScript errors
               |
               v
-      [SWARM ORCHESTRATOR]
+      [ULTRAWORK ROUTER]
               |
    +--+--+--+--+--+
    |  |  |  |  |
@@ -414,30 +414,26 @@ Note: Swarm is like having a team of developers tackling a shared task list. Any
    +--+--+--+--+
           |
           v
-    [SQLITE DATABASE]
+    [INTEGRATION CHECK]
     +---------------------+
-    | tasks table         |
+    | build/test/lint     |
     |---------------------|
-    | id, description     |
-    | status: pending,    |
-    |   claimed, done,    |
-    |   failed            |
-    | claimed_by          |
-    | heartbeat tracking  |
+    | shared-file review  |
+    | verification result |
     +---------------------+
 ```
 
-**Claim Protocol:**
-1. Agent calls `claimTask()`
-2. SQLite transaction atomically updates status
-3. Agent works on task
-4. Agent calls `completeTask()` or `failTask()`
+**Execution Protocol:**
+1. Partition independent files or error groups
+2. Assign bounded worker lanes
+3. Integrate changed files
+4. Verify with the smallest proof command
 
-Note: SQLite transactions guarantee no two agents can claim the same task - true atomicity.
+Note: Keep shared files out of worker lanes unless the leader owns the integration step.
 
 ---
 
-## Mode 3: Swarm - When To Use It
+## Mode 3: Ultrawork - When To Use It
 
 **Best For:**
 - Many independent parallel tasks
@@ -448,19 +444,19 @@ Note: SQLite transactions guarantee no two agents can claim the same task - true
 
 ```bash
 # Fix all TypeScript errors
-/swarm 5:executor "fix all TypeScript errors"
+ulw fix all TypeScript errors
 
 # Style all UI components
-/swarm 3:designer "implement Material-UI styling for all components"
+ulw implement Material-UI styling for all components
 
 # Security audit all endpoints
-/swarm 4:security-reviewer "review all API endpoints"
+ulw review all API endpoints
 
 # Add documentation
-/swarm 2:writer "add JSDoc comments to all exported functions"
+ulw add JSDoc comments to exported functions
 ```
 
-Note: Swarm excels when you have many independent tasks that don't depend on each other.
+Note: Ultrawork fits many independent edits. If worker count and ownership need to be explicit, use `/team N:executor "task"`.
 
 ---
 
@@ -547,7 +543,7 @@ Note: The data passing protocol ensures each agent has full context from previou
 
 **Token-efficient parallel execution**
 
-30-50% cheaper than standard execution.
+Designed to reduce spend by choosing lower-cost routes before higher-cost routes.
 
 ```
 eco: implement new feature
@@ -594,20 +590,20 @@ Note: Ecomode tries the cheapest option first and only escalates if that fails.
 - Exploratory work
 - Personal projects
 
-**Cost Savings Example:**
+**Budget Tradeoff Checklist:**
 
-| Task | Standard Cost | Ecomode Cost | Savings |
-|------|--------------|--------------|---------|
-| 100 simple fixes | ~$3.00 | ~$0.50 | 83% |
-| Feature impl | ~$1.50 | ~$0.75 | 50% |
-| Full build | ~$10.00 | ~$5.00 | 50% |
+| Use Eco When | Avoid Eco When |
+|--------------|----------------|
+| Many small independent edits | High-risk architecture decisions |
+| Budget matters more than speed | Tight deadline debugging |
+| Lower-cost first attempt is acceptable | Quality bar needs strongest reasoning first |
 
 **Trigger:**
 ```
 eco, efficient, save-tokens, budget
 ```
 
-Note: The key insight is that 80% of tasks can be done by Haiku - you only need Opus for truly complex reasoning.
+Note: The key insight is to start cheaper only when the task shape makes that acceptable.
 
 ---
 <!-- .slide: data-background="#1a1a2e" -->
@@ -1171,10 +1167,10 @@ Note: Most users never need to configure anything - defaults work well for typic
 | **Frontend component library** | team | Many independent components |
 | **Database migrations** | ralph | Needs persistence through errors |
 | **CI/CD pipeline setup** | pipeline:implement | Sequential stages |
-| **Documentation generation** | swarm:writer | Parallel doc writing |
-| **Bug triage & fixing** | swarm:executor | Many independent fixes |
+| **Documentation generation** | team | Parallel doc writing with explicit ownership |
+| **Bug triage & fixing** | ultrawork | Many independent fixes |
 | **Security audit** | pipeline:security | Structured review process |
-| **Exploratory prototyping** |  | Budget-conscious iteration |
+| **Exploratory prototyping** | eco | Budget-conscious iteration |
 
 Note: Matching the right mode to the task type is key to getting the most out of OMC.
 
@@ -1307,8 +1303,7 @@ autopilot: build something amazing
 | team | Coordinated multi-agent work | `/team N:executor "task"` |
 | ralph | Persistence mode | "ralph" |
 | ultrawork | Maximum parallelism | "ulw", "ultrawork" |
-|  | Token-efficient mode | "eco", "budget" |
-| swarm | Coordinated agents | `/swarm N:agent` |
+| eco | Budget-aware execution | "eco", "budget" |
 | pipeline | Sequential chaining | `/pipeline preset` |
 | plan | Planning interview | "plan the" |
 | ralplan | Iterative planning | "ralplan" |
@@ -1355,7 +1350,7 @@ autopilot: build something amazing
 | `autopilot:` | `/oh-my-claudecode:autopilot` | Full autonomous mode |
 | `ralph:` | `/oh-my-claudecode:ralph` | Persistence mode |
 | `ulw` | `/oh-my-claudecode:ultrawork` | Parallel execution |
-| `eco:` | `/oh-my-claudecode:` | Token-efficient mode |
+| `eco:` | `eco` keyword | Budget-aware execution |
 | `plan` | `/oh-my-claudecode:plan` | Planning interview |
 
 **Combinations:**

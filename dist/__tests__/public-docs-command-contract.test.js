@@ -287,6 +287,40 @@ describe('public docs command contract', () => {
             .flatMap((line, index) => (line.toLowerCase().includes('ultrapilot') ? [`${relativePath}:${index + 1}`] : [])));
         expect(staleReferences).toEqual([]);
     });
+    it('does not present legacy swarm as current seminar guidance', () => {
+        const docsToCheck = [
+            'seminar/quickref.md',
+            'seminar/notes.md',
+            'seminar/slides.md',
+            'seminar/demos/demo-2-ultrawork.md',
+        ];
+        const staleReferences = docsToCheck.flatMap((relativePath) => readFileSync(join(process.cwd(), relativePath), 'utf8')
+            .split('\n')
+            .flatMap((line, index) => (/\bswarm\b/i.test(line) ? [`${relativePath}:${index + 1}`] : [])));
+        expect(staleReferences).toEqual([]);
+    });
+    it('does not publish fixed eco savings figures as current seminar guidance', () => {
+        const docsToCheck = ['seminar/notes.md', 'seminar/slides.md'];
+        const fixedClaimPattern = /(?:\d{1,3}-\d{1,3}%|\d+%|~?\$\d+(?:\.\d+)?|\d+k tokens)/i;
+        const malformedPlaceholderPattern = /\b(?:same task with\s*:|compare ultrawork vs\s+for)\b/i;
+        const staleReferences = docsToCheck.flatMap((relativePath) => {
+            let inEcoGuidance = false;
+            return readFileSync(join(process.cwd(), relativePath), 'utf8')
+                .split('\n')
+                .flatMap((line, index) => {
+                if (/^#{2,3}\s+Mode 5: Ecomode\b/i.test(line)) {
+                    inEcoGuidance = true;
+                }
+                else if (inEcoGuidance && /^#{1,3}\s+(?:Mode Comparison|Section 4|The Agent System)\b/i.test(line)) {
+                    inEcoGuidance = false;
+                }
+                const mentionsEco = /\beco(?:mode)?\b/i.test(line) || malformedPlaceholderPattern.test(line);
+                const hasStaleClaim = fixedClaimPattern.test(line) || malformedPlaceholderPattern.test(line);
+                return (inEcoGuidance || mentionsEco) && hasStaleClaim ? [`${relativePath}:${index + 1}`] : [];
+            });
+        });
+        expect(staleReferences).toEqual([]);
+    });
     it('does not document unsupported defaultExecutionMode config policy in public/setup docs', () => {
         const docsToCheck = [
             'docs/MIGRATION.md',

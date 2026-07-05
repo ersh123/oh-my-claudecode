@@ -1504,3 +1504,32 @@ Reviewer verdict (manual Codex-only local diff review):
 
 Remaining risk:
 - Seminar material still contains legacy `swarm` guidance and rough `eco` wording; keep that as the next docs slice.
+
+## 2026-07-05 - dogfood/seminar-swarm-eco-docs
+
+Candidates + WSJF:
+- TAKE: remove legacy `swarm` as current seminar guidance and pin it with public-docs tests. Value 3, risk reduction 3, urgency 2, complexity 2 => 4.0.
+- TAKE: replace fixed Eco savings figures and malformed Eco placeholders with budget-tradeoff guidance. Value 3, risk reduction 3, urgency 2, complexity 2 => 4.0.
+- DROP: remove runtime `swarm` compatibility or Eco keyword support in this slice. Value 1, risk reduction 0, urgency 1, complexity 4 => 0.5.
+
+Changed:
+- `src/__tests__/public-docs-command-contract.test.ts` now rejects `swarm` in current seminar guidance files and fixed Eco savings figures in seminar guidance.
+- `seminar/quickref.md`, `seminar/slides.md`, `seminar/notes.md`, and `seminar/demos/demo-2-ultrawork.md` now route explicit worker-count guidance to `/team`, fast independent fixes to `ultrawork`, and budget-aware batch work to `eco`.
+- `ROADMAP.md` records the expanded seminar legacy-mode contract and moves the next docs risk to broader public docs cost/source cleanup.
+
+Evidence:
+- RED focused 1: `npx vitest run src/__tests__/public-docs-command-contract.test.ts --reporter=verbose` failed with 33 seminar `swarm` references and 2 malformed/fixed Eco references.
+- RED focused 2: after strengthening the Eco fixed-claim regex, the same command failed with 33 seminar `swarm` references and 9 fixed/malformed Eco references.
+- GREEN focused: the same command passed 12/12 after docs alignment.
+- Stale grep: targeted `swarm` and fixed/malformed Eco searches over guarded seminar files produced no output.
+- Build: `npm run build` exited 0 with a local hardlink `node_modules`.
+- Typecheck: `npx tsc` exited 0.
+- Focused regression: `npx vitest run src/__tests__/public-docs-command-contract.test.ts src/__tests__/setup-contracts-regression.test.ts src/__tests__/repair-plugin-cache-script.test.ts --reporter=verbose` passed 39/39.
+- Full suite baseline gate: `npm run test:baseline` exited 0; JSON summary `success=true`, `total=10330`, `passed=10323`, `failed=0`, `pending=7`.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The slice is docs/test scoped, removes stale seminar current-mode guidance for legacy `swarm`, removes unsupported fixed Eco savings claims, preserves runtime compatibility behavior, and updates generated test artifacts only.
+
+Remaining risk:
+- Broader public docs still contain historical or marketing-style cost examples that need source-backed cleanup in a separate slice.
