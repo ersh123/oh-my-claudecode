@@ -951,3 +951,33 @@ Remaining risk:
 - `skills/AGENTS.md` still has older generated inventory/count drift beyond the removed note row.
 - Broader command/gate docs accuracy remains open.
 - Live merge will repeat focused public-docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
+
+## 2026-07-05 — dogfood/skills-agents-inventory-contract
+
+Candidates + WSJF:
+- TAKE: `skills/AGENTS.md` headline skill count must match real bundled skill directories. Value 4, risk reduction 5, urgency 3, complexity 1 => 12.0. It still said 30 while the repo has 41 skill directories.
+- TAKE: listed `*/SKILL.md` paths in `skills/AGENTS.md` Key Files must exist. Value 5, risk reduction 5, urgency 3, complexity 1 => 13.0. The docs listed removed `ralph-init` and `omc-help` paths.
+- DEFER: make `skills/AGENTS.md` category tables exhaustive and generated. Value 6, risk reduction 5, urgency 3, complexity 4 => 3.5. Useful, but this slice pins the mechanical stale-count/path failures.
+
+Changed:
+- `skills/AGENTS.md` now says 41 skill directories.
+- Removed stale `ralph-init/SKILL.md` and `omc-help/SKILL.md` rows from Key Files.
+- Removed stale `ralph-init` and `omc-help` names from category rows, using existing `omc-reference` in the utility row.
+- `src/__tests__/skills-agents-docs-contract.test.ts` checks the headline count against real `skills/*` directories and verifies listed Key Files `*/SKILL.md` paths exist.
+
+Evidence:
+- RED: `npx vitest run src/__tests__/skills-agents-docs-contract.test.ts --reporter=verbose` failed with count `30` vs `41` and missing `omc-help/SKILL.md`, `ralph-init/SKILL.md`.
+- GREEN affected: the same command passed 2/2 after docs were updated.
+- Build: `npm run build` exited 0 and generated compiled test artifacts.
+- Typecheck: `npx tsc` exited 0.
+- Full suite baseline gate: `npm run test:baseline` exited 0; final JSON confirms `numTotalTests=10272`, `numPassedTests=10265`, `numFailedTests=0`, `numPendingTests=7`, and `success=true`.
+- Diff hygiene: `git diff --check` clean; sensitive-pattern scan reported `0` hits.
+
+Reviewer verdict (manual Codex-only local diff review):
+> PASS.
+> The new test pins the two mechanical inventory claims without forcing a broad rewrite of every category or description.
+
+Remaining risk:
+- `skills/AGENTS.md` category tables remain curated rather than exhaustive.
+- Broader command/gate docs accuracy remains open.
+- Live merge will repeat focused skills-agents docs test, build, typecheck, baseline, diff scans, and `loop-last-good` movement.
