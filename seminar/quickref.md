@@ -15,8 +15,7 @@
 | Autopilot | `autopilot` | Full autonomous build | `autopilot: build a REST API` |
 | Team | `/team` | Coordinated multi-agent work | `/team 3:executor "build dashboard"` |
 | Ultrawork | `ulw` | Parallel task fixing | `ulw fix all errors` |
-| Ecomode | `eco` | Budget-friendly parallel | `eco: implement feature` |
-| Swarm | `swarm` | N coordinated agents | `/swarm 5:executor "fix errors"` |
+| Ecomode | `eco` | Budget-aware batching | `eco: batch fixes` |
 | Pipeline | `pipeline` | Sequential chaining | `/pipeline review` |
 | Ralph | `ralph` | Persistence until done | `ralph: refactor auth` |
 | Plan | `plan` | Planning interview | `plan the API design` |
@@ -97,7 +96,6 @@
 ## State Files
 - `.omc/state/team/{team-name}/` - Team coordination state
 - `.omc/team/{team-name}/worktrees/` - Team worker worktrees when enabled
-- `.omc/state/swarm-{id}.json` - Swarm coordination
 - `.omc/state/pipeline-{id}.json` - Pipeline progress
 
 ## Configuration
@@ -142,6 +140,6 @@ Before claiming completion:
 - Start with **autopilot** for new projects - it handles everything
 - Use **team** when independent work lanes need coordinated workers
 - Use **ralph** when you absolutely need completion guarantee
-- Use **eco** when managing token budgets on large tasks
-- Use **swarm** for distributed work across many files
+- Use **eco** when budget matters and slower batch work is acceptable
+- Use **ultrawork** for many independent fixes across files
 - Use **pipeline** for multi-stage workflows with quality gates

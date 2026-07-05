@@ -98,8 +98,8 @@
 **Core Innovations** (Slide 8)
 - "Three things make OMC unique:"
 - "1. MULTI-AGENT ORCHESTRATION: Tasks automatically decompose and distribute to specialists"
-- "2. SMART MODEL ROUTING: Simple tasks use cheap Haiku, complex tasks use powerful Opus - saves 30-50% on costs"
-- "3. EXECUTION MODES: Autopilot, Team, Swarm, Pipeline, Ecomode - each optimized for different scenarios"
+- "2. SMART MODEL ROUTING: Simple tasks can use lower-cost routes, complex tasks still get stronger reasoning"
+- "3. EXECUTION MODES: Autopilot, Team, Ultrawork, Pipeline, Ecomode - each optimized for different scenarios"
 
 ### Transition
 "That third innovation - execution modes - is where things get really interesting. Let's dive deep into each one."
@@ -181,38 +181,38 @@
 - "Don't promise a fixed speed multiplier. Team wins when the task naturally splits and the integration gate is clear."
 - "But here's the caveat: team coordination uses more budget and attention. That's where our next mode comes in."
 
-### Mode 3: Swarm (4 min, Slides 15-17)
+### Mode 3: Ultrawork (4 min, Slides 15-17)
 
 **Opening Line**
-"Swarm mode takes a different approach to parallelism - independent workers claiming tasks from a shared queue."
+"Ultrawork is the fast lane for independent fixes - split the work, integrate, then verify."
 
 **Key Points**
-- Atomic task claiming prevents conflicts
-- Dynamic scaling from 2-10 agents
-- 5-minute timeout per task with auto-release
-- Ideal for homogeneous parallel work
+- Splits independent files or error groups
+- Gives workers bounded lanes
+- Leader integrates shared changes
+- Ideal for homogeneous parallel work where the proof command is clear
 
 **Talking Points**
 
-**The Ant Colony Analogy** (Slide 15)
-- "Watch an ant colony. There's no central coordinator telling each ant what to do. They have a shared objective (food pile) and workers independently claim and complete tasks."
-- "Swarm works the same. You define a pool of tasks: 'Fix these 47 TypeScript errors.' Each agent grabs one, fixes it, marks it done, grabs the next."
+**The Work-Lane Model** (Slide 15)
+- "Think of the task as a set of lanes. Auth files, API files, test files, docs files. Each lane can move without blocking the others."
+- "Ultrawork fits that shape. It is not magic parallelism for every task; it works when ownership boundaries are clear."
 
-**How Task Claiming Works** (Slide 16)
-- "Every task has a status: PENDING, CLAIMED, DONE"
-- "When an agent is idle, it atomically claims a PENDING task (meaning no two agents can claim the same task)"
-- "It has 5 minutes to complete. If it times out, the task auto-releases back to PENDING"
-- "The swarm completes when all tasks are DONE"
+**How It Works** (Slide 16)
+- "First, identify independent files or error groups."
+- "Then workers handle bounded lanes."
+- "Shared files go through the leader or a final integration pass."
+- "The run is complete only after build, tests, lint, or the relevant proof command passes."
 
 **When to Use** (Slide 17)
 - "Perfect for: Batch fixes, test suite repairs, linting errors, documentation updates"
 - "Not ideal for: Sequential workflows, interdependent tasks, single complex tasks"
-- "If your tasks can be done in any order and don't depend on each other, swarm shines."
+- "If your tasks can be done in any order and don't depend on each other, ultrawork is the right speed tool."
 
 **Comparison with Team**
 - "Team: Coordinator orchestrates workers on a complex multi-stage project"
-- "Swarm: Workers self-organize on many independent tasks"
-- "Team is a construction crew building a house. Swarm is a cleaning crew each tackling different rooms."
+- "Ultrawork: Fast parallel pass across many independent fixes"
+- "Use Team when worker count and ownership must be explicit; use ultrawork when speed on independent fixes matters more."
 
 ### Mode 4: Pipeline (4 min, Slides 18-20)
 
@@ -258,7 +258,7 @@
 - Token-efficient parallelism via smart batching
 - Prefers lower-tier models when possible
 - Still gets the job done, just more economically
-- 40-60% cost reduction vs ultrawork
+- Lower-cost routing when quality and risk allow it
 
 **Talking Points**
 
@@ -278,8 +278,8 @@
 - "If you're working on open-source with limited API budget is your mode."
 
 **Cost Comparison**
-- "Real numbers: Fixing 50 TypeScript errors with ultrawork: ~200K tokens ($2.40). Same task with : ~85K tokens ($1.02)."
-- "You're trading some speed and sophistication for cost. Sometimes that's exactly the right tradeoff."
+- "Use this as a tradeoff, not a promise. Eco starts cheaper, but you still verify the result the same way."
+- "You're trading some speed and depth for cost. Sometimes that's exactly the right tradeoff."
 
 ### Mode Comparison Table (Quick Reference)
 
@@ -287,7 +287,7 @@
 |------|-------|------|-------------|----------|
 | Autopilot | Medium | Medium | Adaptive | New features, greenfield |
 | Team | High | High | Explicit workers | Multi-component systems |
-| Swarm | Fast | Medium-High | Dynamic (2-10) | Batch fixes, homogeneous tasks |
+| Ultrawork | Fast | Medium-High | Parallel lanes | Batch fixes, homogeneous tasks |
 | Pipeline | Medium | Medium | Sequential | Reviews, audits, research |
 | Ecomode | Medium | Lowest | Efficient | Budget-conscious, batch ops |
 
@@ -309,7 +309,7 @@
 ### Key Points
 - 13 domain areas covering all aspects of development
 - 3-tier model system: Haiku (LOW), Sonnet (MEDIUM), Opus (HIGH)
-- Smart routing saves 30-50% on token costs
+- Smart routing reduces waste by matching model tier to task shape
 - Agents compose into higher-level skills
 
 **Talking Points**
@@ -552,11 +552,11 @@ Narrate:
 - "Say 'eco batch fixes' → ecomode activates"
 - ""
 - "Power users have shortcuts:"
-- "`ulw` = ultrawork, `eco` = `ralplan` = ralph + planning"
+- "`ulw` = ultrawork, `eco` = budget-aware execution, `ralplan` = ralph + planning"
 - "Explicit mode names are first-class; shortcuts are optional."
 
 **The HUD** (Slide 35)
-- "The HUD gives real-time visibility into the agent swarm:"
+- "The HUD gives real-time visibility into active agents:"
 ```
 [OMC] Mode: ultrawork | Agents: 3 active | executor-1: fixing auth.ts | executor-2: fixing api.ts | architect: reviewing
 ```
@@ -580,7 +580,7 @@ Narrate:
 **Cost Analytics** (Slide 37)
 - "OMC tracks token usage per session:"
 - "See exactly how much each mode costs"
-- "Compare ultrawork vs  for your workload"
+- "Compare ultrawork vs eco for your workload"
 - "Audit logs at `.omc/logs/delegation-audit.jsonl`"
 - "Know your costs before they surprise you."
 
@@ -625,7 +625,7 @@ claude-code "autopilot: build a todo app"
 
 **What Setup Does** (Slide 40)
 - "The setup wizard configures:"
-- "  Default execution mode (ultrawork or )"
+- "  Default execution mode and keyword preferences"
 - "  HUD installation (optional)"
 - "  Analytics preferences (optional)"
 - "  Agent customizations (optional)"
@@ -658,8 +658,8 @@ claude-code "autopilot: build a todo app"
 **The Big Picture** (Slide 41)
 - "OMC transforms Claude Code from a single assistant into a coordinated team."
 - "You go from micromanaging every step to stating goals and getting results."
-- "The five execution modes cover everything: greenfield (autopilot), parallel fixes (ultrawork), coordinated teams (/team), batch (swarm), sequential (pipeline), budget-conscious work (eco)."
-- "28 agents with 3-tier model routing save you 30-50% on costs while getting work done faster."
+- "The five execution modes cover everything: greenfield (autopilot), parallel fixes (ultrawork), coordinated teams (/team), sequential workflows (pipeline), and budget-conscious work (eco)."
+- "28 agents with 3-tier model routing keep expensive reasoning focused on the tasks that need it."
 
 **Resources** (Slide 42)
 - "GitHub: github.com/Yeachan-Heo/oh-my-claudecode"
@@ -691,9 +691,9 @@ You need either:
 - Or a Claude Team subscription with API credits
 - Or direct API access via Anthropic
 
-The key cost benefit: OMC's smart model routing saves you 30-50% on token costs compared to manually using Claude. For example, simple searches use Haiku (super cheap), complex debugging uses Opus (expensive but necessary). Without OMC, everything might default to Opus.
+The key cost benefit: OMC's smart model routing reduces waste compared to manually using one model for everything. Simple searches can use lower-cost routes, while complex debugging can still use stronger reasoning when needed.
 
-Ecomode specifically optimizes for cost - in our benchmarks, it reduces costs by 40-60% compared to ultrawork mode while still completing the work effectively."
+Ecomode specifically optimizes for cost by starting with lower-cost routes when the task shape allows it. Treat it as a budget tradeoff, then verify the result the same way."
 
 ### 2. "Can I use it with other AI models?"
 
@@ -774,7 +774,7 @@ But if you want to be explicit:
 - NEW FEATURE, GREENFIELD: autopilot
 - MULTI-LANE PROJECT: /team
 - PARALLEL FIXES: ultrawork (speed) or eco (cost)
-- BATCH HOMOGENEOUS TASKS: swarm
+- BATCH HOMOGENEOUS TASKS: ultrawork or eco
 - SEQUENTIAL WORKFLOW: pipeline
 - MUST COMPLETE: ralph
 
@@ -911,7 +911,7 @@ Total time saved: ~10 minutes
 
 ### If Running Way Under Time
 Extend demos:
-- "Let me show you one more - swarm mode on a batch of linting errors"
+- "Let me show you one more - ultrawork on a batch of linting errors"
 - "Anyone want to suggest a scenario? I'll do it live."
 - Extended Q&A with deep-dive answers
 

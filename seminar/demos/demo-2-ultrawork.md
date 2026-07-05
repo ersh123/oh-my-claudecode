@@ -437,7 +437,7 @@ OMC │ idle │ Last: 4 agents, 1m34s
 ## Q&A Preparation
 
 **Q: How many agents can run in parallel?**
-A: Typically 3-5 for ultrawork. The system balances parallelism with context overhead. For larger swarms, use the `swarm` skill (10+ agents).
+A: Typically 3-5 for ultrawork. The system balances parallelism with context overhead. For explicit worker count and coordinated ownership, use `/team`.
 
 **Q: What happens if two agents need to edit the same file?**
 A: The file ownership coordinator prevents this. One agent gets the file, the other waits or is assigned different work. Shared reads are fine.
@@ -446,7 +446,7 @@ A: The file ownership coordinator prevents this. One agent gets the file, the ot
 A: Best for tasks that are naturally parallelizable - multiple files, independent modules, batch operations. For sequential dependencies, use `pipeline` instead.
 
 **Q: Can I control how many agents spawn?**
-A: Yes! Use `/oh-my-claudecode:swarm N:agent-type "task"` for explicit control. Ultrawork auto-determines the optimal number.
+A: Yes. Use `/team N:agent-type "task"` for explicit control. Ultrawork auto-determines the optimal number.
 
 **Q: What's the token cost of ultrawork vs serial?**
 A: Similar total tokens, but compressed wall-clock time. You're paying for parallelism, not more work. Think: 4 workers × 2 minutes vs 1 worker × 8 minutes.
