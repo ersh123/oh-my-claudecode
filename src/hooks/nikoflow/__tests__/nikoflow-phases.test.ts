@@ -113,6 +113,8 @@ describe("nikoflow phase machine (TSK-002)", () => {
       expect(p).toContain("standard");
       expect(p).toContain("deep");
       expect(p).toContain('<nikoflow-gate phase="depth"');
+      expect(p).toContain('mode="approval-gated|autonomous"');
+      expect(p).toContain("Money/prod deploy preflight");
     });
     it("each phase prompt is distinct and names its gate", () => {
       const s = start("nikoflow:standard do it");
@@ -120,7 +122,15 @@ describe("nikoflow phase machine (TSK-002)", () => {
       const prd = getPhasePrompt("prd", s);
       expect(interview).not.toBe(prd);
       expect(interview).toContain('phase="interview"');
+      expect(interview).toContain("approval-gated");
+      expect(interview).toContain("autonomous");
       expect(prd).toContain("SEAMS_CONFIRMED");
+    });
+    it("ticketization prompts force a preflight ticket for money/prod/proxy work", () => {
+      const s = start("nikoflow:standard do it");
+      const tickets = getPhasePrompt("tickets", s);
+      expect(tickets).toContain("explicit preflight ticket");
+      expect(tickets).toContain("money/prod/proxy");
     });
   });
 });

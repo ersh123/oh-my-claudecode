@@ -11,7 +11,12 @@
  * stays free of fs/hook dependencies so it is trivially unit-testable.
  */
 
-import { NIKOFLOW_DEPTHS, type NikoflowDepth } from "./loop.js";
+import {
+  NIKOFLOW_AUTONOMY_MODES,
+  NIKOFLOW_DEPTHS,
+  type NikoflowAutonomyMode,
+  type NikoflowDepth,
+} from "./loop.js";
 
 /** Expected payload(s) per gate. A tag only counts if its payload matches. */
 export const NIKOFLOW_GATE_PAYLOADS: Record<string, string[]> = {
@@ -38,6 +43,8 @@ export interface GateMatch {
   matched: boolean;
   /** For the depth gate: the tier the user confirmed, if present. */
   depth?: NikoflowDepth;
+  /** Approval/autonomy mode the user confirmed. */
+  autonomy_mode?: NikoflowAutonomyMode;
   /** The exact payload that matched (e.g. VERIFIED vs NO_ACTIONABLE_FINDINGS). */
   payload?: string;
   /** For the verify gate: the reviewer's numeric score, if present. */
@@ -52,6 +59,7 @@ const ATTR_REGEXES: Record<string, RegExp> = {
   "request-id": /(?<![\w-])request-id=(["'])(.*?)\1/i,
   score: /(?<![\w-])score=(["'])(.*?)\1/i,
   depth: /(?<![\w-])depth=(["'])(.*?)\1/i,
+  mode: /(?<![\w-])mode=(["'])(.*?)\1/i,
 };
 
 function extractAttribute(attributes: string, name: string): string | undefined {
@@ -116,6 +124,13 @@ export function detectNikoflowGate(
     }
 
     const result: GateMatch = { matched: true, payload };
+    const modeAttr = extractAttribute(attributes, "mode")?.toLowerCase();
+    if (modeAttr) {
+      if (!(NIKOFLOW_AUTONOMY_MODES as readonly string[]).includes(modeAttr)) {
+        continue;
+      }
+      result.autonomy_mode = modeAttr as NikoflowAutonomyMode;
+    }
     const scoreAttr = extractAttribute(attributes, "score");
     if (scoreAttr !== undefined) {
       const parsed = Number.parseFloat(scoreAttr);

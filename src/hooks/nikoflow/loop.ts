@@ -22,6 +22,8 @@ import { resolveSessionStatePath } from "../../lib/worktree-paths.js";
 
 export const NIKOFLOW_DEPTHS = ["tactical", "standard", "deep"] as const;
 export type NikoflowDepth = (typeof NIKOFLOW_DEPTHS)[number];
+export const NIKOFLOW_AUTONOMY_MODES = ["approval-gated", "autonomous"] as const;
+export type NikoflowAutonomyMode = (typeof NIKOFLOW_AUTONOMY_MODES)[number];
 
 /**
  * Per-role model routing. Each value is a model spec that the prompts render
@@ -88,6 +90,8 @@ export interface NikoflowState {
   project_path?: string;
   /** Selected depth tier, or null until chosen during interview */
   depth: NikoflowDepth | null;
+  /** User-selected approval mode; absent legacy state behaves as approval-gated. */
+  autonomy_mode?: NikoflowAutonomyMode | null;
   /** Materialized phase list for the chosen depth (empty until depth set) */
   phases: string[];
   /** Index into phases[] of the current phase */
@@ -128,6 +132,7 @@ export const NIKOFLOW_EXECUTE_MAX_STALL = 15;
 
 export interface NikoflowLoopOptions {
   depth?: NikoflowDepth;
+  autonomy_mode?: NikoflowAutonomyMode;
 }
 
 export interface NikoflowLoopHook {
@@ -204,7 +209,7 @@ export function incrementNikoflowIteration(
  * Accepts `nikoflow:deep`, `--tier=standard`, `--depth deep`, `--deep`, etc.
  */
 export function detectDepthFlag(prompt: string): NikoflowDepth | null {
-  const colon = prompt.match(/nikoflow\s*:\s*(tactical|standard|deep)/i);
+  const colon = prompt.match(/(?:nikoflow|niko[\s-]?flow|нико[\s-]*флоу)\s*:\s*(tactical|standard|deep)/i);
   if (colon) return colon[1].toLowerCase() as NikoflowDepth;
   const tier = prompt.match(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/i);
   if (tier) return tier[1].toLowerCase() as NikoflowDepth;
@@ -214,12 +219,31 @@ export function detectDepthFlag(prompt: string): NikoflowDepth | null {
   return null;
 }
 
+export function detectAutonomyModeFlag(prompt: string): NikoflowAutonomyMode | null {
+  if (
+    /--(?:auto|autonomous|full-auto|full-autonomous|no-approval|no-confirm|no-handoff)s?\b/i.test(prompt) ||
+    /\b(?:autonomous|full autonomous|no handoffs)\b/i.test(prompt) ||
+    /(?:автоном|фул\s+автоном|без\s+согласован|не\s+спрашивай)/i.test(prompt)
+  ) {
+    return "autonomous";
+  }
+  if (
+    /--(?:approval-gated|approval|confirm-each|manual-gates|step-by-step)\b/i.test(prompt) ||
+    /(?:кажд(?:ый|ом)\s+шаг|согласован(?:ие|ия|ий|ный)|approval-gated|step-by-step)/i.test(prompt)
+  ) {
+    return "approval-gated";
+  }
+  return null;
+}
+
 /** Strip nikoflow control flags from the task text. */
 export function stripNikoflowFlags(prompt: string): string {
   return prompt
-    .replace(/nikoflow\s*:\s*(tactical|standard|deep)/gi, "")
+    .replace(/(?:nikoflow|niko[\s-]?flow|нико[\s-]*флоу)\s*:\s*(tactical|standard|deep)/gi, "")
     .replace(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/gi, "")
     .replace(/--(?:deep|tactical|standard)\b/gi, "")
+    .replace(/--(?:auto|autonomous|full-auto|full-autonomous|no-approval|no-confirm|no-handoff)s?\b/gi, "")
+    .replace(/--(?:approval-gated|approval|confirm-each|manual-gates|step-by-step)\b/gi, "")
     .replace(/--(?:exec|executor|architect|arch|qa|reviewer|verifier|panel)(?:=|\s+)[^\s]+/gi, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -321,6 +345,26 @@ export function setNikoflowDepth(
   state.phase_index = 0;
   state.pbt_enabled = depth === "deep";
   return writeNikoflowState(directory, state, sessionId);
+}
+
+export function setNikoflowAutonomyMode(
+  directory: string,
+  autonomyMode: NikoflowAutonomyMode,
+  sessionId?: string,
+): boolean {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return false;
+  state.autonomy_mode = autonomyMode;
+  return writeNikoflowState(directory, state, sessionId);
+}
+
+export function requiresNikoflowHumanGate(
+  state: NikoflowState,
+  gate: string,
+): boolean {
+  if (gate === "depth") return true;
+  if (!["interview", "prd", "tickets"].includes(gate)) return false;
+  return state.autonomy_mode !== "autonomous";
 }
 
 /**
@@ -577,6 +621,7 @@ export function createNikoflowLoopHook(directory: string): NikoflowLoopHook {
   ): boolean => {
     const now = new Date().toISOString();
     const depth = options?.depth ?? detectDepthFlag(prompt);
+    const autonomyMode = options?.autonomy_mode ?? detectAutonomyModeFlag(prompt);
     const normalizedPrompt = stripNikoflowFlags(prompt);
 
     const state: NikoflowState = {
@@ -588,6 +633,7 @@ export function createNikoflowLoopHook(directory: string): NikoflowLoopHook {
       session_id: sessionId,
       project_path: directory,
       depth,
+      autonomy_mode: autonomyMode,
       phases: depth ? materializePhases(depth) : [],
       phase_index: 0,
       pbt_enabled: depth === "deep",

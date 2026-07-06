@@ -50,6 +50,17 @@ const CANCEL_HINT =
   "run `/oh-my-claudecode:cancel` to exit. If cancel fails, retry with " +
   "`/oh-my-claudecode:cancel --force`.";
 
+const AUTONOMY_MODE_PROTOCOL =
+  "Autonomy mode: establish exactly one mode once, in Grilling/depth if it is not already explicit: " +
+  "approval-gated (ask before each phase/step) or autonomous (run the full safe cycle without per-step approvals). " +
+  "Default to autonomous when the user clearly asks for no handoffs/full cycle or the task is already scoped. " +
+  "Even in autonomous mode, stop for destructive, credential-gated, external-production, or materially branching actions.";
+
+const MONEY_CRITICAL_PREFLIGHT =
+  "Money/prod deploy preflight: before any execute/deploy action that can affect production, ad spend, accounts, " +
+  "credentials, or proxy-dependent scraping, verify and report release base vs prod, prod divergence, money guards, " +
+  "proxy/env, rollback path, and stop condition. Unknown/red item => STOP and report blockers; never continue on assumptions.";
+
 /**
  * Inject the correlation request-id into every <nikoflow-gate ...> tag in a
  * prompt body so the model echoes an id the Stop hook will accept. Without a
@@ -72,7 +83,7 @@ export function getDepthSelectionPrompt(
   requestId?: string,
 ): string {
   const gateTag = injectRequestId(
-    `<nikoflow-gate phase="depth" depth="tactical|standard|deep">CONFIRMED</nikoflow-gate>`,
+    `<nikoflow-gate phase="depth" depth="tactical|standard|deep" mode="approval-gated|autonomous">CONFIRMED</nikoflow-gate>`,
     requestId,
   );
   return (
@@ -82,11 +93,13 @@ export function getDepthSelectionPrompt(
     `- 🟡 standard — a new feature (Grilling → ADR → PRD → Ticketization → TDD → Verification).\n` +
     `- 🔴 deep — an architectural change (full cycle + property-based tests + evidence).\n` +
     `Propose the smallest tier that fits, with a one-line justification, and confirm it with the user.\n` +
+    `${AUTONOMY_MODE_PROTOCOL}\n` +
+    `${MONEY_CRITICAL_PREFLIGHT}\n` +
     (state.roles?.panel && state.roles.panel.length > 1
       ? `For standard/deep work, consult a divergent-opinion panel — ${renderPanel(state.roles.panel)} — ` +
         `on approach/risks/alternatives BEFORE committing, and surface where they disagree.\n`
       : "") +
-    `Once the user agrees, record it by emitting on its own line:\n` +
+    `Once the user chooses depth + mode, record both by emitting on its own line:\n` +
     `${gateTag}\n` +
     `(the tag is only accepted after the user has actually replied — do not self-confirm).\n` +
     `${CANCEL_HINT}\n` +
@@ -98,9 +111,12 @@ const PHASE_BODIES: Record<string, string> = {
   interview:
     `Phase 🔥 GRILLING. Interrogate the task one question at a time: why, why this way, ` +
     `what alternatives, what risks. If a question can be answered by reading the code, read ` +
-    `instead of asking. Do not write any implementation until the user confirms shared ` +
-    `understanding. GATE — emit after the user confirms:\n` +
-    `<nikoflow-gate phase="interview">CONFIRMED</nikoflow-gate>`,
+    `instead of asking. ${AUTONOMY_MODE_PROTOCOL} In approval-gated mode, or when there is ` +
+    `a destructive/external-production/materially branching risk, do not write implementation until ` +
+    `the user confirms shared understanding. In autonomous mode, write the shared understanding, ` +
+    `state assumptions/evidence, emit the gate, and proceed. GATE — emit after user confirmation ` +
+    `or autonomous shared-understanding is recorded:\n` +
+    `<nikoflow-gate phase="interview" mode="approval-gated|autonomous">CONFIRMED</nikoflow-gate>`,
   adr:
     `Phase 📋 ADR. Record an architecture decision ONLY if it is hard-to-reverse AND ` +
     `surprising-without-context AND the result of a real trade-off (all three). Give 2+ ` +
@@ -111,23 +127,29 @@ const PHASE_BODIES: Record<string, string> = {
   prd:
     `Phase 📄 PRD. Write "[Actor] can [capability]" with User Stories carrying Given/When/Then ` +
     `acceptance criteria — no implementation detail. Sketch the test seams (prefer the highest, ` +
-    `fewest seams) and confirm them with the user. GATE — emit after seams confirmed:\n` +
+    `fewest seams). For money/prod/proxy work, include the preflight evidence as acceptance criteria. ` +
+    `Confirm seams with the user only when approval-gated mode or material ambiguity requires it; ` +
+    `otherwise record the seams and continue. GATE — emit after seams are confirmed or recorded:\n` +
     `<nikoflow-gate phase="prd">SEAMS_CONFIRMED</nikoflow-gate>`,
   tickets:
     `Phase 🎫 TICKETIZATION. Split the PRD into atomic vertical-slice tickets (TSK-001…) that ` +
     `each cut through all layers and are demoable on their own, with acceptance criteria + ` +
-    `blocked-by dependencies + a self-verification step. Present the breakdown and iterate until ` +
-    `the user approves it. GATE — emit after approval:\n` +
+    `blocked-by dependencies + a self-verification step. Add an explicit preflight ticket before any ` +
+    `money/prod/proxy-impacting deploy or external side effect. Present the breakdown and iterate until ` +
+    `the user approves it in approval-gated mode; in autonomous mode, write the artifact, validate the DAG, ` +
+    `and continue unless risk is red. GATE — emit after approval or autonomous validation:\n` +
     `<nikoflow-gate phase="tickets">APPROVED</nikoflow-gate>`,
   execute:
     `Phase 🔴🟢♻️ EXECUTE (TDD). Work tickets in dependency order, one vertical slice at a time. ` +
     `The loop drives you ticket-by-ticket with a per-ticket prompt and an independent reviewer ` +
-    `gate; the phase advances automatically once every ticket is reviewer-approved and done.`,
+    `gate; the phase advances automatically once every ticket is reviewer-approved and done. ` +
+    `${MONEY_CRITICAL_PREFLIGHT}`,
   verify:
     `Phase ✅ VERIFICATION. Spawn a fresh, context-isolated independent reviewer; iterate ` +
     `fix → re-review until local validation (tests/lint/build) is green AND the reviewer scores ` +
     `the changed surface ≥ 9.5/10 or reports no actionable findings. Never accept a passing ` +
-    `score while validation is red. GATE — emit after the reviewer passes on green validation:\n` +
+    `score while validation is red. For money/prod/proxy work, the reviewer must reject missing or red preflight evidence. ` +
+    `GATE — emit after the reviewer passes on green validation:\n` +
     `<nikoflow-gate phase="verify">VERIFIED</nikoflow-gate>`,
 };
 
@@ -188,6 +210,7 @@ export function getExecuteTicketPrompt(
     `(keep your context clean). The code is written by a subagent inside a DEDICATED worktree and is ` +
     `quarantined there until QA approves it — nothing lands on the branch unreviewed.\n` +
     `1. Create the ticket worktree once:\n   ${createCmd}\n` +
+    `${MONEY_CRITICAL_PREFLIGHT}\n` +
     `2. Spawn ${execSpawn} whose working directory is "${wtRel}". It does RED→GREEN for this ONE ` +
     `vertical slice (a failing test at a pre-agreed seam → the minimum code to pass) INSIDE that ` +
     `worktree and returns a summary + the diff. Do NOT edit files in the main tree yourself.${pbtLine}\n` +
@@ -237,6 +260,7 @@ export function getVerifyPrompt(
     `✅ VERIFICATION (loop-review, pass ${pass}). First run local validation for the changed ` +
     `surface (tests, typecheck, lint, build) and make it GREEN — the gate must never pass while ` +
     `validation is red.\n` +
+    `${MONEY_CRITICAL_PREFLIGHT}\n` +
     `Then spawn ${renderReviewerSpawn(state.roles?.verifier ?? "fable")} that has NOT seen your ` +
     `reasoning. Give it this request-id and the diff scope. The reviewer inspects the change for ` +
     `correctness, regressions, security, and missing high-value tests, and returns a score from ` +

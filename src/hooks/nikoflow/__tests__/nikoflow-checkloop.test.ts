@@ -23,6 +23,8 @@ function writeTranscript(path: string, text: string): void {
 }
 const gate = (rid: string, depth = "standard") =>
   `<nikoflow-gate phase="depth" depth="${depth}" request-id="${rid}">CONFIRMED</nikoflow-gate>`;
+const interviewGate = (rid: string, mode?: "approval-gated" | "autonomous") =>
+  `<nikoflow-gate phase="interview"${mode ? ` mode="${mode}"` : ""} request-id="${rid}">CONFIRMED</nikoflow-gate>`;
 
 describe("checkNikoflowLoop human-gate enforcement (anti-self-approval)", () => {
   let dir: string;
@@ -76,6 +78,41 @@ describe("checkNikoflowLoop human-gate enforcement (anti-self-approval)", () => 
     const s = readNikoflowState(dir, sid)!;
     expect(s.depth).toBe("standard");
     expect(s.phases).toContain("interview");
+  });
+
+  it("keeps legacy interview gates human-gated when no autonomy mode was selected", async () => {
+    createNikoflowLoopHook(dir).startLoop(sid, "nikoflow:standard build feature");
+    await run(); // mint interview rid
+    const rid = readNikoflowState(dir, sid)!.request_id!;
+    writeTranscript(transcript, interviewGate(rid));
+    await run();
+    const s = readNikoflowState(dir, sid)!;
+    expect(s.phase_index).toBe(0);
+    expect(s.request_id).not.toBe(rid);
+  });
+
+  it("lets autonomous mode advance interview without per-step user approval", async () => {
+    createNikoflowLoopHook(dir).startLoop(sid, "nikoflow:standard build feature --auto");
+    await run(); // mint interview rid
+    const rid = readNikoflowState(dir, sid)!.request_id!;
+    writeTranscript(transcript, interviewGate(rid));
+    await run();
+    const s = readNikoflowState(dir, sid)!;
+    expect(s.autonomy_mode).toBe("autonomous");
+    expect(s.phase_index).toBe(1);
+  });
+
+  it("records autonomy mode chosen on the interview gate", async () => {
+    createNikoflowLoopHook(dir).startLoop(sid, "nikoflow:standard build feature");
+    await run(); // mint interview rid
+    await new Promise((r) => setTimeout(r, 3));
+    recordNikoflowUserPrompt(dir, sid);
+    const rid = readNikoflowState(dir, sid)!.request_id!;
+    writeTranscript(transcript, interviewGate(rid, "autonomous"));
+    await run();
+    const s = readNikoflowState(dir, sid)!;
+    expect(s.autonomy_mode).toBe("autonomous");
+    expect(s.phase_index).toBe(1);
   });
 
   it("stays inactive-safe: no state → returns null (does not block)", async () => {

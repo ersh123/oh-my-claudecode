@@ -69,6 +69,13 @@ describe("nikoflow worktree isolation (TSK-011)", () => {
       expect(p.toLowerCase()).toContain("only after");
       expect(p).toContain("merge --no-ff");
     });
+    it("forces money/prod/proxy preflight before execution side effects", () => {
+      const p = getExecuteTicketPrompt({ id: "TSK-001", title: "t", acceptance: ["a"] }, state(), "rid");
+      expect(p).toContain("Money/prod deploy preflight");
+      expect(p).toContain("prod divergence");
+      expect(p).toContain("proxy/env");
+      expect(p).toContain("STOP and report blockers");
+    });
     it("routes a codex executor through a Codex-backed Task subagent (foreground)", () => {
       const s = state();
       s.roles = { ...NIKOFLOW_DEFAULT_ROLES, executor: "gpt-5.5" };

@@ -55,14 +55,15 @@ import {
   getDepthSelectionPrompt,
   getPhasePrompt,
   setNikoflowDepth,
+  setNikoflowAutonomyMode,
   advanceNikoflowPhase,
+  requiresNikoflowHumanGate,
   mintGateRequest,
   rotateGateRequest,
   clearGateRequest,
   userRepliedAfterMint,
   isNikoflowUserTurnFresh,
   detectNikoflowGate,
-  HUMAN_GATE_PHASES,
   readTickets,
   validateTicketDag,
   lintTicketsFile,
@@ -1415,10 +1416,13 @@ export async function checkNikoflowLoop(
       gateText = '';
     }
     const match = detectNikoflowGate(gateText, { phase: gate, requestId });
-    const isHumanGate = HUMAN_GATE_PHASES.has(gate);
+    const isHumanGate = requiresNikoflowHumanGate(current, gate);
     const humanOk = !isHumanGate || userRepliedAfterMint(current, workingDir, sessionId);
 
     if (match.matched && humanOk) {
+      if (match.autonomy_mode) {
+        setNikoflowAutonomyMode(workingDir, match.autonomy_mode, sessionId);
+      }
       // Gate confirmed by the user, but some gates also need a valid artifact
       // (e.g. tickets.json). If missing/invalid, block with the error instead of
       // advancing, keeping the same request-id so the fixed artifact re-passes.

@@ -65,8 +65,25 @@ describe("nikoflow gate detection (TSK-003)", () => {
   });
 
   it("extracts the confirmed depth for the depth gate", () => {
-    const t = `<nikoflow-gate phase="depth" depth="deep" request-id="${RID}">CONFIRMED</nikoflow-gate>`;
-    expect(detectNikoflowGate(t, { phase: "depth", requestId: RID })).toMatchObject({ matched: true, depth: "deep" });
+    const t = `<nikoflow-gate phase="depth" depth="deep" mode="autonomous" request-id="${RID}">CONFIRMED</nikoflow-gate>`;
+    expect(detectNikoflowGate(t, { phase: "depth", requestId: RID })).toMatchObject({
+      matched: true,
+      depth: "deep",
+      autonomy_mode: "autonomous",
+    });
+  });
+
+  it("extracts the confirmed autonomy mode on non-depth gates", () => {
+    const t = `<nikoflow-gate phase="interview" mode="approval-gated" request-id="${RID}">CONFIRMED</nikoflow-gate>`;
+    expect(detectNikoflowGate(t, { phase: "interview", requestId: RID })).toMatchObject({
+      matched: true,
+      autonomy_mode: "approval-gated",
+    });
+  });
+
+  it("rejects invalid autonomy mode attributes", () => {
+    const t = `<nikoflow-gate phase="interview" mode="sometimes" request-id="${RID}">CONFIRMED</nikoflow-gate>`;
+    expect(detectNikoflowGate(t, { phase: "interview", requestId: RID }).matched).toBe(false);
   });
 
   it("a <nikoflow-blocked> sibling does not swallow a following real gate (audit F1)", () => {

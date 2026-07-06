@@ -18,6 +18,7 @@ export {
 
   // Depth / phase helpers
   detectDepthFlag,
+  detectAutonomyModeFlag,
   stripNikoflowFlags,
   materializePhases,
 
@@ -33,7 +34,9 @@ export {
   getCurrentPhase,
   isNikoflowComplete,
   setNikoflowDepth,
+  setNikoflowAutonomyMode,
   advanceNikoflowPhase,
+  requiresNikoflowHumanGate,
 
   // Gate correlation (TSK-003)
   mintGateRequest,
@@ -55,6 +58,7 @@ export {
 
   // Constants
   NIKOFLOW_DEPTHS,
+  NIKOFLOW_AUTONOMY_MODES,
   NIKOFLOW_PHASES,
   NIKOFLOW_VERIFY_SCORE_THRESHOLD,
   NIKOFLOW_VERIFY_MAX_PASSES,
@@ -63,6 +67,7 @@ export {
 
   // Types
   type NikoflowDepth,
+  type NikoflowAutonomyMode,
   type NikoflowState,
   type NikoflowLoopOptions,
   type NikoflowLoopHook,

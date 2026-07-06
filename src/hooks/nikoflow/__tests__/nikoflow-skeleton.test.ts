@@ -6,6 +6,7 @@ import {
   createNikoflowLoopHook,
   readNikoflowState,
   detectDepthFlag,
+  detectAutonomyModeFlag,
   stripNikoflowFlags,
   materializePhases,
   NIKOFLOW_PHASES,
@@ -32,6 +33,10 @@ describe("nikoflow skeleton (TSK-001)", () => {
       const kws = detectKeywordsWithType("никофлоу почини баг").map((k) => k.type);
       expect(kws).toContain("nikoflow");
     });
+    it("detects spaced and hyphenated cyrillic aliases", () => {
+      expect(detectKeywordsWithType("давай нико флоу почини баг").map((k) => k.type)).toContain("nikoflow");
+      expect(detectKeywordsWithType("давай нико-флоу почини баг").map((k) => k.type)).toContain("nikoflow");
+    });
     it("does not fire on unrelated text", () => {
       const kws = detectKeywordsWithType("just refactor this file").map((k) => k.type);
       expect(kws).not.toContain("nikoflow");
@@ -42,6 +47,9 @@ describe("nikoflow skeleton (TSK-001)", () => {
     it("parses nikoflow:deep", () => {
       expect(detectDepthFlag("nikoflow:deep build the thing")).toBe("deep");
     });
+    it("parses spaced cyrillic alias depth", () => {
+      expect(detectDepthFlag("нико флоу:standard build the thing")).toBe("standard");
+    });
     it("parses --tier=standard", () => {
       expect(detectDepthFlag("do it --tier=standard")).toBe("standard");
     });
@@ -51,8 +59,19 @@ describe("nikoflow skeleton (TSK-001)", () => {
     it("returns null when no depth given", () => {
       expect(detectDepthFlag("just do the work")).toBeNull();
     });
+    it("parses autonomy mode flags and Russian intent", () => {
+      expect(detectAutonomyModeFlag("nikoflow:standard build --auto")).toBe("autonomous");
+      expect(detectAutonomyModeFlag("никофлоу сделай без согласований")).toBe("autonomous");
+      expect(detectAutonomyModeFlag("nikoflow:deep build --approval-gated")).toBe("approval-gated");
+    });
     it("strips control flags from the task text", () => {
       expect(stripNikoflowFlags("nikoflow:deep  build   the parser")).toBe("build the parser");
+    });
+    it("strips autonomy control flags from the task text", () => {
+      expect(stripNikoflowFlags("nikoflow:standard --auto build the parser")).toBe("build the parser");
+    });
+    it("strips spaced cyrillic alias control flags", () => {
+      expect(stripNikoflowFlags("нико флоу:deep  build   the parser")).toBe("build the parser");
     });
   });
 

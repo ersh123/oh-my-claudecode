@@ -118,6 +118,7 @@ describe("nikoflow role → model routing (TSK-010)", () => {
     it("verify prompt uses the verifier role", () => {
       const p = getVerifyPrompt(state({ ...NIKOFLOW_DEFAULT_ROLES, verifier: "opus" }), "rid", 1);
       expect(p).toContain("opus");
+      expect(p).toContain("Money/prod deploy preflight");
     });
     it("grilling prompt mentions the divergent-opinion panel", () => {
       const p = getDepthSelectionPrompt(state(), "rid");
