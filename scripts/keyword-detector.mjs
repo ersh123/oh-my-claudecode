@@ -922,14 +922,14 @@ function activateState(directory, prompt, stateName, sessionId, omcRoot) {
     const _pnRaw = prompt.match(/--panel(?:=|\s+)(\S+)/i); if (_pnRaw && _pnRaw[1]) { const p = _pnRaw[1].toLowerCase().split('+').filter(m => NF_VALID.includes(m)); if (p.length) roles.panel = p; }
     // Depth flag
     let depth = null;
-    const _dc = prompt.match(/nikoflow\s*:\s*(tactical|standard|deep)/i) || prompt.match(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/i);
+    const _dc = prompt.match(/(?:nikoflow|niko[\s-]?flow|нико[\s-]*флоу)\s*:\s*(tactical|standard|deep)/i) || prompt.match(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/i);
     if (_dc) depth = _dc[1].toLowerCase();
     else if (/--deep\b/i.test(prompt)) depth = 'deep';
     else if (/--tactical\b/i.test(prompt)) depth = 'tactical';
     else if (/--standard\b/i.test(prompt)) depth = 'standard';
     // Strip control flags from the stored prompt
     const cleanPrompt = safePrompt
-      .replace(/nikoflow\s*:\s*(tactical|standard|deep)/gi, '')
+      .replace(/(?:nikoflow|niko[\s-]?flow|нико[\s-]*флоу)\s*:\s*(tactical|standard|deep)/gi, '')
       .replace(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/gi, '')
       .replace(/--(?:deep|tactical|standard)\b/gi, '')
       .replace(/--(?:exec|executor|architect|arch|qa|reviewer|verifier|panel)(?:=|\s+)\S+/gi, '')
@@ -1323,7 +1323,7 @@ async function main() {
     }
 
     // Nikoflow keywords (Niko Flow v2.1 phase-gated methodology mode)
-    if (hasActionableKeyword(cleanPrompt, /\b(nikoflow|niko[\s-]?flow|nflow)\b|(никофлоу)/i)) {
+    if (hasActionableKeyword(cleanPrompt, /\b(nikoflow|niko[\s-]?flow|nflow)\b|(нико[\s-]*флоу)/i)) {
       matches.push({ name: 'nikoflow', args: '' });
     }
 

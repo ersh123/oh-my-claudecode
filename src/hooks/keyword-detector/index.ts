@@ -47,7 +47,7 @@ export interface DetectedKeyword {
 const KEYWORD_PATTERNS: Record<KeywordType, RegExp> = {
   cancel: /\b(cancelomc|stopomc)\b/i,
   ralph: /\b(ralph)\b(?!-)|(랄프)(?!로렌)|(ラルフ)(?!・?ローレン)/i,
-  nikoflow: /\b(nikoflow|niko[\s-]?flow|nflow)\b|(никофлоу)/i,
+  nikoflow: /\b(nikoflow|niko[\s-]?flow|nflow)\b|(нико[\s-]*флоу)/i,
   autopilot: /\b(autopilot|auto[\s-]?pilot|fullsend|full\s+auto)\b|(오토파일럿)|(オートパイロット)/i,
   ultrawork: /\b(ultrawork|ulw)\b|(울트라워크)|(ウルトラワーク)/i,
   // Team keyword detection disabled — team mode is now explicit-only via /team skill.

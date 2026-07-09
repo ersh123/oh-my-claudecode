@@ -18,7 +18,7 @@ persistence — plus an explicit methodology dimension.
 
 <Use_When>
 - A change is non-trivial and deserves discipline (new feature, refactor, architectural change).
-- The user says "nikoflow" / "никофлоу", or asks for the full grilling → PRD → tickets → TDD → verify cycle.
+- The user says "nikoflow" / "niko flow" / "никофлоу" / "нико флоу", or asks for the full grilling → PRD → tickets → TDD → verify cycle.
 - You want gates that block premature "done" claims: shared-understanding, seam-confirmed PRD,
   approved ticket breakdown, red-before-green TDD, and independent-reviewer verification.
 </Use_When>

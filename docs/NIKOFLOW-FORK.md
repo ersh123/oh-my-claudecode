@@ -50,7 +50,7 @@ The plugin loads `dist/`, not `src/`. After any TS edit: `npm run build` (behind
    (proves the shared verifier/PRD/registry weren't disturbed and nikoflow still wires up).
 3. Grep the dispatch wire: `grep -n "checkNikoflowLoop(sessionId" src/hooks/persistent-mode/index.ts`
    must still exist inside `resolvePersistentModeBlock`.
-4. `npm run build`, then in a live Claude Code session: type `никофлоу <task>` → the Stop hook
+4. `npm run build`, then in a live Claude Code session: type `никофлоу <task>` or `нико флоу <task>` → the Stop hook
    should block with the depth-selection prompt.
 
 ## Residual risks (soft-enforcement boundary)
@@ -65,5 +65,11 @@ The plugin loads `dist/`, not `src/`. After any TS edit: `npm run build` (behind
 
 ## Rollout
 
-v1 is keyword-only activation (`nikoflow`/`никофлоу`/`nflow`, or `/oh-my-claudecode:nikoflow`) —
+v1 is keyword-only activation (`nikoflow`/`niko flow`/`никофлоу`/`нико флоу`/`nflow`, or `/oh-my-claudecode:nikoflow`) —
 no size-heuristic auto-trigger. Dogfood one Standard-tier task end-to-end before enabling Deep.
+
+## Update Guard
+
+Keep the spaced Russian alias `нико флоу` in both runtime files: `src/hooks/keyword-detector/index.ts`
+and `scripts/keyword-detector.mjs`. The `nikoflow-skeleton` tests lock this so update merges do not
+silently drop the trigger.

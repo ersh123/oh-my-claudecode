@@ -19741,7 +19741,7 @@ function incrementNikoflowIteration(directory, sessionId) {
   return writeNikoflowState(directory, state, sessionId) ? state : null;
 }
 function detectDepthFlag(prompt) {
-  const colon = prompt.match(/nikoflow\s*:\s*(tactical|standard|deep)/i);
+  const colon = prompt.match(/(?:nikoflow|niko[\s-]?flow|нико[\s-]*флоу)\s*:\s*(tactical|standard|deep)/i);
   if (colon) return colon[1].toLowerCase();
   const tier = prompt.match(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/i);
   if (tier) return tier[1].toLowerCase();
@@ -19751,7 +19751,7 @@ function detectDepthFlag(prompt) {
   return null;
 }
 function stripNikoflowFlags(prompt) {
-  return prompt.replace(/nikoflow\s*:\s*(tactical|standard|deep)/gi, "").replace(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/gi, "").replace(/--(?:deep|tactical|standard)\b/gi, "").replace(/--(?:exec|executor|architect|arch|qa|reviewer|verifier|panel)(?:=|\s+)[^\s]+/gi, "").replace(/\s+/g, " ").trim();
+  return prompt.replace(/(?:nikoflow|niko[\s-]?flow|нико[\s-]*флоу)\s*:\s*(tactical|standard|deep)/gi, "").replace(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/gi, "").replace(/--(?:deep|tactical|standard)\b/gi, "").replace(/--(?:exec|executor|architect|arch|qa|reviewer|verifier|panel)(?:=|\s+)[^\s]+/gi, "").replace(/\s+/g, " ").trim();
 }
 function detectRoleFlags(prompt) {
   const out = {};
@@ -84808,7 +84808,7 @@ function isHeavyMode(keywordType) {
 var KEYWORD_PATTERNS = {
   cancel: /\b(cancelomc|stopomc)\b/i,
   ralph: /\b(ralph)\b(?!-)|(랄프)(?!로렌)|(ラルフ)(?!・?ローレン)/i,
-  nikoflow: /\b(nikoflow|niko[\s-]?flow|nflow)\b|(никофлоу)/i,
+  nikoflow: /\b(nikoflow|niko[\s-]?flow|nflow)\b|(нико[\s-]*флоу)/i,
   autopilot: /\b(autopilot|auto[\s-]?pilot|fullsend|full\s+auto)\b|(오토파일럿)|(オートパイロット)/i,
   ultrawork: /\b(ultrawork|ulw)\b|(울트라워크)|(ウルトラワーク)/i,
   // Team keyword detection disabled — team mode is now explicit-only via /team skill.
