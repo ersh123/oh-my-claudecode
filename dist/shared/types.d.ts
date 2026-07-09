@@ -131,6 +131,9 @@ export interface PluginConfig {
         tool?: string;
         onError?: "warn" | "silent" | "fail";
     };
+    keywordDetector?: {
+        disabled?: string[];
+    };
     permissions?: {
         allowBash?: boolean;
         allowEdit?: boolean;
