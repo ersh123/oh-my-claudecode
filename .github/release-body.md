@@ -1,19 +1,17 @@
-# oh-my-claudecode v4.15.2: HUD, hooks, and workflow reliability fixes
+# oh-my-claudecode v4.15.3: keyword, hook, plugin-cache, and TypeScript LSP fixes
 
 ## Release Notes
 
-Patch release focused on default HUD correctness, hook timeout reliability, Windows/path handling, and workflow guardrails since v4.15.1.
+Patch release after v4.15.2 focused on reducing false workflow activation, repairing hook/plugin-cache edge cases, improving HUD payload estimates, and adding native TypeScript 7 LSP support.
 
 ### Highlights
 
-- Fix fresh/default HUD config so the `focused` preset is applied even when `settings.json` has no `omcHud` key (#3400, fixes #3399).
-- Raise and align UserPromptSubmit hook timeout handling so the skill-injector/keyword-detector path fails open before Claude Code discards output (#3398).
-- Respect `OMC_STATE_DIR` for learner skill-session state paths (#3397).
-- Improve slow team worker startup tolerance and HUD rate-limit detection (#3395, #3392).
-- Fix setup legacy hook warnings, keyword detector informational occurrence scanning, quoted keyword exemptions, and Windows hook child-process hiding (#3389, #3386, #3385).
-- Improve HUD/model/currency/cwd behavior and Windows path handling (#3375, #3367, #3360, #3359, #3357).
-- Support Claude Sonnet 5 defaults and correct model-routing counting in indented code blocks (#3370, #3364).
-- Clarify install tracks and update the Discord invite in docs (#3362, #3373).
+- Add native TypeScript 7 server support for LSP workflows (#3405).
+- Add disabled keyword config support and stop Ralph from false-firing on proper nouns / identifiers (#3435).
+- Fix plugin cache self-realpath exclusion and hook prune safety (#3432, #3430).
+- Fix persistent-mode Stop hook watchdog and prompt hook timeout preemption (#3434, #3428).
+- Fix project-memory command harvest, HUD payload estimates after compaction, MiniMax general-plan usage parsing, Thai informational keyword prompts, and multi-line CRLF rule-array parsing (#3426, #3424, #3420, #3410, #3415).
+- Deploy hook libs before entrypoints and mark unmatched subagent stop telemetry correctly (#3407, #3417).
 
 ### Install / Update
 
@@ -22,7 +20,7 @@ The npm CLI and the Claude Code marketplace/plugin are separate install tracks, 
 **CLI / runtime:**
 
 ```bash
-npm install -g oh-my-claude-sisyphus@4.15.2
+npm install -g oh-my-claude-sisyphus@4.15.3
 ```
 
 **Claude Code plugin:**
@@ -31,7 +29,7 @@ npm install -g oh-my-claude-sisyphus@4.15.2
 /plugin marketplace update omc
 ```
 
-**Full Changelog**: https://github.com/Yeachan-Heo/oh-my-claudecode/compare/v4.15.1...v4.15.2
+**Full Changelog**: https://github.com/Yeachan-Heo/oh-my-claudecode/compare/v4.15.2...v4.15.3
 
 ## Contributors
 
