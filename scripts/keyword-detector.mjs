@@ -26,7 +26,7 @@
 import { writeFileSync, readFileSync, mkdirSync, existsSync, unlinkSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { join, dirname } from 'path';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import { getClaudeConfigDir } from './lib/config-dir.mjs';
 import { atomicWriteFileSync } from './lib/atomic-write.mjs';
@@ -1184,6 +1184,12 @@ function activateState(directory, prompt, stateName, sessionId, omcRoot) {
     };
   }
 
+  // Record the root nikoflow state is about to land in so a later cancel can
+  // sweep it even when the session cwd has wandered to a different .omc root.
+  if (stateName === 'nikoflow') {
+    registerNikoflowRoot(_omcRoot);
+  }
+
   // Write to session-scoped path if sessionId available. Use atomic writes
   // so that concurrent hook processes cannot expose half-written JSON to
   // persistent-mode.mjs's readJsonFile (which would otherwise return null
@@ -1239,6 +1245,55 @@ function activateRalplanStartupState(directory, prompt, sessionId, omcRoot) {
 /**
  * Clear state files for cancel operation
  */
+// Nikoflow state lands in whichever .omc root the session cwd resolved to at
+// activation time. If the cwd later wanders (cd for clones etc.), cancel from
+// another directory cannot find that file and the stale state re-blocks Stop
+// for days. The registry records every root nikoflow ever activated in, so
+// cancel can sweep them all. Global path — always reachable regardless of cwd.
+function nikoflowRootsRegistryPath() {
+  // Env override keeps tests off the real per-user registry. Under
+  // NODE_ENV=test the default also moves to tmp. Must mirror
+  // nikoflowRootsRegistryPath in src/hooks/nikoflow/loop.ts.
+  if (process.env.OMC_NIKOFLOW_ROOTS_FILE) return process.env.OMC_NIKOFLOW_ROOTS_FILE;
+  if (process.env.NODE_ENV === 'test') return join(tmpdir(), 'nikoflow-roots-test.json');
+  return join(homedir(), '.omc', 'state', 'nikoflow-roots.json');
+}
+
+function registerNikoflowRoot(omcRoot) {
+  try {
+    const registry = nikoflowRootsRegistryPath();
+    let roots = [];
+    if (existsSync(registry)) {
+      const parsed = JSON.parse(readFileSync(registry, 'utf-8'));
+      if (Array.isArray(parsed?.roots)) roots = parsed.roots.filter((r) => typeof r === 'string');
+    }
+    if (!roots.includes(omcRoot)) {
+      roots.push(omcRoot);
+      // Bounded: keep the most recent roots only.
+      if (roots.length > 20) roots = roots.slice(-20);
+      writeFileSync(registry, JSON.stringify({ roots }, null, 2));
+    }
+  } catch { /* registry is best-effort — never block activation */ }
+}
+
+function sweepNikoflowRoots(sessionId) {
+  try {
+    const registry = nikoflowRootsRegistryPath();
+    if (!existsSync(registry)) return;
+    const parsed = JSON.parse(readFileSync(registry, 'utf-8'));
+    const roots = Array.isArray(parsed?.roots) ? parsed.roots.filter((r) => typeof r === 'string') : [];
+    const names = ['nikoflow-state.json', 'nikoflow-userturn-state.json', 'nikoflow-tickets-state.json'];
+    for (const root of roots) {
+      for (const name of names) {
+        try { const p = join(root, 'state', name); if (existsSync(p)) unlinkSync(p); } catch {}
+        if (sessionId && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(sessionId)) {
+          try { const p = join(root, 'state', 'sessions', sessionId, name); if (existsSync(p)) unlinkSync(p); } catch {}
+        }
+      }
+    }
+  } catch { /* best-effort sweep */ }
+}
+
 function clearStateFiles(directory, modeNames, sessionId, omcRoot) {
   const _omcRoot = omcRoot;
   for (const name of modeNames) {
@@ -1251,6 +1306,10 @@ function clearStateFiles(directory, modeNames, sessionId, omcRoot) {
       const sessionPath = join(_omcRoot, 'state', 'sessions', sessionId, `${name}-state.json`);
       try { if (existsSync(sessionPath)) unlinkSync(sessionPath); } catch {}
     }
+  }
+  // Nikoflow additionally sweeps every registered root (cwd-wander hazard).
+  if (modeNames.includes('nikoflow')) {
+    sweepNikoflowRoots(sessionId);
   }
 }
 

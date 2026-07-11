@@ -11,14 +11,16 @@
  */
 
 import { randomUUID } from "crypto";
-import { existsSync, readFileSync, unlinkSync } from "fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import { homedir, tmpdir } from "os";
+import { join } from "path";
 import {
   writeModeState,
   readModeState,
   clearModeStateFile,
 } from "../../lib/mode-state-io.js";
 import { atomicWriteJsonSync } from "../../lib/atomic-write.js";
-import { resolveSessionStatePath } from "../../lib/worktree-paths.js";
+import { resolveSessionStatePath, getOmcRoot } from "../../lib/worktree-paths.js";
 import { clearTickets } from "./tickets.js";
 
 export const NIKOFLOW_DEPTHS = ["tactical", "standard", "deep"] as const;
@@ -550,6 +552,71 @@ export function resetExecuteStall(directory: string, sessionId?: string): void {
   }
 }
 
+/**
+ * Nikoflow state lands in whichever .omc root the session cwd resolved to at
+ * activation. If the cwd later wanders, a cancel issued from another directory
+ * cannot find that file and the stale state re-blocks Stop for days (observed
+ * live 2026-07-11). The registry records every activation root so cancel can
+ * sweep them all. Must mirror the registry in scripts/keyword-detector.mjs.
+ */
+function nikoflowRootsRegistryPath(): string {
+  // Env override keeps tests off the real per-user registry (and lets them
+  // assert sweep behavior against a temp file). Under NODE_ENV=test the
+  // default also moves to tmp so hundreds of startLoop-calling unit tests
+  // can't churn (or evict entries from) the real registry.
+  if (process.env.OMC_NIKOFLOW_ROOTS_FILE) return process.env.OMC_NIKOFLOW_ROOTS_FILE;
+  if (process.env.NODE_ENV === "test") return join(tmpdir(), "nikoflow-roots-test.json");
+  return join(homedir(), ".omc", "state", "nikoflow-roots.json");
+}
+
+export function registerNikoflowRoot(omcRoot: string): void {
+  try {
+    const registry = nikoflowRootsRegistryPath();
+    let roots: string[] = [];
+    if (existsSync(registry)) {
+      const parsed = JSON.parse(readFileSync(registry, "utf-8")) as { roots?: unknown };
+      if (Array.isArray(parsed?.roots)) {
+        roots = parsed.roots.filter((r): r is string => typeof r === "string");
+      }
+    }
+    if (!roots.includes(omcRoot)) {
+      roots.push(omcRoot);
+      if (roots.length > 20) roots = roots.slice(-20);
+      writeFileSync(registry, JSON.stringify({ roots }, null, 2));
+    }
+  } catch {
+    /* registry is best-effort — never block activation */
+  }
+}
+
+export function sweepNikoflowRoots(sessionId?: string): void {
+  try {
+    const registry = nikoflowRootsRegistryPath();
+    if (!existsSync(registry)) return;
+    const parsed = JSON.parse(readFileSync(registry, "utf-8")) as { roots?: unknown };
+    const roots = Array.isArray(parsed?.roots)
+      ? parsed.roots.filter((r): r is string => typeof r === "string")
+      : [];
+    const names = ["nikoflow-state.json", "nikoflow-userturn-state.json", "nikoflow-tickets-state.json"];
+    for (const root of roots) {
+      for (const name of names) {
+        try {
+          const p = join(root, "state", name);
+          if (existsSync(p)) unlinkSync(p);
+        } catch { /* best-effort */ }
+        if (sessionId && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(sessionId)) {
+          try {
+            const p = join(root, "state", "sessions", sessionId, name);
+            if (existsSync(p)) unlinkSync(p);
+          } catch { /* best-effort */ }
+        }
+      }
+    }
+  } catch {
+    /* best-effort sweep */
+  }
+}
+
 const USER_TURN_KEY = "nikoflow-userturn";
 
 function userTurnPath(directory: string, sessionId?: string): string | null {
@@ -678,6 +745,11 @@ export function createNikoflowLoopHook(directory: string): NikoflowLoopHook {
       roles: resolveRoles(detectRoleFlags(prompt)),
     };
 
+    // Record the root this state lands in so a later cancel can sweep it even
+    // when the session cwd has wandered to a different .omc root.
+    try {
+      registerNikoflowRoot(getOmcRoot(directory));
+    } catch { /* best-effort */ }
     return writeNikoflowState(directory, state, sessionId);
   };
 
@@ -689,7 +761,10 @@ export function createNikoflowLoopHook(directory: string): NikoflowLoopHook {
     // Drop the ticket DAG too — a later flow in the same session must never
     // adopt this run's tickets (stale-restart hazard, audit F-09).
     clearTickets(directory, sessionId);
-    return clearNikoflowState(directory, sessionId);
+    const cleared = clearNikoflowState(directory, sessionId);
+    // Sweep every root this session ever activated in (cwd-wander hazard).
+    sweepNikoflowRoots(sessionId);
+    return cleared;
   };
 
   const getState = (sessionId?: string): NikoflowState | null => {

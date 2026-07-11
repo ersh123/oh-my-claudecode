@@ -24,11 +24,15 @@ const NODE = process.execPath;
 
 let runCounter = 0;
 
-function runHook(scriptPath: string, payload: Record<string, unknown>): string {
+function runHook(
+  scriptPath: string,
+  payload: Record<string, unknown>,
+  extraEnv: Record<string, string> = {},
+): string {
   // Strip external kill-switches, not just override: a parent shell running
   // with DISABLE_OMC=1 (e.g. a codex/QA session) otherwise makes every live
   // activation test silently inert (QA-T1).
-  const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'test', OMC_SKIP_HOOKS: '' };
+  const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'test', OMC_SKIP_HOOKS: '', ...extraEnv };
   delete env.DISABLE_OMC;
   delete env.DISABLE_OMX;
   delete env.OMX_SKIP_HOOKS;
@@ -151,6 +155,42 @@ describe('nikoflow live activation parity with the TS engine (autonomy/depth/rol
       }
     });
   }
+});
+
+describe('nikoflow cancel sweeps every registered root (cwd-wander hazard)', () => {
+  it('cancelomc issued from a different cwd removes state written under another .omc root', () => {
+    const registry = join(mkdtempSync(join(tmpdir(), 'nikoflow-registry-')), 'roots.json');
+    const env = { OMC_NIKOFLOW_ROOTS_FILE: registry };
+    const sessionId = `nikoflow-sweep-${runCounter++}`;
+
+    // Activate in root A.
+    const rootA = mkdtempSync(join(tmpdir(), 'nikoflow-rootA-'));
+    execFileSync('git', ['init', '-q'], { cwd: rootA, timeout: 10000 });
+    runHook(KEYWORD_SCRIPT, {
+      hook_event_name: 'UserPromptSubmit',
+      cwd: rootA,
+      session_id: sessionId,
+      prompt: 'Run nikoflow on this repository.',
+    }, env);
+    const statePath = join(rootA, '.omc', 'state', 'sessions', sessionId, 'nikoflow-state.json');
+    expect(existsSync(statePath), 'activation must write state under root A').toBe(true);
+
+    // Cancel from root B — previously this left root A state alive for days.
+    const rootB = mkdtempSync(join(tmpdir(), 'nikoflow-rootB-'));
+    execFileSync('git', ['init', '-q'], { cwd: rootB, timeout: 10000 });
+    runHook(KEYWORD_SCRIPT, {
+      hook_event_name: 'UserPromptSubmit',
+      cwd: rootB,
+      session_id: sessionId,
+      prompt: 'cancelomc',
+    }, env);
+    try {
+      expect(existsSync(statePath), 'sweep must remove root A state').toBe(false);
+    } finally {
+      rmSync(rootA, { recursive: true, force: true });
+      rmSync(rootB, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('nikoflow live Stop wiring (persistent-mode.mjs)', () => {
