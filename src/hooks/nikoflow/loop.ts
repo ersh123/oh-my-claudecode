@@ -154,6 +154,27 @@ export const NIKOFLOW_EXECUTE_MAX_STALL = 15;
  *  progress (review F1: the cap alone only escalated the message text). */
 export const NIKOFLOW_EXECUTE_ABORT_STALL = NIKOFLOW_EXECUTE_MAX_STALL * 2;
 
+/*
+ * Pure in-memory mutator cores (perf F1).
+ *
+ * Each `xxxIn(state, ...)` mutates the PASSED state object and returns the same
+ * value shape as its disk counterpart. The exported disk functions below become
+ * `read → xxxIn → write` wrappers with UNCHANGED signatures (direct test calls
+ * and any external callers keep working), while the Stop-hook orchestrator in
+ * persistent-mode/index.ts threads ONE mutable state object through the whole
+ * Stop and flushes it once — instead of a read-modify-write per mutator.
+ *
+ * Rotation-safety (Fable QA R2): with a single in-memory object the verify
+ * sequence recordVerifyPassIn → rotateGateRequestIn persists post-rotation
+ * state atomically; the only way to resurrect a rotated request-id would be a
+ * stale re-read, which the orchestrator forbids inside ctx-threaded code.
+ */
+
+/** Pure core of deactivateNikoflowLoop. */
+export function deactivateIn(state: NikoflowState): void {
+  state.active = false;
+}
+
 /** Deactivate the loop in place (state survives for post-mortem; the next Stop
  *  passes through). Used by the hard-abort guard, not by user cancel. */
 export function deactivateNikoflowLoop(
@@ -162,7 +183,7 @@ export function deactivateNikoflowLoop(
 ): boolean {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return false;
-  state.active = false;
+  deactivateIn(state);
   return writeNikoflowState(directory, state, sessionId);
 }
 
@@ -235,6 +256,13 @@ export function clearNikoflowState(
   return clearModeStateFile(MODE, directory, sessionId);
 }
 
+/** Pure core of incrementNikoflowIteration: bumps `iteration`, stamps
+ *  `last_checked_at` (keeps the stale-timer refresh semantics). */
+export function incrementIterationIn(state: NikoflowState): void {
+  state.iteration += 1;
+  state.last_checked_at = new Date().toISOString();
+}
+
 /** Increment the Nikoflow iteration counter. */
 export function incrementNikoflowIteration(
   directory: string,
@@ -244,8 +272,7 @@ export function incrementNikoflowIteration(
   if (!state || !state.active) {
     return null;
   }
-  state.iteration += 1;
-  state.last_checked_at = new Date().toISOString();
+  incrementIterationIn(state);
   return writeNikoflowState(directory, state, sessionId) ? state : null;
 }
 
@@ -374,6 +401,18 @@ export function isNikoflowComplete(state: NikoflowState): boolean {
  * invalidate already-passed gates, so callers must cancel + restart instead.
  * Returns false if the change is rejected.
  */
+/** Pure core of setNikoflowDepth (keeps the phase_index>0 immutability guard).
+ *  Returns false when the change is rejected (state untouched). */
+export function setDepthIn(state: NikoflowState, depth: NikoflowDepth): boolean {
+  // Immutable after the flow has moved past depth selection.
+  if (state.depth && state.phase_index > 0) return false;
+  state.depth = depth;
+  state.phases = materializePhases(depth);
+  state.phase_index = 0;
+  state.pbt_enabled = depth === "deep";
+  return true;
+}
+
 export function setNikoflowDepth(
   directory: string,
   depth: NikoflowDepth,
@@ -381,15 +420,16 @@ export function setNikoflowDepth(
 ): boolean {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return false;
-
-  // Immutable after the flow has moved past depth selection.
-  if (state.depth && state.phase_index > 0) return false;
-
-  state.depth = depth;
-  state.phases = materializePhases(depth);
-  state.phase_index = 0;
-  state.pbt_enabled = depth === "deep";
+  if (!setDepthIn(state, depth)) return false;
   return writeNikoflowState(directory, state, sessionId);
+}
+
+/** Pure core of setNikoflowAutonomyMode. */
+export function setAutonomyModeIn(
+  state: NikoflowState,
+  autonomyMode: NikoflowAutonomyMode,
+): void {
+  state.autonomy_mode = autonomyMode;
 }
 
 export function setNikoflowAutonomyMode(
@@ -399,7 +439,7 @@ export function setNikoflowAutonomyMode(
 ): boolean {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return false;
-  state.autonomy_mode = autonomyMode;
+  setAutonomyModeIn(state, autonomyMode);
   return writeNikoflowState(directory, state, sessionId);
 }
 
@@ -415,9 +455,17 @@ export function recordNikoflowCoverageIds(
 ): boolean {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return false;
+  recordCoverageIdsIn(state, ids);
+  return writeNikoflowState(directory, state, sessionId);
+}
+
+/** Pure core of recordNikoflowCoverageIds. */
+export function recordCoverageIdsIn(
+  state: NikoflowState,
+  ids: { stories?: string[]; decisions?: string[] },
+): void {
   if (ids.stories !== undefined) state.prd_story_ids = ids.stories;
   if (ids.decisions !== undefined) state.adr_decision_ids = ids.decisions;
-  return writeNikoflowState(directory, state, sessionId);
 }
 
 export function requiresNikoflowHumanGate(
@@ -442,6 +490,19 @@ export function advanceNikoflowPhase(
   if (!state || !state.active || !state.depth || state.phases.length === 0) {
     return null;
   }
+  // Past-end returns without mutating — skip the write (idempotence preserved).
+  const wasPastEnd = state.phase_index >= state.phases.length;
+  const result = advancePhaseIn(state);
+  if (!result) return null;
+  if (!wasPastEnd && !writeNikoflowState(directory, state, sessionId)) return null;
+  return result;
+}
+
+/** Pure core of advanceNikoflowPhase (keeps the past-end idempotence guard). */
+export function advancePhaseIn(
+  state: NikoflowState,
+): { phase: string | null; complete: boolean } | null {
+  if (!state.depth || state.phases.length === 0) return null;
 
   // Idempotent past the end: a re-fired gate detector must not drift the index.
   if (state.phase_index >= state.phases.length) {
@@ -450,8 +511,6 @@ export function advanceNikoflowPhase(
 
   state.phase_index += 1;
   const complete = state.phase_index >= state.phases.length;
-  if (!writeNikoflowState(directory, state, sessionId)) return null;
-
   return {
     phase: complete ? null : state.phases[state.phase_index],
     complete,
@@ -471,15 +530,22 @@ export function mintGateRequest(
 ): string | null {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return null;
+  // Same-gate stability needs no write; a fresh mint must persist.
+  const stable = state.awaiting_gate === gate && !!state.request_id;
+  const rid = mintGateRequestIn(state, gate);
+  if (stable) return rid;
+  return writeNikoflowState(directory, state, sessionId) ? rid : null;
+}
 
+/** Pure core of mintGateRequest (keeps same-gate id stability). */
+export function mintGateRequestIn(state: NikoflowState, gate: string): string {
   if (state.awaiting_gate === gate && state.request_id) {
     return state.request_id;
   }
-
   state.request_id = randomUUID();
   state.awaiting_gate = gate;
   state.gate_request_minted_at = new Date().toISOString();
-  return writeNikoflowState(directory, state, sessionId) ? state.request_id : null;
+  return state.request_id;
 }
 
 /**
@@ -495,10 +561,16 @@ export function rotateGateRequest(
 ): string | null {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return null;
+  const rid = rotateGateRequestIn(state, gate);
+  return writeNikoflowState(directory, state, sessionId) ? rid : null;
+}
+
+/** Pure core of rotateGateRequest: always mints a fresh id for `gate`. */
+export function rotateGateRequestIn(state: NikoflowState, gate: string): string {
   state.request_id = randomUUID();
   state.awaiting_gate = gate;
   state.gate_request_minted_at = new Date().toISOString();
-  return writeNikoflowState(directory, state, sessionId) ? state.request_id : null;
+  return state.request_id;
 }
 
 /** Clear the current gate correlation (after a gate passes). */
@@ -508,11 +580,16 @@ export function clearGateRequest(
 ): boolean {
   const state = readNikoflowState(directory, sessionId);
   if (!state) return false;
+  clearGateRequestIn(state);
+  return writeNikoflowState(directory, state, sessionId);
+}
+
+/** Pure core of clearGateRequest. */
+export function clearGateRequestIn(state: NikoflowState): void {
   delete state.request_id;
   delete state.awaiting_gate;
   delete state.gate_request_minted_at;
   delete state.rid_mismatch;
-  return writeNikoflowState(directory, state, sessionId);
 }
 
 /** Count a Stop where the gate tag matched phase+payload but its request-id was
@@ -523,8 +600,14 @@ export function bumpNikoflowRidMismatch(
 ): number {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return 0;
-  state.rid_mismatch = (state.rid_mismatch ?? 0) + 1;
+  const count = bumpRidMismatchIn(state);
   writeNikoflowState(directory, state, sessionId);
+  return count;
+}
+
+/** Pure core of bumpNikoflowRidMismatch. */
+export function bumpRidMismatchIn(state: NikoflowState): number {
+  state.rid_mismatch = (state.rid_mismatch ?? 0) + 1;
   return state.rid_mismatch;
 }
 
@@ -538,6 +621,16 @@ export function recordVerifyPass(
 ): number {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return 0;
+  const passes = recordVerifyPassIn(state, verdict);
+  writeNikoflowState(directory, state, sessionId);
+  return passes;
+}
+
+/** Pure core of recordVerifyPass (keeps the verify_no_verdict = 0 reset). */
+export function recordVerifyPassIn(
+  state: NikoflowState,
+  verdict?: { score?: number; payload?: string },
+): number {
   state.verify_pass = (state.verify_pass ?? 0) + 1;
   state.verify_no_verdict = 0; // a verdict was seen → reset the livelock guard
   if (verdict?.payload) {
@@ -547,7 +640,6 @@ export function recordVerifyPass(
       at: new Date().toISOString(),
     };
   }
-  writeNikoflowState(directory, state, sessionId);
   return state.verify_pass;
 }
 
@@ -556,8 +648,14 @@ export function recordVerifyPass(
 export function bumpVerifyNoVerdict(directory: string, sessionId?: string): number {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return 0;
-  state.verify_no_verdict = (state.verify_no_verdict ?? 0) + 1;
+  const count = bumpVerifyNoVerdictIn(state);
   writeNikoflowState(directory, state, sessionId);
+  return count;
+}
+
+/** Pure core of bumpVerifyNoVerdict. */
+export function bumpVerifyNoVerdictIn(state: NikoflowState): number {
+  state.verify_no_verdict = (state.verify_no_verdict ?? 0) + 1;
   return state.verify_no_verdict;
 }
 
@@ -565,8 +663,13 @@ export function bumpVerifyNoVerdict(directory: string, sessionId?: string): numb
 export function resetVerifyNoVerdict(directory: string, sessionId?: string): void {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active || !state.verify_no_verdict) return;
-  state.verify_no_verdict = 0;
+  resetVerifyNoVerdictIn(state);
   writeNikoflowState(directory, state, sessionId);
+}
+
+/** Pure core of resetVerifyNoVerdict. */
+export function resetVerifyNoVerdictIn(state: NikoflowState): void {
+  state.verify_no_verdict = 0;
 }
 
 /** Count an execute Stop that made no progress on `ticketId` (no reviewer verdict).
@@ -578,13 +681,19 @@ export function bumpExecuteStall(
 ): number {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return 0;
+  const count = bumpExecuteStallIn(state, ticketId);
+  writeNikoflowState(directory, state, sessionId);
+  return count;
+}
+
+/** Pure core of bumpExecuteStall (keeps the ticket-change reset). */
+export function bumpExecuteStallIn(state: NikoflowState, ticketId: string): number {
   if (state.execute_stall_ticket !== ticketId) {
     state.execute_stall_ticket = ticketId;
     state.execute_stall = 1;
   } else {
     state.execute_stall = (state.execute_stall ?? 0) + 1;
   }
-  writeNikoflowState(directory, state, sessionId);
   return state.execute_stall;
 }
 
@@ -593,10 +702,15 @@ export function resetExecuteStall(directory: string, sessionId?: string): void {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return;
   if (state.execute_stall || state.execute_stall_ticket) {
-    delete state.execute_stall;
-    delete state.execute_stall_ticket;
+    resetExecuteStallIn(state);
     writeNikoflowState(directory, state, sessionId);
   }
+}
+
+/** Pure core of resetExecuteStall. */
+export function resetExecuteStallIn(state: NikoflowState): void {
+  delete state.execute_stall;
+  delete state.execute_stall_ticket;
 }
 
 /**

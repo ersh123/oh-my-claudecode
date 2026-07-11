@@ -2,9 +2,11 @@
  * TDD-evidence gate precondition: a reviewer-approved TICKET_DONE is accepted
  * only when the ticket carries complete evidence.tdd (red/green runs or a
  * waiver). Evidence is model-written — the hook checks shape/ordering only
- * (anti-sloppiness, not anti-forgery); the request-id is deliberately KEPT on
- * evidence failure so the in-transcript reviewer approval re-matches once
- * evidence lands.
+ * (anti-sloppiness, not anti-forgery); the reviewer is the honesty cross-check.
+ * That cross-check only exists when the reviewer ran AFTER the evidence was
+ * recorded, so an approval that arrives without valid evidence ROTATES the
+ * request-id: backfilled evidence (especially a waiver, which lintTddEvidence
+ * accepts unconditionally) needs a FRESH reviewer approval to proceed.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
@@ -100,31 +102,53 @@ describe("nikoflow execute TDD-evidence gate", () => {
     ));
   };
 
-  it("rejects an approved TICKET_DONE without evidence.tdd, keeps the request-id, bumps stall", () => {
+  it("rejects an approved TICKET_DONE without evidence.tdd, ROTATES the request-id, bumps stall", () => {
     run(); // mint rid
     approve();
     const before = readNikoflowState(dir, sid)!;
     const r = run();
     expect(readTickets(dir, sid)!.tickets[0].status).toBe("todo");
     expect(r.message).toContain("evidence.tdd");
+    expect(r.message).toContain("FRESH reviewer");
     const after = readNikoflowState(dir, sid)!;
-    expect(after.request_id).toBe(before.request_id); // NOT rotated
+    // Rotated: evidence backfilled from here on postdates the reviewer run,
+    // so the stale in-transcript approval must not re-match against it.
+    expect(after.request_id).not.toBe(before.request_id);
     expect(after.execute_stall ?? 0).toBeGreaterThan(before.execute_stall ?? 0);
   });
 
-  it("advances once valid evidence.tdd is recorded (same reviewer approval re-matches)", () => {
+  it("backfilled evidence needs a FRESH reviewer approval (stale approval no longer re-matches)", () => {
     run();
     approve();
-    run(); // blocked on evidence
+    run(); // blocked on evidence → rid rotated
     setTdd(VALID_TDD);
-    run(); // same transcript, evidence now valid → accept
+    run(); // old approval carries the stale rid → still not done
+    expect(readTickets(dir, sid)!.tickets[0].status).toBe("todo");
+    approve(); // fresh reviewer approval under the rotated rid
+    run();
     expect(readTickets(dir, sid)!.tickets[0].status).toBe("done");
   });
 
-  it("advances with a valid waiver", () => {
+  it("a waiver backfilled after the approval does NOT complete under that approval", () => {
+    // The forgery the rotation closes: reviewer approves (no evidence existed
+    // for it to cross-check) → hook blocks → model writes waived:{reason} →
+    // the old approval must NOT re-match, or the waiver reaches done without
+    // any reviewer ever seeing it.
     run();
     approve();
+    run(); // blocked on evidence → rid rotated
+    setTdd({ waived: { reason: "n/a" } });
+    run();
+    expect(readTickets(dir, sid)!.tickets[0].status).toBe("todo");
+    approve(); // only a FRESH reviewer (who can inspect the waiver) unlocks it
+    run();
+    expect(readTickets(dir, sid)!.tickets[0].status).toBe("done");
+  });
+
+  it("advances with a valid waiver recorded before the reviewer ran", () => {
+    run();
     setTdd({ waived: { reason: "docs-only ticket, no runtime surface" } });
+    approve();
     run();
     expect(readTickets(dir, sid)!.tickets[0].status).toBe("done");
   });

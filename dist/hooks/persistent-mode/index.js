@@ -20,7 +20,7 @@ import { readUltraworkState, writeUltraworkState, incrementReinforcement, deacti
 import { resolveToWorktreeRoot, resolveSessionStatePath, resolveStatePath, getOmcRoot } from '../../lib/worktree-paths.js';
 import { readModeState, writeModeState } from '../../lib/mode-state-io.js';
 import { readRalphState, writeRalphState, incrementRalphIteration, clearRalphState, findPrdPath, getPrdCompletionStatus, getRalphContext, getStory, markStoryIncomplete, markStoryArchitectVerified, readVerificationState, startVerification, recordArchitectFeedback, getArchitectVerificationPrompt, getArchitectRejectionContinuationPrompt, detectArchitectApproval, detectArchitectRejection, clearVerificationState, } from '../ralph/index.js';
-import { readNikoflowState, writeNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, setNikoflowAutonomyMode, recordNikoflowCoverageIds, advanceNikoflowPhase, requiresNikoflowHumanGate, mintGateRequest, rotateGateRequest, clearGateRequest, bumpNikoflowRidMismatch, userRepliedAfterMint, isNikoflowUserTurnFresh, detectNikoflowGate, matchNikoflowReviewerVerdict, readTickets, validateTicketDag, validateTicketCoverage, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, lintTddEvidence, getExecuteTicketPrompt, getVerifyPrompt, renderNikoflowResumeHeader, ticketWorktreeBranch, ticketWorktreeMergeCmd, pbtObligation, recordVerifyPass, bumpVerifyNoVerdict, resetVerifyNoVerdict, bumpExecuteStall, resetExecuteStall, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, NIKOFLOW_EXECUTE_ABORT_STALL, deactivateNikoflowLoop, readTaskBoardTasks, readTaskmapSidecar, writeTaskmapSidecar, computeTaskBoardDrift, } from '../nikoflow/index.js';
+import { readNikoflowState, writeNikoflowState, incrementIterationIn, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setDepthIn, setAutonomyModeIn, recordCoverageIdsIn, advancePhaseIn, requiresNikoflowHumanGate, mintGateRequestIn, rotateGateRequestIn, clearGateRequestIn, bumpRidMismatchIn, userRepliedAfterMint, isNikoflowUserTurnFresh, detectNikoflowGate, matchNikoflowReviewerVerdict, readTickets, validateTicketDag, validateTicketCoverage, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, lintTddEvidence, getExecuteTicketPrompt, getVerifyPrompt, renderNikoflowResumeHeader, ticketWorktreeBranch, ticketWorktreeMergeCmd, pbtObligation, recordVerifyPassIn, bumpVerifyNoVerdictIn, resetVerifyNoVerdictIn, bumpExecuteStallIn, resetExecuteStallIn, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, NIKOFLOW_EXECUTE_ABORT_STALL, deactivateIn, readTaskBoardTasks, readTaskmapSidecar, writeTaskmapSidecar, computeTaskBoardDrift, } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
 import { isAutopilotActive } from '../autopilot/index.js';
@@ -907,6 +907,14 @@ function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expected
     }
     return { matched: false };
 }
+function flushNikoflowCtx(ctx) {
+    if (!ctx.dirty)
+        return true;
+    const ok = writeNikoflowState(ctx.workingDir, ctx.state, ctx.sessionId);
+    if (ok)
+        ctx.dirty = false;
+    return ok;
+}
 function nikoflowCompleteResult(iteration) {
     return {
         shouldBlock: true,
@@ -963,14 +971,16 @@ function nikoflowExecuteError(current, error) {
     };
 }
 /** Advance out of execute → verify (or complete) and emit the next prompt. */
-function nikoflowAdvanceFromExecute(workingDir, sessionId, current) {
-    advanceNikoflowPhase(workingDir, sessionId);
-    clearGateRequest(workingDir, sessionId);
-    const next = readNikoflowState(workingDir, sessionId) ?? current;
+function nikoflowAdvanceFromExecute(ctx) {
+    const { workingDir, sessionId } = ctx;
+    advancePhaseIn(ctx.state);
+    clearGateRequestIn(ctx.state);
+    ctx.dirty = true;
+    const next = ctx.state;
     if (isNikoflowComplete(next))
         return nikoflowCompleteResult(next.iteration);
     const nextPhase = getCurrentPhase(next);
-    const nextRid = mintGateRequest(workingDir, nextPhase ?? 'depth', sessionId) ?? undefined;
+    const nextRid = mintGateRequestIn(next, nextPhase ?? 'depth');
     // Verify needs its score-bearing loop-review prompt, not the generic phase body.
     if (nextPhase === 'verify') {
         return appendNikoflowTaskBoardLine({ shouldBlock: true, message: getVerifyPrompt(next, nextRid, (next.verify_pass ?? 0) + 1), mode: 'nikoflow' }, workingDir, sessionId, next);
@@ -1016,10 +1026,15 @@ function gitIsAncestorOfHead(directory, sha) {
  * itself — this Stop is blocked once with a final explanation; the next Stop
  * passes through because the state is inactive (review F1).
  */
-function nikoflowHardAbort(workingDir, sessionId, current, ticketId, stall) {
+function nikoflowHardAbort(ctx, ticketId, stall) {
+    const current = ctx.state;
     // Deactivation is a state WRITE and can fail (read-only dir, disk). Never
-    // claim a terminal state that was not persisted (QA-M3).
-    const deactivated = deactivateNikoflowLoop(workingDir, sessionId);
+    // claim a terminal state that was not persisted (QA-M3) — so this rare
+    // terminal path flushes IMMEDIATELY and composes the message from the
+    // flush result. After it, ctx is clean; the end-of-Stop flush is a no-op.
+    deactivateIn(ctx.state);
+    ctx.dirty = true;
+    const deactivated = flushNikoflowCtx(ctx);
     const stateNote = deactivated
         ? `The loop has deactivated itself so the session is not wedged.`
         : `DEACTIVATION FAILED (state not writable) — the loop may keep blocking; ` +
@@ -1034,16 +1049,19 @@ function nikoflowHardAbort(workingDir, sessionId, current, ticketId, stall) {
     };
 }
 /** Advance past a completed ticket: next ticket prompt, or verify/complete. */
-function nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt) {
-    clearGateRequest(workingDir, sessionId);
-    resetExecuteStall(workingDir, sessionId); // a ticket advanced → clear stall guard
+function nikoflowProceedAfterTicketDone(ctx, pbt) {
+    const { workingDir, sessionId } = ctx;
+    const current = ctx.state;
+    clearGateRequestIn(ctx.state);
+    resetExecuteStallIn(ctx.state); // a ticket advanced → clear stall guard
+    ctx.dirty = true;
     const after = readTickets(workingDir, sessionId);
     if (!after || allTicketsDone(after)) {
-        return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
+        return nikoflowAdvanceFromExecute(ctx);
     }
     const nextTicket = getNextTicket(after);
     if (nextTicket) {
-        const nrid = mintGateRequest(workingDir, `execute:${nextTicket.id}`, sessionId) ?? undefined;
+        const nrid = mintGateRequestIn(ctx.state, `execute:${nextTicket.id}`);
         return appendNikoflowTaskBoardLine({ shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid, pbt), mode: 'nikoflow' }, workingDir, sessionId, current);
     }
     // Completed a ticket but nothing is startable and not all done → deadlock.
@@ -1056,14 +1074,27 @@ function nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt) {
  * error (never silent completion) — per TSK-004 carry-forward.
  */
 export function handleNikoflowExecute(workingDir, sessionId, current, transcriptPath) {
+    // Back-compat disk wrapper (perf F1): standalone callers/tests keep the exact
+    // signature; the ctx body does all mutations in memory and this flush is the
+    // single write. When invoked from checkNikoflowLoop the SHARED ctx is passed
+    // to the ctx body directly and only checkNikoflowLoop flushes.
+    const ctx = { workingDir, sessionId, state: current, dirty: false };
+    const result = handleNikoflowExecuteCtx(ctx, transcriptPath);
+    flushNikoflowCtx(ctx);
+    return result;
+}
+function handleNikoflowExecuteCtx(ctx, transcriptPath) {
+    const { workingDir, sessionId } = ctx;
+    const current = ctx.state;
     // Preflight problems (broken/missing tickets file, bad DAG, deadlock) loop
     // on every Stop without reaching any per-ticket counter — bound them with a
     // pseudo-ticket stall so a permanently broken artifact hard-aborts instead
     // of blocking forever (QA-M2).
     const preflightError = (error) => {
-        const stall = bumpExecuteStall(workingDir, '__preflight__', sessionId);
+        const stall = bumpExecuteStallIn(ctx.state, '__preflight__');
+        ctx.dirty = true;
         if (stall >= NIKOFLOW_EXECUTE_ABORT_STALL) {
-            return nikoflowHardAbort(workingDir, sessionId, current, 'execute preflight', stall);
+            return nikoflowHardAbort(ctx, 'execute preflight', stall);
         }
         return nikoflowExecuteError(current, error);
     };
@@ -1081,7 +1112,7 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
         return preflightError(`invalid ticket DAG: ${dag.errors.join('; ')}`);
     }
     if (allTicketsDone(tickets)) {
-        return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
+        return nikoflowAdvanceFromExecute(ctx);
     }
     if (isTicketDeadlock(tickets)) {
         return preflightError('ticket deadlock: no ticket is startable yet not all are done — a blocker chain or cycle was introduced. Fix blocked_by.');
@@ -1096,18 +1127,48 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
     // a branch that never received the approved implementation (audit F-03).
     if (ticket.status === 'review') {
         const reviewedSha = typeof ticket.evidence?.reviewed_sha === 'string' ? ticket.evidence.reviewed_sha : null;
-        if (!reviewedSha || gitIsAncestorOfHead(workingDir, reviewedSha)) {
-            // Merged (or nothing recorded to check — legacy state): complete it.
+        // The hook is the only writer that sets status "review", and it always
+        // records evidence.reviewed_sha in the same write (see the approval path
+        // below). A review ticket WITHOUT one was hand-written into tickets.json —
+        // fail closed instead of auto-completing (workflow verify pass: the old
+        // fail-open made forging status:"review" the cheapest full-gate bypass).
+        if (!reviewedSha) {
+            const stall = bumpExecuteStallIn(ctx.state, ticket.id);
+            ctx.dirty = true;
+            if (stall >= NIKOFLOW_EXECUTE_ABORT_STALL) {
+                return nikoflowHardAbort(ctx, ticket.id, stall);
+            }
+            return nikoflowExecuteError(current, `ticket ${ticket.id} has status "review" but no evidence.reviewed_sha — the hook always records ` +
+                `one when a reviewer approves, so this status was not produced by the review flow. Reset the ` +
+                `ticket to "in_progress" and run the real reviewer gate; hand-edited status is not accepted.`);
+        }
+        if (gitIsAncestorOfHead(workingDir, reviewedSha)) {
+            // Merged. Re-check the TDD-evidence obligation before completing:
+            // status and evidence live in model-writable tickets.json, so the
+            // approval-path lint below can be bypassed by editing the file between
+            // Stops. Same shape-only check (anti-sloppiness, not anti-forgery).
+            const tddErrors = lintTddEvidence(ticket.evidence?.tdd);
+            if (tddErrors.length > 0) {
+                const stall = bumpExecuteStallIn(ctx.state, ticket.id);
+                ctx.dirty = true;
+                if (stall >= NIKOFLOW_EXECUTE_ABORT_STALL) {
+                    return nikoflowHardAbort(ctx, ticket.id, stall);
+                }
+                return nikoflowExecuteError(current, `ticket ${ticket.id} is reviewer-approved and merged but evidence.tdd is missing/invalid: ` +
+                    `${tddErrors.join('; ')}. Restore the recorded red/green runs (or waiver) in tickets.json — ` +
+                    `a ticket cannot complete without its TDD evidence.`);
+            }
             if (!markTicketStatus(workingDir, ticket.id, 'done', sessionId)) {
                 return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
             }
-            return nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt);
+            return nikoflowProceedAfterTicketDone(ctx, pbt);
         }
         // Approved but not merged yet. Re-emit the merge instruction, bounded by
         // the same stall cap as the review loop.
-        const stall = bumpExecuteStall(workingDir, ticket.id, sessionId);
+        const stall = bumpExecuteStallIn(ctx.state, ticket.id);
+        ctx.dirty = true;
         if (stall >= NIKOFLOW_EXECUTE_ABORT_STALL) {
-            return nikoflowHardAbort(workingDir, sessionId, current, ticket.id, stall);
+            return nikoflowHardAbort(ctx, ticket.id, stall);
         }
         if (stall >= NIKOFLOW_EXECUTE_MAX_STALL) {
             return appendNikoflowTaskBoardLine(nikoflowExecuteError(current, `ticket ${ticket.id} was reviewer-approved but its merge has not landed after ${stall} attempts ` +
@@ -1119,7 +1180,8 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
             ticketWorktreeMergeCmd(workingDir, ticket.id, current.run_id) +
             `\nDo not start other work until the merge lands.`), workingDir, sessionId, current);
     }
-    const requestId = mintGateRequest(workingDir, gate, sessionId) ?? undefined;
+    const requestId = mintGateRequestIn(ctx.state, gate);
+    ctx.dirty = true;
     // The ticket advances ONLY on a reviewer-subagent-authored TICKET_DONE tag.
     const approval = requestId && // fail closed: no correlation id → don't accept any tag
         transcriptPath &&
@@ -1140,22 +1202,28 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
             : {};
         // TDD-evidence precondition (RED-proof discipline). Model-written → this is
         // anti-sloppiness, not anti-forgery: shape/ordering only, the hook never runs
-        // commands; fabrication is the reviewer's cross-check. Keep the request-id
-        // (no clearGateRequest / rotation) so the reviewer's in-transcript approval
-        // re-matches once evidence is recorded — the evidence author and the gate
-        // satisfier are the same model, rotation would add a reviewer re-run with
-        // zero integrity gain. Anti-self-approval is untouched: the reviewer
-        // tool_result provenance + verdict checks above already ran.
+        // commands; fabrication is the reviewer's cross-check. That cross-check only
+        // exists if the reviewer RAN AFTER the evidence was recorded — so when the
+        // approval arrived without valid evidence, ROTATE the request-id: anything
+        // backfilled from here on postdates this reviewer run, and re-matching the
+        // same in-transcript approval would let a post-approval waiver reach done
+        // without any reviewer ever seeing it (workflow verify pass; lintTddEvidence
+        // short-circuits on a shape-valid waiver, so the reviewer is the only
+        // control that can reject a waiver on a runtime-code diff).
         const tddErrors = lintTddEvidence(ticket.evidence?.tdd);
         if (tddErrors.length > 0) {
-            const stall = bumpExecuteStall(workingDir, ticket.id, sessionId);
+            const stall = bumpExecuteStallIn(ctx.state, ticket.id);
+            rotateGateRequestIn(ctx.state, gate);
+            ctx.dirty = true;
             if (stall >= NIKOFLOW_EXECUTE_ABORT_STALL) {
-                return nikoflowHardAbort(workingDir, sessionId, current, ticket.id, stall);
+                return nikoflowHardAbort(ctx, ticket.id, stall);
             }
-            return nikoflowExecuteError(current, `ticket ${ticket.id} is reviewer-approved but evidence.tdd is missing/invalid: ` +
+            return nikoflowExecuteError(current, `ticket ${ticket.id} got a reviewer approval but evidence.tdd is missing/invalid: ` +
                 `${tddErrors.join('; ')}. Record {red:{command,exit_code!=0,expected_failure,head_sha,recorded_at},` +
                 `green:{command,exit_code:0,head_sha,recorded_at}} in tickets.json (or waived:{reason} for a ` +
-                `no-runtime-surface ticket), then Stop — the reviewer verdict stays valid.`);
+                `no-runtime-surface ticket), then run a FRESH reviewer over the diff AND the recorded evidence — ` +
+                `evidence recorded after a reviewer ran is unreviewed, so that verdict no longer counts ` +
+                `(the request-id has rotated).`);
         }
         // Reviewer approved. Record what was approved and require the merge to
         // land before "done" — the hook only ever VERIFIES git state, it does not
@@ -1165,10 +1233,11 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
             if (!markTicketStatus(workingDir, ticket.id, 'review', sessionId, { reviewed_sha: branchSha, ...verdictEvidence })) {
                 return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
             }
-            clearGateRequest(workingDir, sessionId);
+            clearGateRequestIn(ctx.state);
             // Fresh stall budget for the merge phase — the review-wait bumps above
             // must not eat into it (review F2).
-            resetExecuteStall(workingDir, sessionId);
+            resetExecuteStallIn(ctx.state);
+            ctx.dirty = true;
             return appendNikoflowTaskBoardLine(nikoflowExecuteError(current, `ticket ${ticket.id} is reviewer-APPROVED (worktree commit ${branchSha.slice(0, 10)}). ` +
                 `Now merge the approved worktree into the branch:\n   ` +
                 ticketWorktreeMergeCmd(workingDir, ticket.id, current.run_id) +
@@ -1183,14 +1252,15 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
             // Persistence failed — surface it instead of silently re-looping forever.
             return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
         }
-        return nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt);
+        return nikoflowProceedAfterTicketDone(ctx, pbt);
     }
     // No reviewer verdict for this ticket yet. Bound it: if a ticket never gets a
     // reviewer-authored TICKET_DONE for many Stops, surface it instead of looping
     // forever (Fable QA R1 — the per-ticket gate otherwise has no cap).
-    const stall = bumpExecuteStall(workingDir, ticket.id, sessionId);
+    const stall = bumpExecuteStallIn(ctx.state, ticket.id);
+    ctx.dirty = true;
     if (stall >= NIKOFLOW_EXECUTE_ABORT_STALL) {
-        return nikoflowHardAbort(workingDir, sessionId, current, ticket.id, stall);
+        return nikoflowHardAbort(ctx, ticket.id, stall);
     }
     if (stall >= NIKOFLOW_EXECUTE_MAX_STALL) {
         return nikoflowExecuteError(current, `ticket ${ticket.id} has not been reviewer-approved after ${stall} attempts. ` +
@@ -1218,9 +1288,18 @@ function nikoflowVerifyEscalation(current, passes) {
     };
 }
 export function handleNikoflowVerify(workingDir, sessionId, current, transcriptPath) {
+    // Back-compat disk wrapper (perf F1) — see handleNikoflowExecute.
+    const ctx = { workingDir, sessionId, state: current, dirty: false };
+    const result = handleNikoflowVerifyCtx(ctx, transcriptPath);
+    flushNikoflowCtx(ctx);
+    return result;
+}
+function handleNikoflowVerifyCtx(ctx, transcriptPath) {
+    const current = ctx.state;
     const passSoFar = current.verify_pass ?? 0;
     const atCap = passSoFar >= NIKOFLOW_VERIFY_MAX_PASSES;
-    const requestId = mintGateRequest(workingDir, 'verify', sessionId) ?? undefined;
+    const requestId = mintGateRequestIn(ctx.state, 'verify');
+    ctx.dirty = true;
     // Fail closed: without a correlation id we cannot safely accept any tag.
     if (!requestId) {
         return atCap
@@ -1230,31 +1309,31 @@ export function handleNikoflowVerify(workingDir, sessionId, current, transcriptP
     if (transcriptPath && existsSync(transcriptPath)) {
         const match = nikoflowReviewerAuthoredGate(transcriptPath, 'verify', requestId, ['VERIFIED', 'NO_ACTIONABLE_FINDINGS']);
         if (match.matched) {
-            resetVerifyNoVerdict(workingDir, sessionId); // a verdict was parsed → clear livelock guard
+            resetVerifyNoVerdictIn(ctx.state); // a verdict was parsed → clear livelock guard
             const passed = match.payload === 'NO_ACTIONABLE_FINDINGS' ||
                 (match.score !== undefined && match.score >= NIKOFLOW_VERIFY_SCORE_THRESHOLD);
             if (passed) {
                 // A genuine passing review completes the flow even past the cap.
-                advanceNikoflowPhase(workingDir, sessionId); // verify is last → complete
-                clearGateRequest(workingDir, sessionId);
-                const next = readNikoflowState(workingDir, sessionId) ?? current;
-                return nikoflowCompleteResult(next.iteration);
+                advancePhaseIn(ctx.state); // verify is last → complete
+                clearGateRequestIn(ctx.state);
+                return nikoflowCompleteResult(ctx.state.iteration);
             }
             // Sub-threshold with actionable findings. Past the cap, stop counting/looping.
             if (atCap) {
                 return nikoflowVerifyEscalation(current, passSoFar);
             }
-            // Same single RMW that already happens per failed pass also records the
-            // outcome (last_verify) for the resume snapshot.
-            const passes = recordVerifyPass(workingDir, sessionId, {
+            // Same single in-memory transaction that flushes per Stop also records
+            // the outcome (last_verify) for the resume snapshot, then rotates — the
+            // flush persists the POST-rotation id (a stale review can't re-satisfy).
+            const passes = recordVerifyPassIn(ctx.state, {
                 score: match.score,
                 payload: match.payload,
             });
-            rotateGateRequest(workingDir, 'verify', sessionId); // fresh reviewer next pass
+            rotateGateRequestIn(ctx.state, 'verify'); // fresh reviewer next pass
             if (passes >= NIKOFLOW_VERIFY_MAX_PASSES) {
                 return nikoflowVerifyEscalation(current, passes);
             }
-            const freshRid = readNikoflowState(workingDir, sessionId)?.request_id;
+            const freshRid = ctx.state.request_id;
             return { shouldBlock: true, message: getVerifyPrompt(current, freshRid, passes + 1), mode: 'nikoflow' };
         }
     }
@@ -1264,7 +1343,7 @@ export function handleNikoflowVerify(workingDir, sessionId, current, transcriptP
     if (atCap) {
         return nikoflowVerifyEscalation(current, passSoFar);
     }
-    const noVerdict = bumpVerifyNoVerdict(workingDir, sessionId);
+    const noVerdict = bumpVerifyNoVerdictIn(ctx.state);
     if (noVerdict >= NIKOFLOW_VERIFY_MAX_NO_VERDICT) {
         return nikoflowVerifyEscalation(current, passSoFar);
     }
@@ -1287,27 +1366,33 @@ export async function checkNikoflowLoop(sessionId, directory, cancelInProgress, 
     if (cancelInProgress) {
         return null;
     }
-    // Advance the iteration counter first so the emitted prompt reflects the
-    // current iteration (and refreshes last_checked_at to keep the session live).
-    const current = incrementNikoflowIteration(workingDir, sessionId) ?? state;
+    // One state transaction per Stop (perf F1): the state read above becomes THE
+    // single in-memory copy; every mutation below happens on it via the pure
+    // `xxxIn` cores; flushNikoflowCtx persists it exactly once at the end (the
+    // iteration bump keeps dirty always-true, matching today's minimum of one
+    // write and preserving the stale-timer refresh).
+    const preIncrementIteration = state.iteration;
+    incrementIterationIn(state);
+    const ctx = { workingDir, sessionId, state, dirty: true };
+    const current = ctx.state;
     // Resume snapshot: record HEAD once per run, at the first Stop. Written ONLY
     // from this Stop-hook path (activation shape in keyword-detector.mjs stays
-    // byte-identical); git is only READ. RMW-safe: single-writer Stop path right
-    // after the increment write — UserPromptSubmit never RMWs this file.
+    // byte-identical); git is only READ. RMW-safe: single-writer Stop path —
+    // UserPromptSubmit never RMWs this file.
     if (!current.base_sha) {
         const sha = gitRevParse(workingDir, 'HEAD');
         if (sha) {
             current.base_sha = sha;
-            writeNikoflowState(workingDir, current, sessionId);
         }
     }
     // Fresh-context resume header: a mid-run Stop whose visible transcript tail
     // never received a prior continuation prompt (compaction / context
     // replacement) gets a compact snapshot prefixed above whatever the dispatch
-    // emits. state.iteration is the PRE-increment count: >1 means a continuation
-    // prompt was already emitted on an earlier Stop.
-    const resumeHeader = nikoflowResumeHeaderIfFresh(workingDir, sessionId, state.iteration, current, transcriptPath);
-    const result = nikoflowDispatchStop(workingDir, sessionId, current, transcriptPath);
+    // emits. preIncrementIteration is the PRE-increment count: >1 means a
+    // continuation prompt was already emitted on an earlier Stop.
+    const resumeHeader = nikoflowResumeHeaderIfFresh(workingDir, sessionId, preIncrementIteration, current, transcriptPath);
+    const result = nikoflowDispatchStop(ctx, transcriptPath);
+    flushNikoflowCtx(ctx);
     if (resumeHeader && result.shouldBlock) {
         return { ...result, message: `${resumeHeader}\n${result.message}` };
     }
@@ -1344,7 +1429,9 @@ function nikoflowResumeHeaderIfFresh(workingDir, sessionId, preIncrementIteratio
 /** The per-Stop nikoflow dispatch, extracted from checkNikoflowLoop so the
  *  resume header can prefix every exit uniformly without touching the
  *  standalone-tested handleNikoflowExecute/handleNikoflowVerify. */
-function nikoflowDispatchStop(workingDir, sessionId, current, transcriptPath) {
+function nikoflowDispatchStop(ctx, transcriptPath) {
+    const { workingDir, sessionId } = ctx;
+    const current = ctx.state;
     if (isNikoflowComplete(current)) {
         return nikoflowCompleteResult(current.iteration);
     }
@@ -1352,14 +1439,14 @@ function nikoflowDispatchStop(workingDir, sessionId, current, transcriptPath) {
     const phase = getCurrentPhase(current);
     // Execute phase runs its own per-ticket loop (red→green→review→done).
     if (phase === 'execute') {
-        return handleNikoflowExecute(workingDir, sessionId, current, transcriptPath);
+        return handleNikoflowExecuteCtx(ctx, transcriptPath);
     }
     // Verify phase runs the loop-review convergence gate.
     if (phase === 'verify') {
-        return handleNikoflowVerify(workingDir, sessionId, current, transcriptPath);
+        return handleNikoflowVerifyCtx(ctx, transcriptPath);
     }
     const gate = phase ?? 'depth';
-    const requestId = mintGateRequest(workingDir, gate, sessionId) ?? undefined;
+    const requestId = mintGateRequestIn(ctx.state, gate);
     // Gate satisfaction: a correlated confirmation tag in the transcript, plus —
     // for human gates — proof that a real user turn arrived after the request was
     // minted (the model cannot self-confirm a human gate).
@@ -1379,17 +1466,17 @@ function nikoflowDispatchStop(workingDir, sessionId, current, transcriptPath) {
         const humanOk = !isHumanGate || userRepliedAfterMint(current, workingDir, sessionId);
         if (match.matched && humanOk) {
             if (match.autonomy_mode) {
-                setNikoflowAutonomyMode(workingDir, match.autonomy_mode, sessionId);
+                setAutonomyModeIn(ctx.state, match.autonomy_mode);
             }
             // Coverage ids ride the passing gate tag: PRD stories from `stories`,
             // ADR decisions from `decision-ids` (SKIPPED → nothing trackable → []).
             if (gate === 'prd' && match.stories) {
-                recordNikoflowCoverageIds(workingDir, { stories: match.stories }, sessionId);
+                recordCoverageIdsIn(ctx.state, { stories: match.stories });
             }
             if (gate === 'adr') {
                 const ids = match.payload === 'SKIPPED' ? [] : match.decision_ids;
                 if (ids) {
-                    recordNikoflowCoverageIds(workingDir, { decisions: ids }, sessionId);
+                    recordCoverageIdsIn(ctx.state, { decisions: ids });
                 }
             }
             // Gate confirmed by the user, but some gates also need a valid artifact
@@ -1402,8 +1489,8 @@ function nikoflowDispatchStop(workingDir, sessionId, current, transcriptPath) {
                 // artifact the model writes afterward — the corrected artifact must be
                 // re-approved by the user. (Closes the "approve garbage, swap in secretly"
                 // window; the model still owns the file, this just re-gates the human bit.)
-                const rotated = rotateGateRequest(workingDir, gate, sessionId) ?? requestId;
-                const rotatedState = readNikoflowState(workingDir, sessionId) ?? current;
+                const rotated = rotateGateRequestIn(ctx.state, gate);
+                const rotatedState = ctx.state;
                 const base = phase
                     ? getPhasePrompt(phase, rotatedState, rotated)
                     : getDepthSelectionPrompt(rotatedState, rotated);
@@ -1417,21 +1504,21 @@ function nikoflowDispatchStop(workingDir, sessionId, current, transcriptPath) {
             }
             if (gate === 'depth') {
                 if (match.depth) {
-                    setNikoflowDepth(workingDir, match.depth, sessionId);
+                    setDepthIn(ctx.state, match.depth);
                 }
             }
             else {
-                advanceNikoflowPhase(workingDir, sessionId);
+                advancePhaseIn(ctx.state);
             }
-            clearGateRequest(workingDir, sessionId);
+            clearGateRequestIn(ctx.state);
             // Emit the NEXT gate's prompt in the same block so the flow keeps moving.
-            const next = readNikoflowState(workingDir, sessionId) ?? current;
+            const next = ctx.state;
             if (isNikoflowComplete(next)) {
                 return nikoflowCompleteResult(next.iteration);
             }
             const nextPhase = getCurrentPhase(next);
             const nextGate = nextPhase ?? 'depth';
-            const nextRid = mintGateRequest(workingDir, nextGate, sessionId) ?? undefined;
+            const nextRid = mintGateRequestIn(next, nextGate);
             // Seed/re-converge the mirrored task board (e.g. tickets→execute emits
             // one TaskCreate per ticket). Advisory-only; drift never gates.
             return appendNikoflowTaskBoardLine({
@@ -1446,7 +1533,7 @@ function nikoflowDispatchStop(workingDir, sessionId, current, transcriptPath) {
         // attempt. Rotate the request-id so the premature tag goes stale — the
         // model must re-emit only after the user has actually replied.
         if (match.matched && isHumanGate && !humanOk) {
-            rotateGateRequest(workingDir, gate, sessionId);
+            rotateGateRequestIn(ctx.state, gate);
         }
         // Right phase+payload but a wrong/missing request-id: models invent their
         // own id instead of copying the minted one (observed live), which fails
@@ -1455,7 +1542,7 @@ function nikoflowDispatchStop(workingDir, sessionId, current, transcriptPath) {
         if (!match.matched && requestId) {
             const anyRid = detectNikoflowGate(gateText, { phase: gate });
             if (anyRid.matched) {
-                const mismatches = bumpNikoflowRidMismatch(workingDir, sessionId);
+                const mismatches = bumpRidMismatchIn(ctx.state);
                 ridMismatchNote =
                     `\n<nikoflow-blocked>request-id mismatch (attempt ${mismatches}): your tag has the right ` +
                         `phase and payload but the WRONG request-id. Re-emit the tag copying this id EXACTLY: ` +
@@ -1470,7 +1557,7 @@ function nikoflowDispatchStop(workingDir, sessionId, current, transcriptPath) {
     }
     // Gate not satisfied → block with the current gate's prompt (carrying the
     // current request-id, which may have just been rotated above).
-    const blockState = readNikoflowState(workingDir, sessionId) ?? current;
+    const blockState = ctx.state;
     const blockRid = blockState.request_id;
     return {
         shouldBlock: true,

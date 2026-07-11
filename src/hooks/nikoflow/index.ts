@@ -59,6 +59,23 @@ export {
   bumpExecuteStall,
   resetExecuteStall,
 
+  // Pure in-memory mutator cores (perf F1 — ctx threading in persistent-mode)
+  incrementIterationIn,
+  setDepthIn,
+  setAutonomyModeIn,
+  recordCoverageIdsIn,
+  advancePhaseIn,
+  mintGateRequestIn,
+  rotateGateRequestIn,
+  clearGateRequestIn,
+  bumpRidMismatchIn,
+  recordVerifyPassIn,
+  bumpVerifyNoVerdictIn,
+  resetVerifyNoVerdictIn,
+  bumpExecuteStallIn,
+  resetExecuteStallIn,
+  deactivateIn,
+
   // Constants
   NIKOFLOW_DEPTHS,
   NIKOFLOW_AUTONOMY_MODES,

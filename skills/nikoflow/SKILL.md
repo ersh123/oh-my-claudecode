@@ -86,7 +86,9 @@ the `request-id` that the phase prompt gives you. Emit each tag on its own line.
   `red {command, exit_code≠0, expected_failure, head_sha, recorded_at}` recorded before
   `green {command, exit_code=0, head_sha, recorded_at}`, or `waived {reason}` for docs-only tickets.
   Shape/ordering is hook-checked; honesty is reviewer-checked (evidence is model-recorded —
-  anti-sloppiness, not anti-forgery).
+  anti-sloppiness, not anti-forgery). Record `evidence.tdd` BEFORE spawning the reviewer: an
+  approval that arrives without valid evidence rotates the request-id, and backfilled evidence
+  (including a waiver) counts only after a FRESH reviewer approves it.
 - Verify: the reviewer emits `<nikoflow-gate phase="verify" score="9.6" request-id="…">VERIFIED</nikoflow-gate>` (a real numeric `score` in 1–10, ≥ 9.5 to pass) or `<nikoflow-gate phase="verify" request-id="…">NO_ACTIONABLE_FINDINGS</nikoflow-gate>`. A VERIFIED without a valid numeric score is treated as a failed pass.
 
 Anti-self-approval — the gates are enforced, not honour-system:

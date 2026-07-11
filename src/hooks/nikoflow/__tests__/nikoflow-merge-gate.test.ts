@@ -102,10 +102,26 @@ describe("nikoflow review→merged→done gate (real git)", () => {
     expect(readTickets(dir, SID)!.tickets[0].status).toBe("review");
   });
 
+  const VALID_TDD = {
+    red: {
+      command: "npx vitest run x.test.ts",
+      exit_code: 1,
+      expected_failure: "feature not implemented yet",
+      head_sha: "abc1234",
+      recorded_at: "2026-07-10T10:00:00Z",
+    },
+    green: {
+      command: "npx vitest run x.test.ts",
+      exit_code: 0,
+      head_sha: "abc1234",
+      recorded_at: "2026-07-10T10:05:00Z",
+    },
+  };
+
   it("completes the ticket once the reviewed commit is an ancestor of HEAD", () => {
     const sha = makeWorktreeCommit();
     const file = readTickets(dir, SID)!;
-    file.tickets[0].evidence = { reviewed_sha: sha };
+    file.tickets[0].evidence = { reviewed_sha: sha, tdd: VALID_TDD };
     writeTickets(dir, file, SID);
 
     sh(ticketWorktreeMergeCmd(dir, "TSK-001", RUN));
@@ -139,10 +155,29 @@ describe("nikoflow review→merged→done gate (real git)", () => {
     expect(after.active).toBe(false);
   });
 
-  it("legacy review state without reviewed_sha completes (fail-open, no false lock)", () => {
+  it("rejects a review status without reviewed_sha (hand-forged status must not auto-complete)", () => {
+    // The hook only ever writes status "review" together with reviewed_sha, so
+    // review-without-sha is externally written. The old fail-open here was the
+    // cheapest full-gate bypass: forge status:"review" → done with no reviewer,
+    // no verdict, no TDD evidence (workflow verify pass).
     const res = handleNikoflowExecute(dir, SID, baseState(dir));
-    expect(readTickets(dir, SID)!.tickets[0].status).toBe("done");
+    expect(readTickets(dir, SID)!.tickets[0].status).toBe("review"); // unchanged
     expect(res.shouldBlock).toBe(true);
+    expect(res.message).toContain("reviewed_sha");
+    expect(res.message).not.toContain("NOT MERGED");
+  });
+
+  it("blocks a merged review ticket whose evidence.tdd is missing (post-approval evidence wipe)", () => {
+    const sha = makeWorktreeCommit();
+    const file = readTickets(dir, SID)!;
+    file.tickets[0].evidence = { reviewed_sha: sha }; // no tdd
+    writeTickets(dir, file, SID);
+    sh(ticketWorktreeMergeCmd(dir, "TSK-001", RUN));
+
+    const res = handleNikoflowExecute(dir, SID, baseState(dir));
+    expect(readTickets(dir, SID)!.tickets[0].status).toBe("review");
+    expect(res.shouldBlock).toBe(true);
+    expect(res.message).toContain("evidence.tdd");
   });
 });
 
