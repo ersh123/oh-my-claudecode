@@ -20,7 +20,7 @@ import { readUltraworkState, writeUltraworkState, incrementReinforcement, deacti
 import { resolveToWorktreeRoot, resolveSessionStatePath, resolveStatePath, getOmcRoot } from '../../lib/worktree-paths.js';
 import { readModeState, writeModeState } from '../../lib/mode-state-io.js';
 import { readRalphState, writeRalphState, incrementRalphIteration, clearRalphState, findPrdPath, getPrdCompletionStatus, getRalphContext, getStory, markStoryIncomplete, markStoryArchitectVerified, readVerificationState, startVerification, recordArchitectFeedback, getArchitectVerificationPrompt, getArchitectRejectionContinuationPrompt, detectArchitectApproval, detectArchitectRejection, clearVerificationState, } from '../ralph/index.js';
-import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, setNikoflowAutonomyMode, recordNikoflowCoverageIds, advanceNikoflowPhase, requiresNikoflowHumanGate, mintGateRequest, rotateGateRequest, clearGateRequest, bumpNikoflowRidMismatch, userRepliedAfterMint, isNikoflowUserTurnFresh, detectNikoflowGate, detectNikoflowReviewerVerdict, readTickets, validateTicketDag, validateTicketCoverage, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, lintTddEvidence, getExecuteTicketPrompt, getVerifyPrompt, ticketWorktreeBranch, ticketWorktreeMergeCmd, pbtObligation, recordVerifyPass, bumpVerifyNoVerdict, resetVerifyNoVerdict, bumpExecuteStall, resetExecuteStall, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, NIKOFLOW_EXECUTE_ABORT_STALL, deactivateNikoflowLoop, } from '../nikoflow/index.js';
+import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, setNikoflowAutonomyMode, recordNikoflowCoverageIds, advanceNikoflowPhase, requiresNikoflowHumanGate, mintGateRequest, rotateGateRequest, clearGateRequest, bumpNikoflowRidMismatch, userRepliedAfterMint, isNikoflowUserTurnFresh, detectNikoflowGate, detectNikoflowReviewerVerdict, readTickets, validateTicketDag, validateTicketCoverage, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, lintTddEvidence, getExecuteTicketPrompt, getVerifyPrompt, ticketWorktreeBranch, ticketWorktreeMergeCmd, pbtObligation, recordVerifyPass, bumpVerifyNoVerdict, resetVerifyNoVerdict, bumpExecuteStall, resetExecuteStall, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, NIKOFLOW_EXECUTE_ABORT_STALL, deactivateNikoflowLoop, readTaskBoardTasks, readTaskmapSidecar, writeTaskmapSidecar, computeTaskBoardDrift, } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
 import { isAutopilotActive } from '../autopilot/index.js';
@@ -885,9 +885,40 @@ function nikoflowCompleteResult(iteration) {
         shouldBlock: true,
         message: `<nikoflow-continuation phase="complete" iteration="${iteration}">\n` +
             `All Niko Flow phases have passed. Run \`/oh-my-claudecode:cancel\` to exit and clean up state.\n` +
+            `If any TSK-* tasks were mirrored to the native task list, mark them all completed now so no ` +
+            `pending mirror outlives the flow.\n` +
             `</nikoflow-continuation>`,
         mode: 'nikoflow',
     };
+}
+/**
+ * Tickets → native Task-UI projection (one-way, advisory-only). Appends ONE
+ * short drift line to a nikoflow block result telling the model how to
+ * re-converge its mirrored task board to tickets.json (the only authority).
+ * Strictly non-gating and best-effort: never changes shouldBlock/mode, never
+ * touches stall counters or request-ids; any failure returns the result
+ * unmodified (a session where TaskCreate is unavailable must not wedge).
+ */
+function appendNikoflowTaskBoardLine(result, workingDir, sessionId, state) {
+    if (!sessionId)
+        return result; // projection disabled without a session scope
+    try {
+        const tickets = readTickets(workingDir, sessionId);
+        if (!tickets || tickets.tickets.length === 0)
+            return result;
+        const tasks = readTaskBoardTasks(sessionId);
+        if (tasks === null)
+            return result; // invalid session / unreadable task dir
+        const sidecar = readTaskmapSidecar(workingDir, sessionId);
+        const { line, nextSidecar } = computeTaskBoardDrift(tickets, tasks, sidecar, state.run_id);
+        writeTaskmapSidecar(workingDir, nextSidecar, sessionId);
+        if (!line)
+            return result;
+        return { ...result, message: `${result.message}\n${line}` };
+    }
+    catch {
+        return result;
+    }
 }
 /**
  * Block-with-error helper for the execute phase. Emits a plain error prompt with
@@ -915,15 +946,15 @@ function nikoflowAdvanceFromExecute(workingDir, sessionId, current) {
     const nextRid = mintGateRequest(workingDir, nextPhase ?? 'depth', sessionId) ?? undefined;
     // Verify needs its score-bearing loop-review prompt, not the generic phase body.
     if (nextPhase === 'verify') {
-        return { shouldBlock: true, message: getVerifyPrompt(next, nextRid, (next.verify_pass ?? 0) + 1), mode: 'nikoflow' };
+        return appendNikoflowTaskBoardLine({ shouldBlock: true, message: getVerifyPrompt(next, nextRid, (next.verify_pass ?? 0) + 1), mode: 'nikoflow' }, workingDir, sessionId, next);
     }
-    return {
+    return appendNikoflowTaskBoardLine({
         shouldBlock: true,
         message: nextPhase
             ? getPhasePrompt(nextPhase, next, nextRid)
             : getDepthSelectionPrompt(next, nextRid),
         mode: 'nikoflow',
-    };
+    }, workingDir, sessionId, next);
 }
 /** Read-only git probe: the SHA a ref currently points at, or null. */
 function gitRevParse(directory, ref) {
@@ -986,7 +1017,7 @@ function nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt) {
     const nextTicket = getNextTicket(after);
     if (nextTicket) {
         const nrid = mintGateRequest(workingDir, `execute:${nextTicket.id}`, sessionId) ?? undefined;
-        return { shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid, pbt), mode: 'nikoflow' };
+        return appendNikoflowTaskBoardLine({ shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid, pbt), mode: 'nikoflow' }, workingDir, sessionId, current);
     }
     // Completed a ticket but nothing is startable and not all done → deadlock.
     return nikoflowExecuteError(current, 'ticket deadlock after completing a ticket — check blocked_by.');
@@ -1052,14 +1083,14 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
             return nikoflowHardAbort(workingDir, sessionId, current, ticket.id, stall);
         }
         if (stall >= NIKOFLOW_EXECUTE_MAX_STALL) {
-            return nikoflowExecuteError(current, `ticket ${ticket.id} was reviewer-approved but its merge has not landed after ${stall} attempts ` +
+            return appendNikoflowTaskBoardLine(nikoflowExecuteError(current, `ticket ${ticket.id} was reviewer-approved but its merge has not landed after ${stall} attempts ` +
                 `(commit may have landed as a squash/rebase, which ancestry detection cannot see). ` +
-                `Resolve the merge or ask the user how to proceed.`);
+                `Resolve the merge or ask the user how to proceed.`), workingDir, sessionId, current);
         }
-        return nikoflowExecuteError(current, `ticket ${ticket.id} is reviewer-APPROVED but NOT MERGED yet (commit ${reviewedSha.slice(0, 10)} ` +
+        return appendNikoflowTaskBoardLine(nikoflowExecuteError(current, `ticket ${ticket.id} is reviewer-APPROVED but NOT MERGED yet (commit ${reviewedSha.slice(0, 10)} ` +
             `is not on the branch). Merge the approved worktree now:\n   ` +
             ticketWorktreeMergeCmd(workingDir, ticket.id, current.run_id) +
-            `\nDo not start other work until the merge lands.`);
+            `\nDo not start other work until the merge lands.`), workingDir, sessionId, current);
     }
     const requestId = mintGateRequest(workingDir, gate, sessionId) ?? undefined;
     // The ticket advances ONLY on a reviewer-subagent-authored TICKET_DONE tag.
@@ -1098,10 +1129,10 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
             // Fresh stall budget for the merge phase — the review-wait bumps above
             // must not eat into it (review F2).
             resetExecuteStall(workingDir, sessionId);
-            return nikoflowExecuteError(current, `ticket ${ticket.id} is reviewer-APPROVED (worktree commit ${branchSha.slice(0, 10)}). ` +
+            return appendNikoflowTaskBoardLine(nikoflowExecuteError(current, `ticket ${ticket.id} is reviewer-APPROVED (worktree commit ${branchSha.slice(0, 10)}). ` +
                 `Now merge the approved worktree into the branch:\n   ` +
                 ticketWorktreeMergeCmd(workingDir, ticket.id, current.run_id) +
-                `\nThe ticket completes only after the merge lands on HEAD.`);
+                `\nThe ticket completes only after the merge lands on HEAD.`), workingDir, sessionId, current);
         }
         // Branch already merged (fast worker), or no ticket branch exists (the
         // executor worked without isolation — prompt-only convention; note it).
@@ -1125,7 +1156,7 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
         return nikoflowExecuteError(current, `ticket ${ticket.id} has not been reviewer-approved after ${stall} attempts. ` +
             `Confirm an independent reviewer actually ran, or ask the user how to proceed.`);
     }
-    return { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId, pbt), mode: 'nikoflow' };
+    return appendNikoflowTaskBoardLine({ shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId, pbt), mode: 'nikoflow' }, workingDir, sessionId, current);
 }
 /**
  * Verify phase: loop-review convergence. Each pass requires a fresh, independent
@@ -1301,13 +1332,15 @@ export async function checkNikoflowLoop(sessionId, directory, cancelInProgress, 
             const nextPhase = getCurrentPhase(next);
             const nextGate = nextPhase ?? 'depth';
             const nextRid = mintGateRequest(workingDir, nextGate, sessionId) ?? undefined;
-            return {
+            // Seed/re-converge the mirrored task board (e.g. tickets→execute emits
+            // one TaskCreate per ticket). Advisory-only; drift never gates.
+            return appendNikoflowTaskBoardLine({
                 shouldBlock: true,
                 message: nextPhase
                     ? getPhasePrompt(nextPhase, next, nextRid)
                     : getDepthSelectionPrompt(next, nextRid),
                 mode: 'nikoflow',
-            };
+            }, workingDir, sessionId, next);
         }
         // A correlated tag emitted BEFORE a real user turn is a self-approval
         // attempt. Rotate the request-id so the premature tag goes stale — the

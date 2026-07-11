@@ -123,6 +123,20 @@ export {
 } from "./prompts.js";
 
 export {
+  NIKOFLOW_TASK_STATUS,
+  readTaskBoardTasks,
+  readTaskmapSidecar,
+  writeTaskmapSidecar,
+  clearTaskmapSidecar,
+  computeTaskBoardDrift,
+  type TaskBoardStatus,
+  type TaskBoardTask,
+  type TaskmapEntry,
+  type TaskmapSidecar,
+  type TaskBoardDrift,
+} from "./taskmap.js";
+
+export {
   detectPbtFramework,
   pbtObligation,
   type PbtFramework,

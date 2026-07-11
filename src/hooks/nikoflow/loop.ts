@@ -216,6 +216,15 @@ export function clearNikoflowState(
       /* best-effort */
     }
   }
+  // And the taskmap sidecar — a later run must never adopt this run's pins.
+  if (sessionId) {
+    try {
+      const tm = resolveSessionStatePath("nikoflow-taskmap", sessionId, directory);
+      if (existsSync(tm)) unlinkSync(tm);
+    } catch {
+      /* best-effort */
+    }
+  }
   return clearModeStateFile(MODE, directory, sessionId);
 }
 
@@ -618,7 +627,7 @@ export function sweepNikoflowRoots(sessionId?: string): void {
     const roots = Array.isArray(parsed?.roots)
       ? parsed.roots.filter((r): r is string => typeof r === "string")
       : [];
-    const names = ["nikoflow-state.json", "nikoflow-userturn-state.json", "nikoflow-tickets-state.json"];
+    const names = ["nikoflow-state.json", "nikoflow-userturn-state.json", "nikoflow-tickets-state.json", "nikoflow-taskmap-state.json"];
     for (const root of roots) {
       for (const name of names) {
         try {

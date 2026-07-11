@@ -44,6 +44,9 @@ Grilling and confirm with the user.
 4. 🎫 Ticketization — split the PRD into atomic vertical-slice tickets (TSK-001…) that each cut through
    all layers and are demoable on their own, with acceptance criteria + blocked-by dependencies +
    a self-verification step. GATE: iterate until the user approves the breakdown.
+   Mirror each ticket to the native task list — TaskCreate with subject `TSK-NNN — title`,
+   TaskUpdate status as the loop reports; the board is display-only (tickets.json stays the
+   source of truth) and never substitutes for the reviewer gate.
 5. 🔴🟢♻️ TDD — test only at pre-agreed seams; RED before GREEN (a failing test first, then the minimum
    code to pass); one vertical slice at a time. Refactoring belongs to the review step, not the loop.
    Deep tier: add property-based tests (invariants/round-trips/metamorphic) per ticket touching pure logic.
@@ -134,5 +137,6 @@ Codex-backed Task agent (your Codex subscription). Example:
 <Completion>
 When the task is FULLY complete and the Verification gate has passed, run
 `/oh-my-claudecode:cancel` to cleanly exit and clean up state. If cancel fails, retry with
-`/oh-my-claudecode:cancel --force`.
+`/oh-my-claudecode:cancel --force`. Before (or right after) cancelling, mark all mirrored
+TSK-* tasks completed so no pending mirror outlives the flow.
 </Completion>
