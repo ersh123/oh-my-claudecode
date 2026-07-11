@@ -21,11 +21,15 @@
  * 13. ultrathink: Extended reasoning
  * 14. deepsearch: Codebase search (restricted patterns)
  * 15. analyze: Analysis mode (restricted patterns)
+ *
+ * Also: nikoflow (Niko Flow v2.1 phase-gated methodology mode) — explicit
+ * invocation only; priority sits directly after ralph.
  */
 
 import { writeFileSync, mkdirSync, existsSync, unlinkSync, readFileSync } from 'fs';
+import { randomUUID } from 'crypto';
 import { join, dirname } from 'path';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -35,7 +39,7 @@ const __dirname = dirname(__filename);
 const { readStdin } = await import(pathToFileURL(join(__dirname, 'lib', 'stdin.mjs')).href);
 const { atomicWriteFileSync } = await import(pathToFileURL(join(__dirname, 'lib', 'atomic-write.mjs')).href);
 const { getClaudeConfigDir } = await import(pathToFileURL(join(__dirname, 'lib', 'config-dir.mjs')).href);
-const { resolveSessionStatePathsForHook } = await import(pathToFileURL(join(__dirname, 'lib', 'state-root.mjs')).href);
+const { resolveSessionStatePathsForHook, resolveOmcStateRoot } = await import(pathToFileURL(join(__dirname, 'lib', 'state-root.mjs')).href);
 
 
 const _omcRoot = process.env.CLAUDE_PLUGIN_ROOT || join(__dirname, '..');
@@ -825,6 +829,89 @@ function hasActionableRalphKeyword(text, pattern) {
   return false;
 }
 
+function hasExplicitNikoflowInvocationContext(text, position, keywordLength, keywordText) {
+  const prefix = text.slice(0, position);
+  const suffix = text.slice(position + keywordLength);
+
+  // Direct invocation prefix: `$nikoflow`, `/nikoflow`, `!nikoflow`, `force: nikoflow`.
+  if (/^\s*(?:[$/!]\s*|force:\s*|\/?oh-my-(?:claudecode|codex):\s*)$/i.test(prefix)) {
+    return true;
+  }
+
+  // Depth/colon invocation form: `nikoflow:deep <task>` / `nikoflow: fix X`.
+  if (/^\s*[:：]\s*\S/.test(suffix)) {
+    return true;
+  }
+
+  // Negated mention is not an invocation: "Do not run nikoflow", "не используй
+  // никофлоу". Checked BEFORE the activation-verb window, which would otherwise
+  // see the verb and activate (QA-A1).
+  const negStart = Math.max(0, position - INFORMATIONAL_CONTEXT_WINDOW);
+  const negWindow = text.slice(negStart, position);
+  if (/(?:\b(?:do\s+not|don['’]t|never|should\s+not|shouldn['’]t|must\s+not|without)\b|(?:^|\s)(?:не|нельзя)\s)[^\n]{0,40}$/iu.test(negWindow)) {
+    return false;
+  }
+
+  // English activation verb near the keyword ("run nikoflow on this repo").
+  const start = Math.max(0, position - INFORMATIONAL_CONTEXT_WINDOW);
+  const end = Math.min(text.length, position + keywordLength + INFORMATIONAL_CONTEXT_WINDOW);
+  const context = text.slice(start, end);
+  if (hasActivationIntentNearKeyword(context, keywordText)) {
+    return true;
+  }
+
+  // Russian activation verb immediately before the keyword ("запусти никофлоу",
+  // "включи режим никофлоу"). Deliberately adjacent-only: "сделай аудит никофлоу"
+  // has a noun between verb and keyword and must NOT activate.
+  if (/(?:запусти(?:ть)?|включи(?:ть)?|активируй|используй|юзай|давай|погнали)\s+(?:режим\s+)?$/iu.test(prefix)) {
+    return true;
+  }
+
+  // Control flags directly after the keyword are an invocation: `nikoflow
+  // --auto`, `nikoflow --depth deep fix auth` (QA-A2). Only recognized
+  // flag-shaped tokens count — prose after the name still needs an imperative.
+  const afterFlags = suffix.replace(/^(?:\s+--[\w-]+(?:[=\s]+(?:tactical|standard|deep|[\w.+-]+))?)+/i, "");
+  if (afterFlags !== suffix && (afterFlags.trim() === "" || /^\s/.test(afterFlags))) {
+    return true;
+  }
+
+  // Imperative task right after the keyword: "nikoflow fix the parser",
+  // "никофлоу почини сборку". Mention-only prose ("auditing nikoflow", paths,
+  // "правки по никофлоу") has no imperative in this slot and stays inert.
+  return /^['"]?\s+(?:this\b|and\s+)?(?:fix|debug|investigate|resolve|handle|patch|address|implement|build|refactor|run|start|enable|activate|invoke|trigger|launch)\b|^['"]?\s+(?:почини|исправь|реализуй|запили|добавь|внеси|построй)/iu.test(suffix);
+}
+
+function hasActionableNikoflowKeyword(text, pattern) {
+  // Same echo guard as hasActionableKeyword; nikoflow additionally requires an
+  // explicit invocation context so bare mentions (audits, reviews, file names,
+  // reports ABOUT nikoflow) cannot activate the mode — the exact false-positive
+  // class fixed for ralph in ca05fa6f.
+  const searchText = looksLikeSystemEcho(text)
+    ? stripSystemEchoes(text)
+    : text;
+
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  const globalPattern = new RegExp(pattern.source, flags);
+
+  for (const match of searchText.matchAll(globalPattern)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    if (isInformationalKeywordContext(searchText, match.index, match[0].length, match[0])) {
+      continue;
+    }
+
+    if (!hasExplicitNikoflowInvocationContext(searchText, match.index, match[0].length, match[0])) {
+      continue;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
 function hasActionableRalplanKeyword(text, pattern) {
   // Same echo guard as hasActionableKeyword.
   const searchText = looksLikeSystemEcho(text)
@@ -878,6 +965,71 @@ async function activateState(directory, prompt, stateName, sessionId) {
       awaiting_confirmation_set_at: now,
       last_checked_at: now
     };
+  } else if (stateName === 'nikoflow') {
+    // Nikoflow skeleton state; the compiled TS engine (dist) drives the phase
+    // machine on Stop. Depth starts null → the flow opens with depth-selection
+    // during Grilling. Shape must match NikoflowState in src/hooks/nikoflow/loop.ts.
+    // Must mirror the TS engine: NIKOFLOW_DEFAULT_ROLES, detectRoleFlags,
+    // detectDepthFlag, NIKOFLOW_PHASES, stripNikoflowFlags (src/hooks/nikoflow/loop.ts).
+    const NF_VALID = ['sonnet', 'opus', 'haiku', 'fable', 'codex', 'gpt-5.5', 'gpt5.5'];
+    const NF_PHASES = {
+      tactical: ['interview', 'execute', 'verify'],
+      standard: ['interview', 'adr', 'prd', 'tickets', 'execute', 'verify'],
+      deep: ['interview', 'adr', 'prd', 'tickets', 'execute', 'verify'],
+    };
+    const roles = { executor: 'sonnet', architect: 'fable', reviewer: 'fable', verifier: 'fable', panel: ['fable', 'gpt-5.5'] };
+    const rf = (re) => { const m = prompt.match(re); const v = m && m[1] ? m[1].toLowerCase() : null; return v && NF_VALID.includes(v) ? v : null; };
+    const _ex = rf(/--(?:exec|executor)(?:=|\s+)(\S+)/i); if (_ex) roles.executor = _ex;
+    const _ar = rf(/--(?:architect|arch)(?:=|\s+)(\S+)/i); if (_ar) roles.architect = _ar;
+    const _qa = rf(/--qa(?:=|\s+)(\S+)/i); if (_qa) { roles.reviewer = _qa; roles.verifier = _qa; }
+    const _rv = rf(/--reviewer(?:=|\s+)(\S+)/i); if (_rv) roles.reviewer = _rv;
+    const _vf = rf(/--verifier(?:=|\s+)(\S+)/i); if (_vf) roles.verifier = _vf;
+    const _pnRaw = prompt.match(/--panel(?:=|\s+)(\S+)/i); if (_pnRaw && _pnRaw[1]) { const p = _pnRaw[1].toLowerCase().split('+').filter(m => NF_VALID.includes(m)); if (p.length) roles.panel = p; }
+    // Depth flag
+    let depth = null;
+    const _dc = prompt.match(/(?:nikoflow|niko[\s-]?flow|нико[\s-]*флоу)\s*:\s*(tactical|standard|deep)/i) || prompt.match(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/i);
+    if (_dc) depth = _dc[1].toLowerCase();
+    else if (/--deep\b/i.test(prompt)) depth = 'deep';
+    else if (/--tactical\b/i.test(prompt)) depth = 'tactical';
+    else if (/--standard\b/i.test(prompt)) depth = 'standard';
+    // Autonomy mode flag — must mirror detectAutonomyModeFlag (src/hooks/nikoflow/loop.ts)
+    let autonomyMode = null;
+    if (/--(?:auto|autonomous|full-auto|full-autonomous|no-approval|no-confirm|no-handoff)s?\b/i.test(prompt) ||
+        /\b(?:autonomous|full autonomous|no handoffs)\b/i.test(prompt) ||
+        /(?:автоном|фул\s+автоном|без\s+согласован|не\s+спрашивай)/i.test(prompt)) {
+      autonomyMode = 'autonomous';
+    } else if (/--(?:approval-gated|approval|confirm-each|manual-gates|step-by-step)\b/i.test(prompt) ||
+        /(?:кажд(?:ый|ом)\s+шаг|согласован(?:ие|ия|ий|ный)|approval-gated|step-by-step)/i.test(prompt)) {
+      autonomyMode = 'approval-gated';
+    }
+    // Strip control flags from the stored prompt — must mirror stripNikoflowFlags
+    const cleanPrompt = safePrompt
+      .replace(/(?:nikoflow|niko[\s-]?flow|нико[\s-]*флоу)\s*:\s*(tactical|standard|deep)/gi, '')
+      .replace(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/gi, '')
+      .replace(/--(?:deep|tactical|standard)\b/gi, '')
+      .replace(/--(?:auto|autonomous|full-auto|full-autonomous|no-approval|no-confirm|no-handoff)s?\b/gi, '')
+      .replace(/--(?:approval-gated|approval|confirm-each|manual-gates|step-by-step)\b/gi, '')
+      .replace(/--(?:exec|executor|architect|arch|qa|reviewer|verifier|panel)(?:=|\s+)\S+/gi, '')
+      .replace(/\s+/g, ' ').trim();
+    state = {
+      active: true,
+      // Immutable per-activation id — scopes worktree paths/branches so two
+      // runs can never share TSK-001 artifacts (must mirror loop.ts startLoop).
+      run_id: randomUUID().slice(0, 8),
+      iteration: 1,
+      started_at: now,
+      last_checked_at: now,
+      last_user_prompt_at: now,
+      prompt: cleanPrompt,
+      session_id: sessionId || undefined,
+      project_path: directory,
+      depth,
+      autonomy_mode: autonomyMode,
+      phases: depth ? NF_PHASES[depth] : [],
+      phase_index: 0,
+      pbt_enabled: depth === 'deep',
+      roles
+    };
   } else {
     state = {
       active: true,
@@ -892,6 +1044,12 @@ async function activateState(directory, prompt, stateName, sessionId) {
     };
   }
 
+  // Record the root nikoflow state is about to land in so a later cancel can
+  // sweep it even when the session cwd has wandered to a different .omc root.
+  if (stateName === 'nikoflow') {
+    try { registerNikoflowRoot(await resolveOmcStateRoot(directory)); } catch {}
+  }
+
   // Write to session-scoped local path when sessionId is available (must match persistent-mode.mjs reads)
   const safeSessionId = sessionId && SESSION_ID_ALLOWLIST.test(sessionId) ? sessionId : '';
   const { writePath } = await resolveSessionStatePathsForHook(directory, stateName, safeSessionId || undefined);
@@ -902,6 +1060,11 @@ async function activateState(directory, prompt, stateName, sessionId) {
     atomicWriteFileSync(writePath, JSON.stringify(state, null, 2));
   } catch {}
 
+  // Nikoflow is enforced by the TS engine from the session/local state path
+  // only — a global copy would go stale (the engine's request-id rotation
+  // never rewrites it), so it is deliberately not written.
+  if (stateName === 'nikoflow') return;
+
   // Also write to global fallback
   const globalDir = join(homedir(), '.omc', 'state');
   try {
@@ -910,15 +1073,75 @@ async function activateState(directory, prompt, stateName, sessionId) {
   } catch {}
 }
 
+// Nikoflow state lands in whichever .omc root the session cwd resolved to at
+// activation time. If the cwd later wanders (cd for clones etc.), cancel from
+// another directory cannot find that file and the stale state re-blocks Stop
+// for days. The registry records every root nikoflow ever activated in, so
+// cancel can sweep them all. Global path — always reachable regardless of cwd.
+function nikoflowRootsRegistryPath() {
+  // Env override keeps tests off the real per-user registry. Under
+  // NODE_ENV=test the default also moves to tmp. Must mirror
+  // nikoflowRootsRegistryPath in src/hooks/nikoflow/loop.ts.
+  if (process.env.OMC_NIKOFLOW_ROOTS_FILE) return process.env.OMC_NIKOFLOW_ROOTS_FILE;
+  if (process.env.NODE_ENV === 'test') return join(tmpdir(), 'nikoflow-roots-test.json');
+  return join(homedir(), '.omc', 'state', 'nikoflow-roots.json');
+}
+
+function registerNikoflowRoot(omcRoot) {
+  try {
+    const registry = nikoflowRootsRegistryPath();
+    let roots = [];
+    if (existsSync(registry)) {
+      const parsed = JSON.parse(readFileSync(registry, 'utf-8'));
+      if (Array.isArray(parsed?.roots)) roots = parsed.roots.filter((r) => typeof r === 'string');
+    }
+    if (!roots.includes(omcRoot)) {
+      roots.push(omcRoot);
+      // Bounded: keep the most recent roots only.
+      if (roots.length > 20) roots = roots.slice(-20);
+      writeFileSync(registry, JSON.stringify({ roots }, null, 2));
+    }
+  } catch { /* registry is best-effort — never block activation */ }
+}
+
+function sweepNikoflowRoots(sessionId) {
+  try {
+    const registry = nikoflowRootsRegistryPath();
+    if (!existsSync(registry)) return;
+    const parsed = JSON.parse(readFileSync(registry, 'utf-8'));
+    const roots = Array.isArray(parsed?.roots) ? parsed.roots.filter((r) => typeof r === 'string') : [];
+    const names = ['nikoflow-state.json', 'nikoflow-userturn-state.json', 'nikoflow-tickets-state.json'];
+    for (const root of roots) {
+      for (const name of names) {
+        try { const p = join(root, 'state', name); if (existsSync(p)) unlinkSync(p); } catch {}
+        if (sessionId && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$/.test(sessionId)) {
+          try { const p = join(root, 'state', 'sessions', sessionId, name); if (existsSync(p)) unlinkSync(p); } catch {}
+        }
+      }
+    }
+  } catch { /* best-effort sweep */ }
+}
+
 /**
  * Clear state files for cancel operation
  */
-async function clearStateFiles(directory, modeNames) {
+async function clearStateFiles(directory, modeNames, sessionId) {
   for (const name of modeNames) {
     const { writePath: localPath } = await resolveSessionStatePathsForHook(directory, name, undefined);
     const globalPath = join(homedir(), '.omc', 'state', `${name}-state.json`);
     try { if (existsSync(localPath)) unlinkSync(localPath); } catch {}
     try { if (existsSync(globalPath)) unlinkSync(globalPath); } catch {}
+    // Clear session-scoped file too
+    if (sessionId && SESSION_ID_ALLOWLIST.test(sessionId)) {
+      try {
+        const { writePath: sessionPath } = await resolveSessionStatePathsForHook(directory, name, sessionId);
+        if (existsSync(sessionPath)) unlinkSync(sessionPath);
+      } catch {}
+    }
+  }
+  // Nikoflow additionally sweeps every registered root (cwd-wander hazard).
+  if (modeNames.includes('nikoflow')) {
+    sweepNikoflowRoots(sessionId);
   }
 }
 
@@ -1038,7 +1261,7 @@ function resolveConflicts(matches) {
   // Team keyword detection removed — team is now explicit-only via /team skill.
 
   // Sort by priority order
-  const priorityOrder = ['cancel','ralph','autopilot','ultrawork',
+  const priorityOrder = ['cancel','ralph','nikoflow','autopilot','ultrawork',
     'ccg','ralplan','deep-interview','ai-slop-cleaner','tdd','code-review','security-review','ultrathink','deepsearch','analyze'];
   resolved.sort((a, b) => priorityOrder.indexOf(a.name) - priorityOrder.indexOf(b.name));
 
@@ -1222,6 +1445,25 @@ async function main() {
     let data = {};
     try { data = JSON.parse(input); } catch {}
     const directory = data.cwd || data.directory || process.cwd();
+    const sessionId = data.sessionId || data.session_id || data.sessionid || '';
+
+    // Nikoflow anti-self-approval: stamp every real user turn to a DEDICATED
+    // sidecar (never RMW the shared nikoflow-state.json — that races the Stop
+    // hook's request-id rotation and could resurrect a rotated id, Fable QA R2).
+    // Atomic write; only when a nikoflow flow is active in this session.
+    if (sessionId && SESSION_ID_ALLOWLIST.test(sessionId)) {
+      try {
+        const { writePath: nfStatePath } = await resolveSessionStatePathsForHook(directory, 'nikoflow', sessionId);
+        if (existsSync(nfStatePath)) {
+          // Filename must match TS resolveSessionStatePath('nikoflow-userturn') →
+          // it appends "-state.json", so the sidecar is nikoflow-userturn-state.json.
+          atomicWriteFileSync(
+            join(dirname(nfStatePath), 'nikoflow-userturn-state.json'),
+            JSON.stringify({ at: new Date().toISOString() }),
+          );
+        }
+      } catch { /* best-effort */ }
+    }
 
     const prompt = extractPrompt(input);
     if (!prompt) {
@@ -1250,6 +1492,13 @@ async function main() {
     // Ralph keywords
     if (hasActionableRalphKeyword(cleanPrompt, /\b(ralph)\b|(랄프)(?!로렌)|(ラルフ)(?!・?ローレン)/i)) {
       matches.push({ name: 'ralph', args: '' });
+    }
+
+    // Nikoflow keywords (Niko Flow v2.1 phase-gated methodology mode).
+    // Explicit-invocation only: bare mentions in audits/paths/reports must not
+    // activate (same false-positive class as ralph's ca05fa6f fix).
+    if (hasActionableNikoflowKeyword(cleanPrompt, /\b(nikoflow|niko[\s-]?flow|nflow)\b|(нико[\s-]*флоу)/i)) {
+      matches.push({ name: 'nikoflow', args: '' });
     }
 
     // Autopilot keywords. Creation aliases require a qualifier AFTER the object
@@ -1360,14 +1609,13 @@ async function main() {
 
     // Handle cancel specially - clear states and emit
     if (resolved.length > 0 && resolved[0].name === 'cancel') {
-      await clearStateFiles(directory, ['ralph', 'autopilot', 'ultrawork']);
+      await clearStateFiles(directory, ['ralph', 'nikoflow', 'autopilot', 'ultrawork'], sessionId);
       console.log(JSON.stringify(createHookOutput(createSkillInvocation('cancel', prompt))));
       return;
     }
 
     // Activate states for modes that need them
-    const sessionId = data.sessionId || data.session_id || data.sessionid || '';
-    const stateModes = resolved.filter(m => ['ralph', 'autopilot', 'ultrawork'].includes(m.name));
+    const stateModes = resolved.filter(m => ['ralph', 'nikoflow', 'autopilot', 'ultrawork'].includes(m.name));
     for (const mode of stateModes) {
       await activateState(directory, prompt, mode.name, sessionId);
     }

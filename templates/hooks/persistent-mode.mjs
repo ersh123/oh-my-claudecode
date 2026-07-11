@@ -798,6 +798,38 @@ function isAuthenticationError(data) {
   );
 }
 
+// Mirror of isRateLimitStop (src/hooks/todo-continuation/index.ts). Blocking a
+// 429/quota Stop creates an infinite retry loop: block → continuation → 429 →
+// stop → block again (issue #777). Applied to every mode branch below,
+// including the nikoflow engine delegation which receives no Stop context.
+const RATE_LIMIT_STOP_PATTERNS = [
+  "rate_limit", "rate_limited", "ratelimit",
+  "too_many_requests", "429",
+  "quota_exceeded", "quota_limit", "quota_exhausted",
+  "request_limit", "api_limit",
+  "overloaded", "capacity",
+  // Provider quota codes: Google gRPC / OpenAI billing (QA-R3)
+  "resource_exhausted", "insufficient_quota",
+];
+
+// External JSON boundary: tolerate numeric codes (429) and non-string junk
+// instead of throwing on .toLowerCase (QA-R4); normalize separators so
+// "rate-limit"/"rate limit" match the snake_case patterns (QA-R2).
+function normalizeStopReason(value) {
+  if (typeof value === "string") return value.toLowerCase().replace(/[\s-]+/g, "_");
+  if (typeof value === "number") return String(value);
+  return "";
+}
+
+function isRateLimitStop(data) {
+  const reason = normalizeStopReason(data.stop_reason ?? data.stopReason);
+  const endTurnReason = normalizeStopReason(data.end_turn_reason ?? data.endTurnReason);
+
+  return RATE_LIMIT_STOP_PATTERNS.some(
+    (pattern) => reason.includes(pattern) || endTurnReason.includes(pattern),
+  );
+}
+
 function isScheduledWakeupStop(data) {
   const stopPatterns = [
     "schedulewakeup",
@@ -845,6 +877,9 @@ async function main() {
     }
 
     const directory = data.cwd || data.directory || process.cwd();
+    // Real transcript path from the Stop payload — the nikoflow engine reads
+    // its tail for gate/verdict evidence; never pass undefined here.
+    const transcriptPath = data.transcript_path || data.transcriptPath || "";
     const sessionIdRaw = data.sessionId || data.session_id || data.sessionid || "";
     const sessionId = sanitizeSessionId(sessionIdRaw);
     const hasValidSessionId = isValidSessionId(sessionIdRaw);
@@ -868,6 +903,13 @@ async function main() {
 
     // Never block auth failures (401/403/expired OAuth): allow re-auth flow.
     if (isAuthenticationError(data)) {
+      console.log(JSON.stringify({ continue: true, suppressOutput: true }));
+      return;
+    }
+
+    // Never block rate-limit stops (429/quota/overloaded): blocking creates an
+    // infinite retry loop that burns the account limit (issue #777).
+    if (isRateLimitStop(data)) {
       console.log(JSON.stringify({ continue: true, suppressOutput: true }));
       return;
     }
@@ -967,7 +1009,7 @@ async function main() {
             join(nfPluginRoot, "dist", "hooks", "persistent-mode", "index.js"),
           ).href;
           const engine = await import(engineUrl);
-          const result = await engine.checkNikoflowLoop(sessionId, directory, false, undefined);
+          const result = await engine.checkNikoflowLoop(sessionId, directory, false, transcriptPath);
           if (result && result.shouldBlock) {
             console.log(JSON.stringify({ decision: "block", reason: result.message }));
             return;
