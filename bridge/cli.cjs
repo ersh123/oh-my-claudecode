@@ -20536,7 +20536,8 @@ function createNikoflowLoopHook(directory) {
       phases: depth ? materializePhases(depth) : [],
       phase_index: 0,
       pbt_enabled: depth === "deep",
-      roles: resolveRoles(detectRoleFlags(prompt))
+      roles: resolveRoles(detectRoleFlags(prompt)),
+      review_marks: {}
     };
     try {
       registerNikoflowRoot(getOmcRoot(directory));
@@ -22171,6 +22172,18 @@ function handleNikoflowExecuteCtx(ctx, transcriptPath) {
         `ticket ${ticket.id} has status "review" but no evidence.reviewed_sha \u2014 the hook always records one when a reviewer approves, so this status was not produced by the review flow. Reset the ticket to "in_progress" and run the real reviewer gate; hand-edited status is not accepted.`
       );
     }
+    const marks = ctx.state.review_marks;
+    if (marks !== void 0 && marks[ticket.id] !== reviewedSha) {
+      const stall3 = bumpExecuteStallIn(ctx.state, ticket.id);
+      ctx.dirty = true;
+      if (stall3 >= NIKOFLOW_EXECUTE_ABORT_STALL) {
+        return nikoflowHardAbort(ctx, ticket.id, stall3);
+      }
+      return nikoflowExecuteError(
+        current,
+        `ticket ${ticket.id} has status "review" but its reviewed_sha does not match the hook's own review record \u2014 this review status was not produced by the review flow. Reset the ticket and run the real reviewer gate; hand-edited review state is not accepted.`
+      );
+    }
     if (gitIsAncestorOfHead(workingDir, reviewedSha)) {
       const tddErrors = lintTddEvidence(ticket.evidence?.tdd);
       if (tddErrors.length > 0) {
@@ -22186,6 +22199,10 @@ function handleNikoflowExecuteCtx(ctx, transcriptPath) {
       }
       if (!markTicketStatus(workingDir, ticket.id, "done", sessionId)) {
         return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
+      }
+      if (ctx.state.review_marks && ticket.id in ctx.state.review_marks) {
+        delete ctx.state.review_marks[ticket.id];
+        ctx.dirty = true;
       }
       return nikoflowProceedAfterTicketDone(ctx, pbt);
     }
@@ -22240,6 +22257,7 @@ Do not start other work until the merge lands.`
       if (!markTicketStatus(workingDir, ticket.id, "review", sessionId, { reviewed_sha: branchSha, ...verdictEvidence })) {
         return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
       }
+      ctx.state.review_marks = { ...ctx.state.review_marks ?? {}, [ticket.id]: branchSha };
       clearGateRequestIn(ctx.state);
       resetExecuteStallIn(ctx.state);
       ctx.dirty = true;
@@ -86456,13 +86474,28 @@ function hasExplicitNikoflowInvocationContext(text, position, keywordLength, key
   if (/(?:\b(?:do\s+not|don['’]t|never|should\s+not|shouldn['’]t|must\s+not|without)\b|(?:^|\s)(?:не|нельзя)\s)[^\n]{0,40}$/iu.test(negWindow)) {
     return false;
   }
+  if (/«[^»\n]*$/u.test(prefix) || /「[^」\n]*$/u.test(prefix)) {
+    return false;
+  }
   const start = Math.max(0, position - INFORMATIONAL_CONTEXT_WINDOW2);
   const end = Math.min(text.length, position + keywordLength + INFORMATIONAL_CONTEXT_WINDOW2);
   const context = text.slice(start, end);
   if (hasActivationIntentNearKeyword(context, keywordText)) {
     return true;
   }
+  if ((prefix.match(/"/g) ?? []).length % 2 === 1) {
+    return false;
+  }
+  if (/(?:example|пример)\s*[:：]\s*\n\s*$/iu.test(prefix)) {
+    return false;
+  }
   if (/(?:запусти(?:ть)?|включи(?:ть)?|активируй|используй|юзай|давай|погнали)\s+(?:режим\s+)?$/iu.test(prefix)) {
+    return true;
+  }
+  if (/(?:运行|使用|执行|実行して|起動して)\s*$/u.test(prefix)) {
+    return true;
+  }
+  if (/^(?:を(?:実行|起動|使って)|\s*実行して|\s+(?:실행|시작|돌려))/u.test(suffix)) {
     return true;
   }
   const afterFlags = suffix.replace(/^(?:\s+--[\w-]+(?:[=\s]+(?:tactical|standard|deep|[\w.+-]+))?)+/i, "");

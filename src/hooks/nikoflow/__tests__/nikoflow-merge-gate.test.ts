@@ -155,6 +155,38 @@ describe("nikoflow review→merged→done gate (real git)", () => {
     expect(after.active).toBe(false);
   });
 
+  it("rejects a forged review+valid-ancestor sha when the hook's review mark is absent", () => {
+    // Forger writes status:"review" with reviewed_sha pointing at an EXISTING
+    // ancestor (HEAD itself) plus valid tdd — ancestry passes, but the state's
+    // hook-owned review_marks has no entry for this ticket.
+    const headSha = git(dir, "rev-parse", "HEAD");
+    const file = readTickets(dir, SID)!;
+    file.tickets[0].evidence = { reviewed_sha: headSha, tdd: VALID_TDD };
+    writeTickets(dir, file, SID);
+    const st = baseState(dir);
+    st.review_marks = {}; // initialized (non-legacy) state, no mark recorded
+    writeNikoflowState(dir, st, SID);
+
+    const res = handleNikoflowExecute(dir, SID, st);
+    expect(readTickets(dir, SID)!.tickets[0].status).toBe("review"); // not completed
+    expect(res.shouldBlock).toBe(true);
+    expect(res.message).toContain("review record");
+  });
+
+  it("completes a review ticket whose sha matches the hook's review mark", () => {
+    const sha = makeWorktreeCommit();
+    const file = readTickets(dir, SID)!;
+    file.tickets[0].evidence = { reviewed_sha: sha, tdd: VALID_TDD };
+    writeTickets(dir, file, SID);
+    sh(ticketWorktreeMergeCmd(dir, "TSK-001", RUN));
+    const st = baseState(dir);
+    st.review_marks = { "TSK-001": sha };
+    writeNikoflowState(dir, st, SID);
+
+    handleNikoflowExecute(dir, SID, st);
+    expect(readTickets(dir, SID)!.tickets[0].status).toBe("done");
+  });
+
   it("rejects a review status without reviewed_sha (hand-forged status must not auto-complete)", () => {
     // The hook only ever writes status "review" together with reviewed_sha, so
     // review-without-sha is externally written. The old fail-open here was the

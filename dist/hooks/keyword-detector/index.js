@@ -645,6 +645,11 @@ function hasExplicitNikoflowInvocationContext(text, position, keywordLength, key
     if (/(?:\b(?:do\s+not|don['’]t|never|should\s+not|shouldn['’]t|must\s+not|without)\b|(?:^|\s)(?:не|нельзя)\s)[^\n]{0,40}$/iu.test(negWindow)) {
         return false;
     }
+    // Open quoted span before the keyword — «…», 「…」, or an unbalanced ASCII
+    // double quote — means the mention is reported/example text (QA-A4).
+    if (/«[^»\n]*$/u.test(prefix) || /「[^」\n]*$/u.test(prefix)) {
+        return false;
+    }
     // English activation verb near the keyword ("run nikoflow on this repo").
     const start = Math.max(0, position - INFORMATIONAL_CONTEXT_WINDOW);
     const end = Math.min(text.length, position + keywordLength + INFORMATIONAL_CONTEXT_WINDOW);
@@ -652,9 +657,26 @@ function hasExplicitNikoflowInvocationContext(text, position, keywordLength, key
     if (hasActivationIntentNearKeyword(context, keywordText)) {
         return true;
     }
+    // Unbalanced ASCII quote / example-label line: checked AFTER the verb window
+    // so `run "nikoflow" on this issue` still activates, but a keyword sitting
+    // inside an open quote or right under "Example:" stays inert (QA-A4).
+    if ((prefix.match(/"/g) ?? []).length % 2 === 1) {
+        return false;
+    }
+    if (/(?:example|пример)\s*[:：]\s*\n\s*$/iu.test(prefix)) {
+        return false;
+    }
     // Russian activation verb immediately before the keyword ("запусти никофлоу").
     // Adjacent-only: "сделай аудит никофлоу" has a noun in between and stays inert.
     if (/(?:запусти(?:ть)?|включи(?:ть)?|активируй|используй|юзай|давай|погнали)\s+(?:режим\s+)?$/iu.test(prefix)) {
+        return true;
+    }
+    // CJK natural invocation grammar (QA-A5): verb before ("运行 nikoflow 修复…")
+    // or agglutinated/particle verb after ("nikoflowを実行して…", "nikoflow 실행해서…").
+    if (/(?:运行|使用|执行|実行して|起動して)\s*$/u.test(prefix)) {
+        return true;
+    }
+    if (/^(?:を(?:実行|起動|使って)|\s*実行して|\s+(?:실행|시작|돌려))/u.test(suffix)) {
         return true;
     }
     // Control flags directly after the keyword are an invocation: `nikoflow

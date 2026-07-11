@@ -79,6 +79,11 @@ describe('nikoflow live activation guard (keyword-detector.mjs)', () => {
     'Do not run nikoflow on this repo.',
     'We should not use nikoflow here.',
     'Не используй никофлоу, это только термин в отчёте.',
+    // Quoted/example spans must not activate (QA-A4).
+    'Document the phrase "nikoflow fix auth',
+    'В отчёте написано: «никофлоу почини сборку»',
+    '文書には「nikoflow fix auth」と書いてください。',
+    'Example:\nnikoflow fix auth',
   ];
 
   const POSITIVES = [
@@ -91,6 +96,12 @@ describe('nikoflow live activation guard (keyword-detector.mjs)', () => {
     'nikoflow --auto',
     'nikoflow --auto fix auth',
     'nikoflow --depth deep --auto',
+    // CJK natural invocation grammar (QA-A5).
+    'nikoflowを実行してこのバグを修正して',
+    '运行 nikoflow 修复这个错误',
+    'nikoflow 실행해서 버그를 고쳐줘',
+    // Quoted keyword with a genuine command outside the quote still activates.
+    'run "nikoflow" on this issue',
   ];
 
   for (const prompt of NEGATIVES) {

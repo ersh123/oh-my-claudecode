@@ -139,6 +139,11 @@ export interface NikoflowState {
   /** Consecutive Stops where a gate tag matched phase+payload but carried a
    *  wrong request-id (model invented its own id instead of copying). */
   rid_mismatch?: number;
+  /** Hook-owned review marks: ticketId → reviewed_sha recorded by the HOOK when
+   *  it moved the ticket to "review". Closes the forged review+valid-ancestor-sha
+   *  bypass: tickets.json is model-writable, this entry is only ever written
+   *  from the Stop-hook approval path. Absent field = legacy state. */
+  review_marks?: Record<string, string>;
 }
 
 /** Verify gate: reviewer score at/above this passes. */
@@ -904,6 +909,7 @@ export function createNikoflowLoopHook(directory: string): NikoflowLoopHook {
       phase_index: 0,
       pbt_enabled: depth === "deep",
       roles: resolveRoles(detectRoleFlags(prompt)),
+      review_marks: {},
     };
 
     // Record the root this state lands in so a later cancel can sweep it even

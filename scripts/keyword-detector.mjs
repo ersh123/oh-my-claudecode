@@ -964,6 +964,12 @@ function hasExplicitNikoflowInvocationContext(text, position, keywordLength, key
     return false;
   }
 
+  // Open quoted span before the keyword — «…», 「…」, or an unbalanced ASCII
+  // double quote — means the mention is reported/example text (QA-A4).
+  if (/«[^»\n]*$/u.test(prefix) || /「[^」\n]*$/u.test(prefix)) {
+    return false;
+  }
+
   // English activation verb near the keyword ("run nikoflow on this repo").
   const start = Math.max(0, position - INFORMATIONAL_CONTEXT_WINDOW);
   const end = Math.min(text.length, position + keywordLength + INFORMATIONAL_CONTEXT_WINDOW);
@@ -972,10 +978,29 @@ function hasExplicitNikoflowInvocationContext(text, position, keywordLength, key
     return true;
   }
 
+  // Unbalanced ASCII quote / example-label line: checked AFTER the verb window
+  // so `run "nikoflow" on this issue` still activates, but a keyword sitting
+  // inside an open quote or right under "Example:" stays inert (QA-A4).
+  if ((prefix.match(/"/g) ?? []).length % 2 === 1) {
+    return false;
+  }
+  if (/(?:example|пример)\s*[:：]\s*\n\s*$/iu.test(prefix)) {
+    return false;
+  }
+
   // Russian activation verb immediately before the keyword ("запусти никофлоу",
   // "включи режим никофлоу"). Deliberately adjacent-only: "сделай аудит никофлоу"
   // has a noun between verb and keyword and must NOT activate.
   if (/(?:запусти(?:ть)?|включи(?:ть)?|активируй|используй|юзай|давай|погнали)\s+(?:режим\s+)?$/iu.test(prefix)) {
+    return true;
+  }
+
+  // CJK natural invocation grammar (QA-A5): verb before ("运行 nikoflow 修复…")
+  // or agglutinated/particle verb after ("nikoflowを実行して…", "nikoflow 실행해서…").
+  if (/(?:运行|使用|执行|実行して|起動して)\s*$/u.test(prefix)) {
+    return true;
+  }
+  if (/^(?:を(?:実行|起動|使って)|\s*実行して|\s+(?:실행|시작|돌려))/u.test(suffix)) {
     return true;
   }
 
@@ -1141,7 +1166,10 @@ function activateState(directory, prompt, stateName, sessionId, omcRoot) {
       phases: depth ? NF_PHASES[depth] : [],
       phase_index: 0,
       pbt_enabled: depth === 'deep',
-      roles
+      roles,
+      // Hook-owned review marks (must mirror loop.ts startLoop) — absent field
+      // means legacy state, so activation initializes it explicitly.
+      review_marks: {}
     };
   } else if (stateName === 'ralplan') {
     // Ralplan needs active + session_id for stop-hook enforcement

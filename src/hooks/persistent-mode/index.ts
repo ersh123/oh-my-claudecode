@@ -1491,6 +1491,25 @@ function handleNikoflowExecuteCtx(
           `ticket to "in_progress" and run the real reviewer gate; hand-edited status is not accepted.`,
       );
     }
+    // Hook-owned review mark: tickets.json is model-writable, so a forged
+    // status:"review" carrying an EXISTING ancestor sha would pass ancestry.
+    // The hook records {ticketId: sha} in STATE when IT moves a ticket to
+    // review; a review ticket whose sha does not match its mark was not
+    // produced by the review flow. Absent field = legacy pre-upgrade state.
+    const marks = ctx.state.review_marks;
+    if (marks !== undefined && marks[ticket.id] !== reviewedSha) {
+      const stall = bumpExecuteStallIn(ctx.state, ticket.id);
+      ctx.dirty = true;
+      if (stall >= NIKOFLOW_EXECUTE_ABORT_STALL) {
+        return nikoflowHardAbort(ctx, ticket.id, stall);
+      }
+      return nikoflowExecuteError(
+        current,
+        `ticket ${ticket.id} has status "review" but its reviewed_sha does not match the hook's own ` +
+          `review record — this review status was not produced by the review flow. Reset the ticket ` +
+          `and run the real reviewer gate; hand-edited review state is not accepted.`,
+      );
+    }
     if (gitIsAncestorOfHead(workingDir, reviewedSha)) {
       // Merged. Re-check the TDD-evidence obligation before completing:
       // status and evidence live in model-writable tickets.json, so the
@@ -1512,6 +1531,10 @@ function handleNikoflowExecuteCtx(
       }
       if (!markTicketStatus(workingDir, ticket.id, 'done', sessionId)) {
         return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
+      }
+      if (ctx.state.review_marks && ticket.id in ctx.state.review_marks) {
+        delete ctx.state.review_marks[ticket.id];
+        ctx.dirty = true;
       }
       return nikoflowProceedAfterTicketDone(ctx, pbt);
     }
@@ -1600,6 +1623,9 @@ function handleNikoflowExecuteCtx(
       if (!markTicketStatus(workingDir, ticket.id, 'review', sessionId, { reviewed_sha: branchSha, ...verdictEvidence })) {
         return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
       }
+      // Hook-owned record of WHICH sha this hook approved into review — the
+      // review→done path refuses a review ticket that has no matching mark.
+      ctx.state.review_marks = { ...(ctx.state.review_marks ?? {}), [ticket.id]: branchSha };
       clearGateRequestIn(ctx.state);
       // Fresh stall budget for the merge phase — the review-wait bumps above
       // must not eat into it (review F2).
