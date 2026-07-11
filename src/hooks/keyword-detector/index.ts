@@ -70,7 +70,10 @@ const KEYWORD_PATTERNS: Record<KeywordType, RegExp> = {
 
 export const KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES = {
   cancel: ['cancelomc', 'stopomc'],
-  ralph: ['ralph'],
+  // Bare "ralph" is no longer a public trigger — mention-only prompts are inert
+  // since the explicit-invocation guard (ca05fa6f); the doc example must carry
+  // an imperative so it still activates.
+  ralph: ['ralph fix the failing tests'],
   autopilot: ['autopilot', 'auto pilot', 'auto-pilot', 'fullsend', 'full auto'],
   ultrawork: ['ultrawork', 'ulw'],
   'deep-interview': ['deep-interview', 'deep interview'],
@@ -782,6 +785,79 @@ function findActionableKeywordMatch(
   return null;
 }
 
+/**
+ * Nikoflow requires an explicit invocation context so bare mentions (audits,
+ * reviews, file names, reports ABOUT nikoflow) cannot activate the mode — the
+ * same false-positive class fixed for ralph in ca05fa6f. Must stay in behavior
+ * parity with hasExplicitNikoflowInvocationContext in scripts/keyword-detector.mjs.
+ */
+function hasExplicitNikoflowInvocationContext(
+  text: string,
+  position: number,
+  keywordLength: number,
+  keywordText: string,
+): boolean {
+  const prefix = text.slice(0, position);
+  const suffix = text.slice(position + keywordLength);
+
+  // Direct invocation prefix: `$nikoflow`, `/nikoflow`, `!nikoflow`, `force: nikoflow`.
+  if (/^\s*(?:[$/!]\s*|force:\s*|\/?oh-my-(?:claudecode|codex):\s*)$/i.test(prefix)) {
+    return true;
+  }
+
+  // Depth/colon invocation form: `nikoflow:deep <task>` / `nikoflow: fix X`.
+  if (/^\s*[:：]\s*\S/.test(suffix)) {
+    return true;
+  }
+
+  // English activation verb near the keyword ("run nikoflow on this repo").
+  const start = Math.max(0, position - INFORMATIONAL_CONTEXT_WINDOW);
+  const end = Math.min(text.length, position + keywordLength + INFORMATIONAL_CONTEXT_WINDOW);
+  const context = text.slice(start, end);
+  if (hasActivationIntentNearKeyword(context, keywordText)) {
+    return true;
+  }
+
+  // Russian activation verb immediately before the keyword ("запусти никофлоу").
+  // Adjacent-only: "сделай аудит никофлоу" has a noun in between and stays inert.
+  if (/(?:запусти(?:ть)?|включи(?:ть)?|активируй|используй|юзай|давай|погнали)\s+(?:режим\s+)?$/iu.test(prefix)) {
+    return true;
+  }
+
+  // Imperative task right after the keyword: "nikoflow fix the parser".
+  return /^['"]?\s+(?:this\b|and\s+)?(?:fix|debug|investigate|resolve|handle|patch|address|implement|build|refactor|run|start|enable|activate|invoke|trigger|launch)\b|^['"]?\s+(?:почини|исправь|реализуй|запили|добавь|внеси|построй)/iu.test(suffix);
+}
+
+function findActionableNikoflowMatch(
+  text: string,
+  pattern: RegExp,
+): Omit<DetectedKeyword, 'type'> | null {
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  const globalPattern = new RegExp(pattern.source, flags);
+
+  for (const match of text.matchAll(globalPattern)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    const keyword = match[0];
+    if (isInformationalKeywordContext(text, match.index, keyword.length, keyword)) {
+      continue;
+    }
+
+    if (!hasExplicitNikoflowInvocationContext(text, match.index, keyword.length, keyword)) {
+      continue;
+    }
+
+    return {
+      keyword,
+      position: match.index,
+    };
+  }
+
+  return null;
+}
+
 function findActionableRalplanMatch(
   text: string,
   pattern: RegExp,
@@ -875,7 +951,9 @@ export function detectKeywordsWithType(
     const match =
       type === 'ralplan'
         ? findActionableRalplanMatch(cleanedText, pattern)
-        : findActionableKeywordMatch(cleanedText, pattern);
+        : type === 'nikoflow'
+          ? findActionableNikoflowMatch(cleanedText, pattern)
+          : findActionableKeywordMatch(cleanedText, pattern);
 
     if (match) {
       detected.push({

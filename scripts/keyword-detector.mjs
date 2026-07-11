@@ -24,6 +24,7 @@
  */
 
 import { writeFileSync, readFileSync, mkdirSync, existsSync, unlinkSync } from 'fs';
+import { randomUUID } from 'crypto';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
@@ -940,6 +941,75 @@ function hasActionableRalphKeyword(text, pattern) {
   return false;
 }
 
+function hasExplicitNikoflowInvocationContext(text, position, keywordLength, keywordText) {
+  const prefix = text.slice(0, position);
+  const suffix = text.slice(position + keywordLength);
+
+  // Direct invocation prefix: `$nikoflow`, `/nikoflow`, `!nikoflow`, `force: nikoflow`.
+  if (/^\s*(?:[$/!]\s*|force:\s*|\/?oh-my-(?:claudecode|codex):\s*)$/i.test(prefix)) {
+    return true;
+  }
+
+  // Depth/colon invocation form: `nikoflow:deep <task>` / `nikoflow: fix X`.
+  if (/^\s*[:：]\s*(?:tactical|standard|deep)\b/i.test(suffix)) {
+    return true;
+  }
+  if (/^\s*[:：]\s*\S/.test(suffix)) {
+    return true;
+  }
+
+  // English activation verb near the keyword ("run nikoflow on this repo").
+  const start = Math.max(0, position - INFORMATIONAL_CONTEXT_WINDOW);
+  const end = Math.min(text.length, position + keywordLength + INFORMATIONAL_CONTEXT_WINDOW);
+  const context = text.slice(start, end);
+  if (hasActivationIntentNearKeyword(context, keywordText)) {
+    return true;
+  }
+
+  // Russian activation verb immediately before the keyword ("запусти никофлоу",
+  // "включи режим никофлоу"). Deliberately adjacent-only: "сделай аудит никофлоу"
+  // has a noun between verb and keyword and must NOT activate.
+  if (/(?:запусти(?:ть)?|включи(?:ть)?|активируй|используй|юзай|давай|погнали)\s+(?:режим\s+)?$/iu.test(prefix)) {
+    return true;
+  }
+
+  // Imperative task right after the keyword: "nikoflow fix the parser",
+  // "никофлоу почини сборку". Mention-only prose ("auditing nikoflow", paths,
+  // "правки по никофлоу") has no imperative in this slot and stays inert.
+  return /^['"]?\s+(?:this\b|and\s+)?(?:fix|debug|investigate|resolve|handle|patch|address|implement|build|refactor|run|start|enable|activate|invoke|trigger|launch)\b|^['"]?\s+(?:почини|исправь|реализуй|запили|добавь|внеси|построй)/iu.test(suffix);
+}
+
+function hasActionableNikoflowKeyword(text, pattern) {
+  // Same echo guard as hasActionableKeyword; nikoflow additionally requires an
+  // explicit invocation context so bare mentions (audits, reviews, file names,
+  // reports ABOUT nikoflow) cannot activate the mode — the exact false-positive
+  // class fixed for ralph in ca05fa6f.
+  const searchText = looksLikeSystemEcho(text)
+    ? stripSystemEchoes(text)
+    : text;
+
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  const globalPattern = new RegExp(pattern.source, flags);
+
+  for (const match of searchText.matchAll(globalPattern)) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    if (isInformationalKeywordContext(searchText, match.index, match[0].length, match[0])) {
+      continue;
+    }
+
+    if (!hasExplicitNikoflowInvocationContext(searchText, match.index, match[0].length, match[0])) {
+      continue;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
 function hasActionableRalplanKeyword(text, pattern) {
   // Same echo guard as hasActionableKeyword.
   const searchText = looksLikeSystemEcho(text)
@@ -1021,15 +1091,30 @@ function activateState(directory, prompt, stateName, sessionId, omcRoot) {
     else if (/--deep\b/i.test(prompt)) depth = 'deep';
     else if (/--tactical\b/i.test(prompt)) depth = 'tactical';
     else if (/--standard\b/i.test(prompt)) depth = 'standard';
-    // Strip control flags from the stored prompt
+    // Autonomy mode flag — must mirror detectAutonomyModeFlag (src/hooks/nikoflow/loop.ts)
+    let autonomyMode = null;
+    if (/--(?:auto|autonomous|full-auto|full-autonomous|no-approval|no-confirm|no-handoff)s?\b/i.test(prompt) ||
+        /\b(?:autonomous|full autonomous|no handoffs)\b/i.test(prompt) ||
+        /(?:автоном|фул\s+автоном|без\s+согласован|не\s+спрашивай)/i.test(prompt)) {
+      autonomyMode = 'autonomous';
+    } else if (/--(?:approval-gated|approval|confirm-each|manual-gates|step-by-step)\b/i.test(prompt) ||
+        /(?:кажд(?:ый|ом)\s+шаг|согласован(?:ие|ия|ий|ный)|approval-gated|step-by-step)/i.test(prompt)) {
+      autonomyMode = 'approval-gated';
+    }
+    // Strip control flags from the stored prompt — must mirror stripNikoflowFlags
     const cleanPrompt = safePrompt
       .replace(/(?:nikoflow|niko[\s-]?flow|нико[\s-]*флоу)\s*:\s*(tactical|standard|deep)/gi, '')
       .replace(/--(?:tier|depth)(?:=|\s+)(tactical|standard|deep)/gi, '')
       .replace(/--(?:deep|tactical|standard)\b/gi, '')
+      .replace(/--(?:auto|autonomous|full-auto|full-autonomous|no-approval|no-confirm|no-handoff)s?\b/gi, '')
+      .replace(/--(?:approval-gated|approval|confirm-each|manual-gates|step-by-step)\b/gi, '')
       .replace(/--(?:exec|executor|architect|arch|qa|reviewer|verifier|panel)(?:=|\s+)\S+/gi, '')
       .replace(/\s+/g, ' ').trim();
     state = {
       active: true,
+      // Immutable per-activation id — scopes worktree paths/branches so two
+      // runs can never share TSK-001 artifacts (must mirror loop.ts startLoop).
+      run_id: randomUUID().slice(0, 8),
       iteration: 1,
       started_at: now,
       last_checked_at: now,
@@ -1038,6 +1123,7 @@ function activateState(directory, prompt, stateName, sessionId, omcRoot) {
       session_id: sessionId || undefined,
       project_path: directory,
       depth,
+      autonomy_mode: autonomyMode,
       phases: depth ? NF_PHASES[depth] : [],
       phase_index: 0,
       pbt_enabled: depth === 'deep',
@@ -1526,8 +1612,10 @@ async function main() {
       matches.push({ name: 'ralph', args: '' });
     }
 
-    // Nikoflow keywords (Niko Flow v2.1 phase-gated methodology mode)
-    if (hasActionableKeyword(cleanPrompt, /\b(nikoflow|niko[\s-]?flow|nflow)\b|(нико[\s-]*флоу)/i)) {
+    // Nikoflow keywords (Niko Flow v2.1 phase-gated methodology mode).
+    // Explicit-invocation only: bare mentions in audits/paths/reports must not
+    // activate (same false-positive class as ralph's ca05fa6f fix).
+    if (hasActionableNikoflowKeyword(cleanPrompt, /\b(nikoflow|niko[\s-]?flow|nflow)\b|(нико[\s-]*флоу)/i)) {
       matches.push({ name: 'nikoflow', args: '' });
     }
 
@@ -1536,13 +1624,14 @@ async function main() {
     // research prose (e.g. "autonomous driving", "autonomous agent") to be a
     // reliable trigger. Aligns with src/hooks/keyword-detector/index.ts and
     // templates/hooks/keyword-detector.mjs, which already exclude it.
+    // Creation aliases require a qualifier AFTER the object ("build me a website
+    // like Airbnb"): a bare product wish ("I want a website") must not hijack
+    // the session into autopilot. "handle it all"/"end to end"/"e2e this"
+    // triggers removed as stale. See the stale-trigger regression list in
+    // src/__tests__/keyword-detector-script.test.ts.
     if (hasActionableKeyword(cleanPrompt, /\b(autopilot|auto pilot|auto-pilot|full auto|fullsend)\b|(오토파일럿)|(オートパイロット)/i) ||
-        hasActionableKeyword(cleanPrompt, /\b(build|create|make)\s+me\s+(an?\s+)?(app|feature|project|tool|plugin|website|api|server|cli|script|system|service|dashboard|bot|extension)\b/i) ||
-        hasActionableKeyword(cleanPrompt, /\bi\s+want\s+a\s+(app|feature|project|tool|plugin|website|api|server|cli|script|system|service|dashboard|bot|extension)\b/i) ||
-        hasActionableKeyword(cleanPrompt, /\bi\s+want\s+an\s+(app|feature|project|tool|plugin|website|api|server|cli|script|system|service|dashboard|bot|extension)\b/i) ||
-        hasActionableKeyword(cleanPrompt, /\bhandle\s+it\s+all\b/i) ||
-        hasActionableKeyword(cleanPrompt, /\bend\s+to\s+end\b/i) ||
-        hasActionableKeyword(cleanPrompt, /\be2e\s+this\b/i)) {
+        hasActionableKeyword(cleanPrompt, /\b(build|create|make)\s+me\s+(an?\s+)?(app|feature|project|tool|plugin|website|api|server|cli|script|system|service|dashboard|bot|extension)\b(?=\s+\S)/i) ||
+        hasActionableKeyword(cleanPrompt, /\bi\s+want\s+an?\s+(app|feature|project|tool|plugin|website|api|server|cli|script|system|service|dashboard|bot|extension)\b(?=\s+\S)/i)) {
       matches.push({ name: 'autopilot', args: '' });
     }
 

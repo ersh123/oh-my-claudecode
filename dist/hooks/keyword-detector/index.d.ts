@@ -15,7 +15,7 @@ export interface DetectedKeyword {
 }
 export declare const KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES: {
     readonly cancel: readonly ["cancelomc", "stopomc"];
-    readonly ralph: readonly ["ralph"];
+    readonly ralph: readonly ["ralph fix the failing tests"];
     readonly autopilot: readonly ["autopilot", "auto pilot", "auto-pilot", "fullsend", "full auto"];
     readonly ultrawork: readonly ["ultrawork", "ulw"];
     readonly 'deep-interview': readonly ["deep-interview", "deep interview"];
@@ -30,7 +30,7 @@ export declare const KEYWORD_DETECTOR_PUBLIC_DOC_TRIGGER_EXAMPLES: {
     readonly deepsearch: readonly ["deepsearch", "search the codebase", "find in codebase"];
     readonly analyze: readonly ["deepanalyze", "deep-analyze"];
     readonly cancel: readonly ["cancelomc", "stopomc"];
-    readonly ralph: readonly ["ralph"];
+    readonly ralph: readonly ["ralph fix the failing tests"];
     readonly autopilot: readonly ["autopilot", "auto pilot", "auto-pilot", "fullsend", "full auto"];
     readonly ultrawork: readonly ["ultrawork", "ulw"];
     readonly 'deep-interview': readonly ["deep-interview", "deep interview"];

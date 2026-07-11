@@ -997,6 +997,31 @@ function isAuthenticationError(data) {
   );
 }
 
+// Mirror of isRateLimitStop (src/hooks/todo-continuation/index.ts). Blocking a
+// 429/quota Stop creates an infinite retry loop: block → continuation → 429 →
+// stop → block again (issue #777). Applied to every mode branch below,
+// including the nikoflow engine delegation which receives no Stop context.
+const RATE_LIMIT_STOP_PATTERNS = [
+  "rate_limit", "rate_limited", "ratelimit",
+  "too_many_requests", "429",
+  "quota_exceeded", "quota_limit", "quota_exhausted",
+  "request_limit", "api_limit",
+  "overloaded", "capacity",
+];
+
+function isRateLimitStop(data) {
+  const reason = (data.stop_reason || data.stopReason || "").toLowerCase();
+  const endTurnReason = (
+    data.end_turn_reason ||
+    data.endTurnReason ||
+    ""
+  ).toLowerCase();
+
+  return RATE_LIMIT_STOP_PATTERNS.some(
+    (pattern) => reason.includes(pattern) || endTurnReason.includes(pattern),
+  );
+}
+
 function isScheduledWakeupStop(data) {
   const stopPatterns = [
     "schedulewakeup",
@@ -1080,6 +1105,13 @@ async function main() {
 
     // Never block auth failures (401/403/expired OAuth): allow re-auth flow.
     if (isAuthenticationError(data)) {
+      console.log(JSON.stringify({ continue: true, suppressOutput: true }));
+      return;
+    }
+
+    // Never block rate-limit stops (429/quota/overloaded): blocking creates an
+    // infinite retry loop that burns the account limit (issue #777).
+    if (isRateLimitStop(data)) {
       console.log(JSON.stringify({ continue: true, suppressOutput: true }));
       return;
     }

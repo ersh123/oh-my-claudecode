@@ -1252,11 +1252,13 @@ async function main() {
       matches.push({ name: 'ralph', args: '' });
     }
 
-    // Autopilot keywords
+    // Autopilot keywords. Creation aliases require a qualifier AFTER the object
+    // ("build me a website like Airbnb"): a bare product wish ("I want a
+    // website") must not hijack the session into autopilot — see the
+    // stale-trigger regression list in src/__tests__/keyword-detector-script.test.ts.
     if (hasActionableKeyword(cleanPrompt, /\b(autopilot|auto[\s-]?pilot|fullsend|full\s+auto)\b|(오토파일럿)|(オートパイロット)/i) ||
-        hasActionableKeyword(cleanPrompt, /\b(build|create|make)\s+me\s+(an?\s+)?(app|feature|project|tool|plugin|website|api|server|cli|script|system|service|dashboard|bot|extension)\b/i) ||
-        hasActionableKeyword(cleanPrompt, /\bi\s+want\s+a\s+(app|feature|project|tool|plugin|website|api|server|cli|script|system|service|dashboard|bot|extension)\b/i) ||
-        hasActionableKeyword(cleanPrompt, /\bi\s+want\s+an\s+(app|feature|project|tool|plugin|website|api|server|cli|script|system|service|dashboard|bot|extension)\b/i)) {
+        hasActionableKeyword(cleanPrompt, /\b(build|create|make)\s+me\s+(an?\s+)?(app|feature|project|tool|plugin|website|api|server|cli|script|system|service|dashboard|bot|extension)\b(?=\s+\S)/i) ||
+        hasActionableKeyword(cleanPrompt, /\bi\s+want\s+an?\s+(app|feature|project|tool|plugin|website|api|server|cli|script|system|service|dashboard|bot|extension)\b(?=\s+\S)/i)) {
       matches.push({ name: 'autopilot', args: '' });
     }
 

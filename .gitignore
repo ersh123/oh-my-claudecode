@@ -34,3 +34,6 @@ bridge/
 
 __pycache__/
 *.py[cod]
+
+# Runtime PID markers written by live plugin processes — never track
+.in_use/
