@@ -20303,11 +20303,18 @@ function bumpNikoflowRidMismatch(directory, sessionId) {
   writeNikoflowState(directory, state, sessionId);
   return state.rid_mismatch;
 }
-function recordVerifyPass(directory, sessionId) {
+function recordVerifyPass(directory, sessionId, verdict) {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return 0;
   state.verify_pass = (state.verify_pass ?? 0) + 1;
   state.verify_no_verdict = 0;
+  if (verdict?.payload) {
+    state.last_verify = {
+      ...verdict.score !== void 0 ? { score: verdict.score } : {},
+      payload: verdict.payload,
+      at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  }
   writeNikoflowState(directory, state, sessionId);
   return state.verify_pass;
 }
@@ -20704,6 +20711,59 @@ If the reviewer scores below 9.5 with actionable findings, fix them and a NEW re
 ${CANCEL_HINT}
 </nikoflow-continuation>`;
 }
+function sanitizeInline(text) {
+  return text.replace(/[<>]/g, " ").replace(/\s+/g, " ").trim();
+}
+function renderNikoflowResumeHeader(state, tickets, headSha) {
+  const lines = [];
+  lines.push(
+    `<nikoflow-resume run="${state.run_id ?? "legacy"}" iteration="${state.iteration}">`
+  );
+  lines.push(
+    "Fresh context detected mid-run \u2014 this snapshot, not memory, is the source of truth."
+  );
+  const task = sanitizeInline(state.prompt ?? "");
+  lines.push(`task: ${task.length > 200 ? `${task.slice(0, 200)}\u2026` : task}`);
+  const phase = getCurrentPhase(state);
+  const phaseName = phase ?? (state.depth ? "complete" : "depth-selection");
+  const pos = state.phases.length ? ` (${Math.min(state.phase_index + 1, state.phases.length)}/${state.phases.length})` : "";
+  lines.push(
+    `depth=${state.depth ?? "undecided"} phase=${phaseName}${pos} mode=${state.autonomy_mode ?? "approval-gated"}`
+  );
+  const execIdx = state.phases.indexOf("execute");
+  if (tickets && tickets.tickets.length > 0 && execIdx !== -1 && state.phase_index >= execIdx) {
+    const done = tickets.tickets.filter((t) => t.status === "done").length;
+    const cur = getNextTicket(tickets);
+    lines.push(
+      `tickets: ${done}/${tickets.tickets.length} done` + (cur ? `; current ${cur.id} "${sanitizeInline(cur.title)}" [${cur.status}]` : "")
+    );
+    if (cur) {
+      lines.push(
+        `worktree: ${ticketWorktreeRelPath(cur.id, state.run_id)}  branch: ${ticketWorktreeBranch(cur.id, state.run_id)}`
+      );
+    }
+  }
+  lines.push(
+    `git: base ${state.base_sha ? state.base_sha.slice(0, 10) : "unrecorded"} \u2192 head ${headSha ? headSha.slice(0, 10) : "n/a"}`
+  );
+  const signals = [];
+  if (state.verify_pass) signals.push(`verify_pass=${state.verify_pass}`);
+  if (state.verify_no_verdict) signals.push(`verify_no_verdict=${state.verify_no_verdict}`);
+  if (state.execute_stall) {
+    signals.push(`execute_stall=${state.execute_stall_ticket ?? "?"}:${state.execute_stall}`);
+  }
+  if (state.rid_mismatch) signals.push(`rid_mismatch=${state.rid_mismatch}`);
+  if (state.last_verify) {
+    const lv = state.last_verify;
+    signals.push(
+      `last_verify=${lv.score !== void 0 ? `${lv.score}/10` : lv.payload} at ${lv.at}`
+    );
+  }
+  if (signals.length) lines.push(`signals: ${signals.join(" ")}`);
+  lines.push("The required next action follows below \u2014 execute it.");
+  lines.push("</nikoflow-resume>");
+  return lines.join("\n");
+}
 function getPhasePrompt2(phase, state, requestId) {
   let rawBody = PHASE_BODIES[phase] ?? `Phase "${phase}". Continue the methodology.`;
   if (phase === "adr" && state.roles?.architect) {
@@ -20723,6 +20783,7 @@ var init_prompts2 = __esm({
     "use strict";
     init_loop2();
     init_worktree();
+    init_tickets();
     CANCEL_HINT = "When the whole task is FULLY complete and the Verification gate has passed, run `/oh-my-claudecode:cancel` to exit. If cancel fails, retry with `/oh-my-claudecode:cancel --force`.";
     AUTONOMY_MODE_PROTOCOL = "Autonomy mode: establish exactly one mode once, in Grilling/depth if it is not already explicit: approval-gated (ask before each phase/step) or autonomous (run the full safe cycle without per-step approvals). Default to autonomous when the user clearly asks for no handoffs (full cycle) or the task is already scoped. Even in autonomous mode, stop for destructive, credential-gated, external-production, or materially branching actions.";
     MONEY_CRITICAL_PREFLIGHT = "Money/prod deploy preflight: before any execute/deploy action that can affect production, ad spend, accounts, credentials, or proxy-dependent scraping, verify and report release base vs prod, prod divergence, money guards, proxy/env, rollback path, and stop condition. Unknown/red item => STOP and report blockers; never continue on assumptions.";
@@ -20755,6 +20816,9 @@ function stripInjectedExamples(text) {
   return text.replace(STRIP_CONTINUATION, " ").replace(STRIP_FENCE_BACKTICK, " ").replace(STRIP_FENCE_TILDE, " ").replace(STRIP_INLINE_TAG, " ").replace(STRIP_BLOCKQUOTE_LINE, " ");
 }
 function detectNikoflowReviewerVerdict(text) {
+  return matchNikoflowReviewerVerdict(text) !== null;
+}
+function matchNikoflowReviewerVerdict(text) {
   const sanitized = stripInjectedExamples(text);
   const re = /<nikoflow-verdict(?![\w-])([^>]*)>[\s\S]*?<\/nikoflow-verdict>/gi;
   for (const m of sanitized.matchAll(re)) {
@@ -20764,9 +20828,9 @@ function detectNikoflowReviewerVerdict(text) {
     if ((attrs.match(/(?<![\w-])quality=/gi) ?? []).length !== 1) continue;
     const spec = extractAttribute(attrs, "spec")?.toLowerCase();
     const quality = extractAttribute(attrs, "quality")?.toLowerCase();
-    if (spec === "pass" && quality === "approved") return true;
+    if (spec === "pass" && quality === "approved") return { spec, quality };
   }
-  return false;
+  return null;
 }
 function detectNikoflowGate(text, opts) {
   const expectedPayloads = opts.expectedPayloads ?? NIKOFLOW_GATE_PAYLOADS[opts.phase];
@@ -21120,6 +21184,7 @@ __export(nikoflow_exports, {
   lintTicketsFile: () => lintTicketsFile,
   lintTicketsRaw: () => lintTicketsRaw,
   markTicketStatus: () => markTicketStatus,
+  matchNikoflowReviewerVerdict: () => matchNikoflowReviewerVerdict,
   materializePhases: () => materializePhases,
   mintGateRequest: () => mintGateRequest,
   normalizeTicketsFile: () => normalizeTicketsFile,
@@ -21132,6 +21197,7 @@ __export(nikoflow_exports, {
   recordNikoflowCoverageIds: () => recordNikoflowCoverageIds,
   recordNikoflowUserPrompt: () => recordNikoflowUserPrompt,
   recordVerifyPass: () => recordVerifyPass,
+  renderNikoflowResumeHeader: () => renderNikoflowResumeHeader,
   renderPanel: () => renderPanel,
   renderReviewerSpawn: () => renderReviewerSpawn,
   requiresNikoflowHumanGate: () => requiresNikoflowHumanGate,
@@ -21828,7 +21894,11 @@ function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expected
       if (!reviewerOutput) continue;
       const match = detectNikoflowGate(reviewerOutput, { phase, requestId, expectedPayloads });
       if (!match.matched) continue;
-      if (requireApprovedVerdict && !detectNikoflowReviewerVerdict(reviewerOutput)) continue;
+      if (requireApprovedVerdict) {
+        const verdict = matchNikoflowReviewerVerdict(reviewerOutput);
+        if (!verdict) continue;
+        match.verdict = verdict;
+      }
       return match;
     }
   }
@@ -22003,8 +22073,16 @@ Do not start other work until the merge lands.`
     ), workingDir, sessionId, current);
   }
   const requestId = mintGateRequest(workingDir, gate, sessionId) ?? void 0;
-  if (requestId && // fail closed: no correlation id → don't accept any tag
-  transcriptPath && (0, import_fs59.existsSync)(transcriptPath) && nikoflowReviewerAuthoredGate(transcriptPath, gate, requestId, ["TICKET_DONE"], true).matched) {
+  const approval = requestId && // fail closed: no correlation id → don't accept any tag
+  transcriptPath && (0, import_fs59.existsSync)(transcriptPath) ? nikoflowReviewerAuthoredGate(transcriptPath, gate, requestId, ["TICKET_DONE"], true) : { matched: false };
+  if (approval.matched) {
+    const verdictEvidence = approval.verdict ? {
+      last_verdict: {
+        spec: approval.verdict.spec,
+        quality: approval.verdict.quality,
+        at: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    } : {};
     const tddErrors = lintTddEvidence(ticket.evidence?.tdd);
     if (tddErrors.length > 0) {
       const stall2 = bumpExecuteStall(workingDir, ticket.id, sessionId);
@@ -22021,7 +22099,7 @@ Do not start other work until the merge lands.`
       `refs/heads/${ticketWorktreeBranch(ticket.id, current.run_id)}`
     );
     if (branchSha && !gitIsAncestorOfHead(workingDir, branchSha)) {
-      if (!markTicketStatus(workingDir, ticket.id, "review", sessionId, { reviewed_sha: branchSha })) {
+      if (!markTicketStatus(workingDir, ticket.id, "review", sessionId, { reviewed_sha: branchSha, ...verdictEvidence })) {
         return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
       }
       clearGateRequest(workingDir, sessionId);
@@ -22033,7 +22111,7 @@ Do not start other work until the merge lands.`
 The ticket completes only after the merge lands on HEAD.`
       ), workingDir, sessionId, current);
     }
-    const evidence = branchSha ? { reviewed_sha: branchSha } : { worktree_used: false };
+    const evidence = branchSha ? { reviewed_sha: branchSha, ...verdictEvidence } : { worktree_used: false, ...verdictEvidence };
     if (!markTicketStatus(workingDir, ticket.id, "done", sessionId, evidence)) {
       return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
     }
@@ -22091,7 +22169,10 @@ function handleNikoflowVerify(workingDir, sessionId, current, transcriptPath) {
       if (atCap) {
         return nikoflowVerifyEscalation(current, passSoFar);
       }
-      const passes = recordVerifyPass(workingDir, sessionId);
+      const passes = recordVerifyPass(workingDir, sessionId, {
+        score: match.score,
+        payload: match.payload
+      });
       rotateGateRequest(workingDir, "verify", sessionId);
       if (passes >= NIKOFLOW_VERIFY_MAX_PASSES) {
         return nikoflowVerifyEscalation(current, passes);
@@ -22119,6 +22200,46 @@ async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcr
     return null;
   }
   const current = incrementNikoflowIteration(workingDir, sessionId) ?? state;
+  if (!current.base_sha) {
+    const sha = gitRevParse(workingDir, "HEAD");
+    if (sha) {
+      current.base_sha = sha;
+      writeNikoflowState(workingDir, current, sessionId);
+    }
+  }
+  const resumeHeader = nikoflowResumeHeaderIfFresh(
+    workingDir,
+    sessionId,
+    state.iteration,
+    current,
+    transcriptPath
+  );
+  const result = nikoflowDispatchStop(workingDir, sessionId, current, transcriptPath);
+  if (resumeHeader && result.shouldBlock) {
+    return { ...result, message: `${resumeHeader}
+${result.message}` };
+  }
+  return result;
+}
+function nikoflowResumeHeaderIfFresh(workingDir, sessionId, preIncrementIteration, current, transcriptPath) {
+  if (preIncrementIteration <= 1) return "";
+  if (!transcriptPath || !(0, import_fs59.existsSync)(transcriptPath)) return "";
+  let tail;
+  try {
+    tail = readTranscriptTail(transcriptPath, NIKOFLOW_RESUME_TAIL_BYTES);
+  } catch {
+    return "";
+  }
+  if (tail.includes("<nikoflow-continuation")) return "";
+  let tickets = null;
+  try {
+    tickets = readTickets(workingDir, sessionId);
+  } catch {
+    tickets = null;
+  }
+  return renderNikoflowResumeHeader(current, tickets, gitRevParse(workingDir, "HEAD"));
+}
+function nikoflowDispatchStop(workingDir, sessionId, current, transcriptPath) {
   if (isNikoflowComplete(current)) {
     return nikoflowCompleteResult(current.iteration);
   }
@@ -23098,7 +23219,7 @@ function createHookOutput(result) {
     message: result.message || void 0
   };
 }
-var import_fs59, import_child_process19, import_path69, CANCEL_SIGNAL_TTL_MS2, STALE_STATE_THRESHOLD_MS, PENDING_ASYNC_STATE_STALE_MS, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_MAX, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_TTL_MS, TERMINAL_WORKFLOW_SLOT_MODES, TERMINAL_WORKFLOW_PHASES, todoContinuationAttempts, TRANSCRIPT_TAIL_BYTES, NIKOFLOW_REVIEWER_TAIL_BYTES, CRITICAL_CONTEXT_STOP_PERCENT, RALPLAN_TERMINAL_PHASES, REVIEWER_TASK_TOOL_NAMES, REVIEWER_COMMAND_TOOL_NAMES, NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES, AWAITING_CONFIRMATION_TTL_MS, NIKOFLOW_ADVANCING_GATES, THINKING_ONLY_STREAK_BREAKER, THINKING_ONLY_STREAK_MAX, THINKING_ONLY_STREAK_TTL_MS, THINKING_ONLY_STREAK_BAILOUT_MESSAGE, TEAM_PIPELINE_STOP_BLOCKER_MAX, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS, RALPLAN_STOP_BLOCKER_MAX, RALPLAN_STOP_BLOCKER_TTL_MS, RALPLAN_ACTIVE_AGENT_RECENCY_WINDOW_MS;
+var import_fs59, import_child_process19, import_path69, CANCEL_SIGNAL_TTL_MS2, STALE_STATE_THRESHOLD_MS, PENDING_ASYNC_STATE_STALE_MS, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_MAX, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_TTL_MS, TERMINAL_WORKFLOW_SLOT_MODES, TERMINAL_WORKFLOW_PHASES, todoContinuationAttempts, TRANSCRIPT_TAIL_BYTES, NIKOFLOW_REVIEWER_TAIL_BYTES, CRITICAL_CONTEXT_STOP_PERCENT, RALPLAN_TERMINAL_PHASES, REVIEWER_TASK_TOOL_NAMES, REVIEWER_COMMAND_TOOL_NAMES, NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES, AWAITING_CONFIRMATION_TTL_MS, NIKOFLOW_ADVANCING_GATES, NIKOFLOW_RESUME_TAIL_BYTES, THINKING_ONLY_STREAK_BREAKER, THINKING_ONLY_STREAK_MAX, THINKING_ONLY_STREAK_TTL_MS, THINKING_ONLY_STREAK_BAILOUT_MESSAGE, TEAM_PIPELINE_STOP_BLOCKER_MAX, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS, RALPLAN_STOP_BLOCKER_MAX, RALPLAN_STOP_BLOCKER_TTL_MS, RALPLAN_ACTIVE_AGENT_RECENCY_WINDOW_MS;
 var init_persistent_mode = __esm({
   "src/hooks/persistent-mode/index.ts"() {
     "use strict";
@@ -23173,6 +23294,7 @@ var init_persistent_mode = __esm({
     ]);
     AWAITING_CONFIRMATION_TTL_MS = 2 * 60 * 1e3;
     NIKOFLOW_ADVANCING_GATES = /* @__PURE__ */ new Set(["depth", "interview", "adr", "prd", "tickets"]);
+    NIKOFLOW_RESUME_TAIL_BYTES = 64 * 1024;
     THINKING_ONLY_STREAK_BREAKER = "thinking-only-streak";
     THINKING_ONLY_STREAK_MAX = 3;
     THINKING_ONLY_STREAK_TTL_MS = 5 * 60 * 1e3;

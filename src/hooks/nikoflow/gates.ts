@@ -39,8 +39,17 @@ export const HUMAN_GATE_PHASES: ReadonlySet<string> = new Set([
   "tickets",
 ]);
 
+/** Parsed approving reviewer verdict attrs (resume-snapshot evidence). */
+export interface ReviewerVerdict {
+  spec: string;
+  quality: string;
+}
+
 export interface GateMatch {
   matched: boolean;
+  /** The approving reviewer verdict found alongside a ticket gate, when the
+   *  caller required one (requireApprovedVerdict). */
+  verdict?: ReviewerVerdict;
   /** For the depth gate: the tier the user confirmed, if present. */
   depth?: NikoflowDepth;
   /** Approval/autonomy mode the user confirmed. */
@@ -113,6 +122,12 @@ function stripInjectedExamples(text: string): string {
  * must both pass explicitly (adopted from superpowers' two-verdict review).
  */
 export function detectNikoflowReviewerVerdict(text: string): boolean {
+  return matchNikoflowReviewerVerdict(text) !== null;
+}
+
+/** Like detectNikoflowReviewerVerdict, but returns the parsed approving verdict
+ *  attrs so the caller can persist them as ticket evidence (resume snapshot). */
+export function matchNikoflowReviewerVerdict(text: string): ReviewerVerdict | null {
   const sanitized = stripInjectedExamples(text);
   // Complete block only: a dangling opening tag or a self-closing tag is not a
   // verdict (QA-V2) — the body is where findings live.
@@ -126,9 +141,9 @@ export function detectNikoflowReviewerVerdict(text: string): boolean {
     if ((attrs.match(/(?<![\w-])quality=/gi) ?? []).length !== 1) continue;
     const spec = extractAttribute(attrs, "spec")?.toLowerCase();
     const quality = extractAttribute(attrs, "quality")?.toLowerCase();
-    if (spec === "pass" && quality === "approved") return true;
+    if (spec === "pass" && quality === "approved") return { spec, quality };
   }
-  return false;
+  return null;
 }
 
 /**

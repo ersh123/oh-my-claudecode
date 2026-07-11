@@ -50,7 +50,10 @@ describe("nikoflow verify convergence (TSK-006)", () => {
     const rid = readNikoflowState(dir, sid)!.request_id!;
     writeEntries(transcript, reviewerResult("tu-1", `<nikoflow-gate phase="verify" score="9.7" request-id="${rid}">VERIFIED</nikoflow-gate>`));
     run();
-    expect(isNikoflowComplete(readNikoflowState(dir, sid)!)).toBe(true);
+    const s = readNikoflowState(dir, sid)!;
+    expect(isNikoflowComplete(s)).toBe(true);
+    // a PASSING pass completes the flow — nothing to resume, no last_verify write
+    expect(s.last_verify).toBeUndefined();
   });
 
   it("completes at exactly the 9.5 boundary", () => {
@@ -104,6 +107,10 @@ describe("nikoflow verify convergence (TSK-006)", () => {
     const s = readNikoflowState(dir, sid)!;
     expect(getCurrentPhase(s)).toBe("verify");
     expect(s.verify_pass).toBe(1);
+    // resume snapshot: the failed pass records its outcome in the same write
+    expect(s.last_verify?.score).toBe(8.0);
+    expect(s.last_verify?.payload).toBe("VERIFIED");
+    expect(Number.isFinite(new Date(s.last_verify!.at).getTime())).toBe(true);
     // request-id rotated so the stale 8.0 review can't re-satisfy the next pass
     expect(s.request_id).not.toBe(rid);
     expect(r.message).toContain("pass");

@@ -50,6 +50,7 @@ import {
 } from '../ralph/index.js';
 import {
   readNikoflowState,
+  writeNikoflowState,
   incrementNikoflowIteration,
   getCurrentPhase,
   isNikoflowComplete,
@@ -67,7 +68,7 @@ import {
   userRepliedAfterMint,
   isNikoflowUserTurnFresh,
   detectNikoflowGate,
-  detectNikoflowReviewerVerdict,
+  matchNikoflowReviewerVerdict,
   readTickets,
   validateTicketDag,
   validateTicketCoverage,
@@ -79,6 +80,7 @@ import {
   lintTddEvidence,
   getExecuteTicketPrompt,
   getVerifyPrompt,
+  renderNikoflowResumeHeader,
   ticketWorktreeBranch,
   ticketWorktreeMergeCmd,
   pbtObligation,
@@ -98,6 +100,7 @@ import {
   writeTaskmapSidecar,
   computeTaskBoardDrift,
   type NikoflowState,
+  type NikoflowTicketsFile,
   type GateMatch,
   type PbtObligation,
 } from '../nikoflow/index.js';
@@ -1153,8 +1156,14 @@ function nikoflowReviewerAuthoredGate(
       if (!match.matched) continue;
       // Ticket gates additionally require the reviewer's structured verdict
       // (spec="pass" quality="approved") in the SAME tool_result — a bare
-      // TICKET_DONE echo from a whitelisted reviewer is not an approval.
-      if (requireApprovedVerdict && !detectNikoflowReviewerVerdict(reviewerOutput)) continue;
+      // TICKET_DONE echo from a whitelisted reviewer is not an approval. The
+      // parsed verdict rides out on the match so it can be persisted as
+      // ticket evidence (resume snapshot).
+      if (requireApprovedVerdict) {
+        const verdict = matchNikoflowReviewerVerdict(reviewerOutput);
+        if (!verdict) continue;
+        match.verdict = verdict;
+      }
       return match;
     }
   }
@@ -1428,12 +1437,24 @@ export function handleNikoflowExecute(
   const requestId = mintGateRequest(workingDir, gate, sessionId) ?? undefined;
 
   // The ticket advances ONLY on a reviewer-subagent-authored TICKET_DONE tag.
-  if (
+  const approval: GateMatch =
     requestId && // fail closed: no correlation id → don't accept any tag
     transcriptPath &&
-    existsSync(transcriptPath) &&
-    nikoflowReviewerAuthoredGate(transcriptPath, gate, requestId, ['TICKET_DONE'], true).matched
-  ) {
+    existsSync(transcriptPath)
+      ? nikoflowReviewerAuthoredGate(transcriptPath, gate, requestId, ['TICKET_DONE'], true)
+      : { matched: false };
+  if (approval.matched) {
+    // Resume snapshot: the reviewer verdict that approved this ticket, merged
+    // into evidence writes that happen anyway (no extra RMW).
+    const verdictEvidence = approval.verdict
+      ? {
+          last_verdict: {
+            spec: approval.verdict.spec,
+            quality: approval.verdict.quality,
+            at: new Date().toISOString(),
+          },
+        }
+      : {};
     // TDD-evidence precondition (RED-proof discipline). Model-written → this is
     // anti-sloppiness, not anti-forgery: shape/ordering only, the hook never runs
     // commands; fabrication is the reviewer's cross-check. Keep the request-id
@@ -1464,7 +1485,7 @@ export function handleNikoflowExecute(
       `refs/heads/${ticketWorktreeBranch(ticket.id, current.run_id)}`,
     );
     if (branchSha && !gitIsAncestorOfHead(workingDir, branchSha)) {
-      if (!markTicketStatus(workingDir, ticket.id, 'review', sessionId, { reviewed_sha: branchSha })) {
+      if (!markTicketStatus(workingDir, ticket.id, 'review', sessionId, { reviewed_sha: branchSha, ...verdictEvidence })) {
         return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
       }
       clearGateRequest(workingDir, sessionId);
@@ -1482,8 +1503,8 @@ export function handleNikoflowExecute(
     // Branch already merged (fast worker), or no ticket branch exists (the
     // executor worked without isolation — prompt-only convention; note it).
     const evidence = branchSha
-      ? { reviewed_sha: branchSha }
-      : { worktree_used: false };
+      ? { reviewed_sha: branchSha, ...verdictEvidence }
+      : { worktree_used: false, ...verdictEvidence };
     if (!markTicketStatus(workingDir, ticket.id, 'done', sessionId, evidence)) {
       // Persistence failed — surface it instead of silently re-looping forever.
       return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
@@ -1575,7 +1596,12 @@ export function handleNikoflowVerify(
       if (atCap) {
         return nikoflowVerifyEscalation(current, passSoFar);
       }
-      const passes = recordVerifyPass(workingDir, sessionId);
+      // Same single RMW that already happens per failed pass also records the
+      // outcome (last_verify) for the resume snapshot.
+      const passes = recordVerifyPass(workingDir, sessionId, {
+        score: match.score,
+        payload: match.payload,
+      });
       rotateGateRequest(workingDir, 'verify', sessionId); // fresh reviewer next pass
       if (passes >= NIKOFLOW_VERIFY_MAX_PASSES) {
         return nikoflowVerifyEscalation(current, passes);
@@ -1629,6 +1655,77 @@ export async function checkNikoflowLoop(
   // current iteration (and refreshes last_checked_at to keep the session live).
   const current = incrementNikoflowIteration(workingDir, sessionId) ?? state;
 
+  // Resume snapshot: record HEAD once per run, at the first Stop. Written ONLY
+  // from this Stop-hook path (activation shape in keyword-detector.mjs stays
+  // byte-identical); git is only READ. RMW-safe: single-writer Stop path right
+  // after the increment write — UserPromptSubmit never RMWs this file.
+  if (!current.base_sha) {
+    const sha = gitRevParse(workingDir, 'HEAD');
+    if (sha) {
+      current.base_sha = sha;
+      writeNikoflowState(workingDir, current, sessionId);
+    }
+  }
+
+  // Fresh-context resume header: a mid-run Stop whose visible transcript tail
+  // never received a prior continuation prompt (compaction / context
+  // replacement) gets a compact snapshot prefixed above whatever the dispatch
+  // emits. state.iteration is the PRE-increment count: >1 means a continuation
+  // prompt was already emitted on an earlier Stop.
+  const resumeHeader = nikoflowResumeHeaderIfFresh(
+    workingDir,
+    sessionId,
+    state.iteration,
+    current,
+    transcriptPath,
+  );
+  const result = nikoflowDispatchStop(workingDir, sessionId, current, transcriptPath);
+  if (resumeHeader && result.shouldBlock) {
+    return { ...result, message: `${resumeHeader}\n${result.message}` };
+  }
+  return result;
+}
+
+/** Transcript tail budget for the fresh-context probe (one substring scan). */
+const NIKOFLOW_RESUME_TAIL_BYTES = 64 * 1024;
+
+/** Render the resume header iff this Stop looks like a fresh context mid-run.
+ *  False negative ⇒ no header (harmless); false positive ⇒ a few extra lines. */
+function nikoflowResumeHeaderIfFresh(
+  workingDir: string,
+  sessionId: string | undefined,
+  preIncrementIteration: number,
+  current: NikoflowState,
+  transcriptPath?: string,
+): string {
+  if (preIncrementIteration <= 1) return '';
+  if (!transcriptPath || !existsSync(transcriptPath)) return '';
+  let tail: string;
+  try {
+    tail = readTranscriptTail(transcriptPath, NIKOFLOW_RESUME_TAIL_BYTES);
+  } catch {
+    return '';
+  }
+  // A prior continuation prompt still in the visible tail ⇒ context not fresh.
+  if (tail.includes('<nikoflow-continuation')) return '';
+  let tickets: NikoflowTicketsFile | null = null;
+  try {
+    tickets = readTickets(workingDir, sessionId);
+  } catch {
+    tickets = null;
+  }
+  return renderNikoflowResumeHeader(current, tickets, gitRevParse(workingDir, 'HEAD'));
+}
+
+/** The per-Stop nikoflow dispatch, extracted from checkNikoflowLoop so the
+ *  resume header can prefix every exit uniformly without touching the
+ *  standalone-tested handleNikoflowExecute/handleNikoflowVerify. */
+function nikoflowDispatchStop(
+  workingDir: string,
+  sessionId: string | undefined,
+  current: NikoflowState,
+  transcriptPath?: string,
+): PersistentModeResult {
   if (isNikoflowComplete(current)) {
     return nikoflowCompleteResult(current.iteration);
   }

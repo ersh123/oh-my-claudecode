@@ -157,6 +157,22 @@ describe('nikoflow live activation parity with the TS engine (autonomy/depth/rol
   }
 });
 
+describe('nikoflow live activation never writes Stop-hook-owned resume fields', () => {
+  // base_sha / last_verify are written ONLY from the Stop hook. If someone
+  // later adds them at activation, the hand-written keyword-detector.mjs
+  // activation shape would need mirroring — this documents and catches that.
+  it('activation state carries neither base_sha nor last_verify', () => {
+    const { cwd, statePath } = activate('Run nikoflow on this repository.');
+    try {
+      const live = readState(statePath) as unknown as Record<string, unknown>;
+      expect('base_sha' in live).toBe(false);
+      expect('last_verify' in live).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('nikoflow cancel sweeps every registered root (cwd-wander hazard)', () => {
   it('cancelomc issued from a different cwd removes state written under another .omc root', () => {
     const registry = join(mkdtempSync(join(tmpdir(), 'nikoflow-registry-')), 'roots.json');

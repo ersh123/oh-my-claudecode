@@ -81,6 +81,10 @@ export interface NikoflowState {
   /** Immutable per-activation id. Scopes worktree paths/branches so two runs
    *  (or a cancel+restart) can never share or adopt each other's TSK-001. */
   run_id?: string;
+  /** HEAD at the first Stop of the run (resume snapshot). Written ONCE from the
+   *  Stop hook only — never at activation (keyword-detector.mjs mirrors the
+   *  activation shape byte-for-byte and must not need to know this field). */
+  base_sha?: string;
   /** Current iteration number */
   iteration: number;
   /** When the loop started */
@@ -123,6 +127,9 @@ export interface NikoflowState {
   last_user_prompt_at?: string;
   /** Number of failed verify-review passes (loop-review convergence, TSK-006). */
   verify_pass?: number;
+  /** Outcome of the most recent FAILED verify pass (resume snapshot — a passing
+   *  pass completes the flow, so there is nothing to resume from it). */
+  last_verify?: { score?: number; payload: string; at: string };
   /** Consecutive verify Stops with NO parseable reviewer verdict (livelock guard). */
   verify_no_verdict?: number;
   /** The ticket the execute-stall counter is tracking. */
@@ -521,15 +528,25 @@ export function bumpNikoflowRidMismatch(
   return state.rid_mismatch;
 }
 
-/** Increment the failed-verify-pass counter and return the new value. */
+/** Increment the failed-verify-pass counter and return the new value. When the
+ *  caller passes the parsed verdict, record it as `last_verify` in the SAME
+ *  write (resume snapshot — no extra RMW). */
 export function recordVerifyPass(
   directory: string,
   sessionId?: string,
+  verdict?: { score?: number; payload?: string },
 ): number {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return 0;
   state.verify_pass = (state.verify_pass ?? 0) + 1;
   state.verify_no_verdict = 0; // a verdict was seen → reset the livelock guard
+  if (verdict?.payload) {
+    state.last_verify = {
+      ...(verdict.score !== undefined ? { score: verdict.score } : {}),
+      payload: verdict.payload,
+      at: new Date().toISOString(),
+    };
+  }
   writeNikoflowState(directory, state, sessionId);
   return state.verify_pass;
 }

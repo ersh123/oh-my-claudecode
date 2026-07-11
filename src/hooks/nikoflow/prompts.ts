@@ -7,12 +7,14 @@
  * gate logic enforces (TSK-003+), so the prose and the machine agree.
  */
 
-import { isCodexRoleSpec, NIKOFLOW_MODEL_FALLBACK } from "./loop.js";
+import { getCurrentPhase, isCodexRoleSpec, NIKOFLOW_MODEL_FALLBACK } from "./loop.js";
 import {
   ticketWorktreeRelPath,
+  ticketWorktreeBranch,
   ticketWorktreeCreateCmd,
   ticketWorktreeMergeCmd,
 } from "./worktree.js";
+import { getNextTicket, type NikoflowTicketsFile } from "./tickets.js";
 import type { NikoflowState } from "./loop.js";
 import type { PbtObligation } from "./pbt.js";
 
@@ -311,6 +313,76 @@ export function getVerifyPrompt(
     `${CANCEL_HINT}\n` +
     `</nikoflow-continuation>`
   );
+}
+
+/** Neutralize angle brackets in free text (task/title) so a resume header can
+ *  never smuggle a tag past the gate detectors. */
+function sanitizeInline(text: string): string {
+  return text.replace(/[<>]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Compact resume snapshot rendered ABOVE the phase prompt when a mid-run Stop
+ * arrives with a fresh model context (compaction / context replacement).
+ * Pure render from already-persisted state — deliberately carries NO gate tag
+ * and NO request-id: the phase prompt below it is the sole authority for both.
+ */
+export function renderNikoflowResumeHeader(
+  state: NikoflowState,
+  tickets: NikoflowTicketsFile | null,
+  headSha: string | null,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    `<nikoflow-resume run="${state.run_id ?? "legacy"}" iteration="${state.iteration}">`,
+  );
+  lines.push(
+    "Fresh context detected mid-run — this snapshot, not memory, is the source of truth.",
+  );
+  const task = sanitizeInline(state.prompt ?? "");
+  lines.push(`task: ${task.length > 200 ? `${task.slice(0, 200)}…` : task}`);
+  const phase = getCurrentPhase(state);
+  const phaseName = phase ?? (state.depth ? "complete" : "depth-selection");
+  const pos = state.phases.length
+    ? ` (${Math.min(state.phase_index + 1, state.phases.length)}/${state.phases.length})`
+    : "";
+  lines.push(
+    `depth=${state.depth ?? "undecided"} phase=${phaseName}${pos} mode=${state.autonomy_mode ?? "approval-gated"}`,
+  );
+  const execIdx = state.phases.indexOf("execute");
+  if (tickets && tickets.tickets.length > 0 && execIdx !== -1 && state.phase_index >= execIdx) {
+    const done = tickets.tickets.filter((t) => t.status === "done").length;
+    const cur = getNextTicket(tickets);
+    lines.push(
+      `tickets: ${done}/${tickets.tickets.length} done` +
+        (cur ? `; current ${cur.id} "${sanitizeInline(cur.title)}" [${cur.status}]` : ""),
+    );
+    if (cur) {
+      lines.push(
+        `worktree: ${ticketWorktreeRelPath(cur.id, state.run_id)}  branch: ${ticketWorktreeBranch(cur.id, state.run_id)}`,
+      );
+    }
+  }
+  lines.push(
+    `git: base ${state.base_sha ? state.base_sha.slice(0, 10) : "unrecorded"} → head ${headSha ? headSha.slice(0, 10) : "n/a"}`,
+  );
+  const signals: string[] = [];
+  if (state.verify_pass) signals.push(`verify_pass=${state.verify_pass}`);
+  if (state.verify_no_verdict) signals.push(`verify_no_verdict=${state.verify_no_verdict}`);
+  if (state.execute_stall) {
+    signals.push(`execute_stall=${state.execute_stall_ticket ?? "?"}:${state.execute_stall}`);
+  }
+  if (state.rid_mismatch) signals.push(`rid_mismatch=${state.rid_mismatch}`);
+  if (state.last_verify) {
+    const lv = state.last_verify;
+    signals.push(
+      `last_verify=${lv.score !== undefined ? `${lv.score}/10` : lv.payload} at ${lv.at}`,
+    );
+  }
+  if (signals.length) lines.push(`signals: ${signals.join(" ")}`);
+  lines.push("The required next action follows below — execute it.");
+  lines.push("</nikoflow-resume>");
+  return lines.join("\n");
 }
 
 /** Continuation prompt for a named phase. */

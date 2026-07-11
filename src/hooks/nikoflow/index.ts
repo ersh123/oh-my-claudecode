@@ -80,14 +80,17 @@ export {
 export {
   getDepthSelectionPrompt,
   getPhasePrompt,
+  renderNikoflowResumeHeader,
 } from "./prompts.js";
 
 export {
   detectNikoflowGate,
   detectNikoflowReviewerVerdict,
+  matchNikoflowReviewerVerdict,
   NIKOFLOW_GATE_PAYLOADS,
   HUMAN_GATE_PHASES,
   type GateMatch,
+  type ReviewerVerdict,
 } from "./gates.js";
 
 export {

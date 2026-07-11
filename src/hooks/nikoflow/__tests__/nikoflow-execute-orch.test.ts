@@ -143,7 +143,13 @@ describe("nikoflow execute orchestration (TSK-005)", () => {
       `Reviewed, looks good.\n${APPROVED_VERDICT}\n<nikoflow-gate phase="execute:TSK-001" request-id="${rid}">TICKET_DONE</nikoflow-gate>`,
     ));
     const r = run();
-    expect(readTickets(dir, sid)!.tickets.find((t) => t.id === "TSK-001")!.status).toBe("done");
+    const done = readTickets(dir, sid)!.tickets.find((t) => t.id === "TSK-001")!;
+    expect(done.status).toBe("done");
+    // resume snapshot: the approving verdict rides the same evidence write
+    const lv = done.evidence?.last_verdict as { spec: string; quality: string; at: string };
+    expect(lv.spec).toBe("pass");
+    expect(lv.quality).toBe("approved");
+    expect(Number.isFinite(new Date(lv.at).getTime())).toBe(true);
     // now driving TSK-002
     expect(r.message).toContain("TSK-002");
   });
