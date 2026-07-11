@@ -19761,6 +19761,236 @@ var init_cancel = __esm({
   }
 });
 
+// src/hooks/nikoflow/tickets.ts
+function ticketsPath(directory, sessionId) {
+  if (sessionId) {
+    return resolveSessionStatePath(TICKETS_STATE_KEY, sessionId, directory);
+  }
+  return (0, import_path64.join)(getOmcRoot(directory), `${TICKETS_STATE_KEY}.json`);
+}
+function asStringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v) => typeof v === "string" && v.length > 0);
+}
+function normalizeTicketsFile(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw;
+  if (!Array.isArray(obj.tickets)) return null;
+  const tickets = [];
+  for (const t of obj.tickets) {
+    if (!t || typeof t !== "object") continue;
+    const rec = t;
+    if (typeof rec.id !== "string" || !TICKET_ID_PATTERN.test(rec.id)) continue;
+    if (typeof rec.title !== "string") continue;
+    const status = typeof rec.status === "string" && TICKET_STATUSES.includes(rec.status) ? rec.status : "todo";
+    tickets.push({
+      id: rec.id,
+      ...typeof rec.story_id === "string" ? { story_id: rec.story_id } : {},
+      title: rec.title,
+      acceptance: asStringArray(rec.acceptance),
+      blocked_by: asStringArray(rec.blocked_by),
+      ...typeof rec.self_verify === "string" ? { self_verify: rec.self_verify } : {},
+      ...typeof rec.pbt_required === "boolean" ? { pbt_required: rec.pbt_required } : {},
+      status,
+      ...rec.evidence && typeof rec.evidence === "object" ? { evidence: rec.evidence } : {}
+    });
+  }
+  return { version: 1, tickets };
+}
+function lintTicketsRaw(raw) {
+  const warnings = [];
+  if (!raw || typeof raw !== "object") {
+    return ["tickets.json is not an object"];
+  }
+  const obj = raw;
+  if (!Array.isArray(obj.tickets)) {
+    return ["tickets.json has no 'tickets' array"];
+  }
+  if ("version" in obj && obj.version !== 1) {
+    warnings.push(`unsupported tickets.json version ${JSON.stringify(obj.version)} (expected 1)`);
+  }
+  obj.tickets.forEach((t, i) => {
+    const label = `ticket #${i + 1}`;
+    if (!t || typeof t !== "object") {
+      warnings.push(`${label}: not an object`);
+      return;
+    }
+    const rec = t;
+    const id = typeof rec.id === "string" ? rec.id : label;
+    if (typeof rec.id !== "string" || !rec.id) {
+      warnings.push(`${label}: missing string id`);
+    } else if (!TICKET_ID_PATTERN.test(rec.id)) {
+      warnings.push(`${label}: id ${JSON.stringify(rec.id)} must match TSK-NNN`);
+    }
+    if (typeof rec.title !== "string") warnings.push(`${id}: missing string title`);
+    if ("blocked_by" in rec && !Array.isArray(rec.blocked_by)) {
+      warnings.push(`${id}: blocked_by must be an array of ids, not ${typeof rec.blocked_by}`);
+    }
+    if ("acceptance" in rec && !Array.isArray(rec.acceptance)) {
+      warnings.push(`${id}: acceptance must be an array`);
+    }
+    if (Array.isArray(rec.blocked_by)) {
+      rec.blocked_by.forEach((d, j) => {
+        if (typeof d !== "string" || !d) {
+          warnings.push(`${id}: blocked_by[${j}] must be a non-empty ticket id, got ${JSON.stringify(d)}`);
+        }
+      });
+    }
+    if (Array.isArray(rec.acceptance)) {
+      rec.acceptance.forEach((a, j) => {
+        if (typeof a !== "string" || !a) {
+          warnings.push(`${id}: acceptance[${j}] must be a non-empty string, got ${JSON.stringify(a)}`);
+        }
+      });
+    }
+    if ("status" in rec && !(typeof rec.status === "string" && TICKET_STATUSES.includes(rec.status))) {
+      warnings.push(`${id}: invalid status ${JSON.stringify(rec.status)}`);
+    }
+  });
+  return warnings;
+}
+function lintTicketsFile(directory, sessionId) {
+  const path22 = ticketsPath(directory, sessionId);
+  if (!(0, import_fs55.existsSync)(path22)) return ["tickets.json not found"];
+  try {
+    return lintTicketsRaw(JSON.parse((0, import_fs55.readFileSync)(path22, "utf-8")));
+  } catch {
+    return ["tickets.json is not valid JSON"];
+  }
+}
+function readTickets(directory, sessionId) {
+  const path22 = ticketsPath(directory, sessionId);
+  if (!(0, import_fs55.existsSync)(path22)) return null;
+  try {
+    return normalizeTicketsFile(JSON.parse((0, import_fs55.readFileSync)(path22, "utf-8")));
+  } catch {
+    return null;
+  }
+}
+function writeTickets(directory, file, sessionId) {
+  const path22 = ticketsPath(directory, sessionId);
+  try {
+    if (sessionId) {
+      ensureSessionStateDir(sessionId, directory);
+    }
+    atomicWriteJsonSync(path22, file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function clearTickets(directory, sessionId) {
+  const path22 = ticketsPath(directory, sessionId);
+  if (!(0, import_fs55.existsSync)(path22)) return true;
+  try {
+    (0, import_fs55.unlinkSync)(path22);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function validateTicketDag(file) {
+  const errors = [];
+  const ids = /* @__PURE__ */ new Set();
+  const dup = /* @__PURE__ */ new Set();
+  for (const t of file.tickets) {
+    if (ids.has(t.id)) dup.add(t.id);
+    ids.add(t.id);
+  }
+  for (const d of dup) errors.push(`duplicate ticket id: ${d}`);
+  if (file.tickets.length === 0) {
+    errors.push("no tickets defined");
+  }
+  const byId = new Map(file.tickets.map((t) => [t.id, t]));
+  for (const t of file.tickets) {
+    for (const dep of t.blocked_by) {
+      if (dep === t.id) errors.push(`${t.id} is blocked by itself`);
+      else if (!byId.has(dep)) errors.push(`${t.id} blocked_by unknown ticket: ${dep}`);
+    }
+  }
+  const colour = /* @__PURE__ */ new Map();
+  const cyclePath = [];
+  let cycleFound = null;
+  const visit = (id) => {
+    if (cycleFound) return;
+    colour.set(id, 1);
+    cyclePath.push(id);
+    const node = byId.get(id);
+    for (const dep of node?.blocked_by ?? []) {
+      if (dep === id) continue;
+      if (!byId.has(dep)) continue;
+      const c = colour.get(dep) ?? 0;
+      if (c === 1) {
+        cycleFound = dep;
+        break;
+      }
+      if (c === 0) visit(dep);
+      if (cycleFound) break;
+    }
+    if (!cycleFound) {
+      colour.set(id, 2);
+      cyclePath.pop();
+    }
+  };
+  for (const t of file.tickets) {
+    if ((colour.get(t.id) ?? 0) === 0) visit(t.id);
+    if (cycleFound) break;
+  }
+  if (cycleFound) {
+    const start = cyclePath.indexOf(cycleFound);
+    const loop = [...cyclePath.slice(start), cycleFound].join(" \u2192 ");
+    errors.push(`dependency cycle: ${loop}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+function getNextTicket(file) {
+  const byId = new Map(file.tickets.map((t) => [t.id, t]));
+  for (const t of file.tickets) {
+    if (t.status === "done") continue;
+    const blockersDone = t.blocked_by.every(
+      (d) => byId.get(d)?.status === "done"
+    );
+    if (blockersDone) return t;
+  }
+  return null;
+}
+function allTicketsDone(file) {
+  return file.tickets.length > 0 && file.tickets.every((t) => t.status === "done");
+}
+function markTicketStatus(directory, ticketId, status, sessionId, evidence) {
+  const file = readTickets(directory, sessionId);
+  if (!file) return false;
+  const ticket = file.tickets.find((t) => t.id === ticketId);
+  if (!ticket) return false;
+  ticket.status = status;
+  if (evidence) {
+    ticket.evidence = { ...ticket.evidence ?? {}, ...evidence };
+  }
+  return writeTickets(directory, file, sessionId);
+}
+function isTicketDeadlock(file) {
+  return !allTicketsDone(file) && getNextTicket(file) === null;
+}
+var import_fs55, import_path64, TICKET_STATUSES, TICKETS_STATE_KEY, TICKET_ID_PATTERN;
+var init_tickets = __esm({
+  "src/hooks/nikoflow/tickets.ts"() {
+    "use strict";
+    import_fs55 = require("fs");
+    init_atomic_write();
+    init_worktree_paths();
+    import_path64 = require("path");
+    TICKET_STATUSES = [
+      "todo",
+      "red",
+      "green",
+      "review",
+      "done"
+    ];
+    TICKETS_STATE_KEY = "nikoflow-tickets";
+    TICKET_ID_PATTERN = /^TSK-\d{1,5}$/;
+  }
+});
+
 // src/hooks/nikoflow/loop.ts
 function readNikoflowState(directory, sessionId) {
   const state = readModeState(MODE, directory, sessionId);
@@ -19779,9 +20009,9 @@ function writeNikoflowState(directory, state, sessionId) {
 }
 function clearNikoflowState(directory, sessionId) {
   const turn = userTurnPath(directory, sessionId);
-  if (turn && (0, import_fs55.existsSync)(turn)) {
+  if (turn && (0, import_fs56.existsSync)(turn)) {
     try {
-      (0, import_fs55.unlinkSync)(turn);
+      (0, import_fs56.unlinkSync)(turn);
     } catch {
     }
   }
@@ -19926,7 +20156,15 @@ function clearGateRequest(directory, sessionId) {
   delete state.request_id;
   delete state.awaiting_gate;
   delete state.gate_request_minted_at;
+  delete state.rid_mismatch;
   return writeNikoflowState(directory, state, sessionId);
+}
+function bumpNikoflowRidMismatch(directory, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return 0;
+  state.rid_mismatch = (state.rid_mismatch ?? 0) + 1;
+  writeNikoflowState(directory, state, sessionId);
+  return state.rid_mismatch;
 }
 function recordVerifyPass(directory, sessionId) {
   const state = readNikoflowState(directory, sessionId);
@@ -19976,9 +20214,9 @@ function userTurnPath(directory, sessionId) {
 }
 function readNikoflowUserTurnAt(directory, sessionId) {
   const p = userTurnPath(directory, sessionId);
-  if (!p || !(0, import_fs55.existsSync)(p)) return null;
+  if (!p || !(0, import_fs56.existsSync)(p)) return null;
   try {
-    const obj = JSON.parse((0, import_fs55.readFileSync)(p, "utf-8"));
+    const obj = JSON.parse((0, import_fs56.readFileSync)(p, "utf-8"));
     return typeof obj.at === "string" ? obj.at : null;
   } catch {
     return null;
@@ -20035,6 +20273,7 @@ function createNikoflowLoopHook(directory) {
     const normalizedPrompt = stripNikoflowFlags(prompt);
     const state = {
       active: true,
+      run_id: (0, import_crypto11.randomUUID)().slice(0, 8),
       iteration: 1,
       started_at: now,
       last_checked_at: now,
@@ -20055,6 +20294,7 @@ function createNikoflowLoopHook(directory) {
     if (!state || state.session_id !== sessionId) {
       return false;
     }
+    clearTickets(directory, sessionId);
     return clearNikoflowState(directory, sessionId);
   };
   const getState = (sessionId) => {
@@ -20062,15 +20302,16 @@ function createNikoflowLoopHook(directory) {
   };
   return { startLoop, cancelLoop, getState };
 }
-var import_crypto11, import_fs55, NIKOFLOW_DEPTHS, NIKOFLOW_AUTONOMY_MODES, NIKOFLOW_NATIVE_MODELS, NIKOFLOW_CODEX_SPECS, NIKOFLOW_MODEL_FALLBACK, NIKOFLOW_DEFAULT_ROLES, NIKOFLOW_PHASES, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, MODE, USER_TURN_KEY;
+var import_crypto11, import_fs56, NIKOFLOW_DEPTHS, NIKOFLOW_AUTONOMY_MODES, NIKOFLOW_NATIVE_MODELS, NIKOFLOW_CODEX_SPECS, NIKOFLOW_MODEL_FALLBACK, NIKOFLOW_DEFAULT_ROLES, NIKOFLOW_PHASES, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, MODE, USER_TURN_KEY;
 var init_loop2 = __esm({
   "src/hooks/nikoflow/loop.ts"() {
     "use strict";
     import_crypto11 = require("crypto");
-    import_fs55 = require("fs");
+    import_fs56 = require("fs");
     init_mode_state_io();
     init_atomic_write();
     init_worktree_paths();
+    init_tickets();
     NIKOFLOW_DEPTHS = ["tactical", "standard", "deep"];
     NIKOFLOW_AUTONOMY_MODES = ["approval-gated", "autonomous"];
     NIKOFLOW_NATIVE_MODELS = ["sonnet", "opus", "haiku", "fable"];
@@ -20098,47 +20339,53 @@ var init_loop2 = __esm({
 });
 
 // src/hooks/nikoflow/worktree.ts
-function ticketWorktreeRelPath(ticketId) {
-  const safe2 = ticketId.replace(/[^A-Za-z0-9_-]/g, "_");
-  return (0, import_path64.join)(".omc", "worktrees", safe2);
+function safeSegment(value) {
+  return value.replace(/[^A-Za-z0-9_-]/g, "_");
 }
-function ticketWorktreePath(directory, ticketId) {
-  return (0, import_path64.join)(directory, ticketWorktreeRelPath(ticketId));
+function scopedName(ticketId, runId) {
+  const ticket = safeSegment(ticketId);
+  return runId ? `${safeSegment(runId)}-${ticket}` : ticket;
 }
-function ticketWorktreeBranch(ticketId) {
-  const safe2 = ticketId.replace(/[^A-Za-z0-9_/-]/g, "-");
-  return `nikoflow/${safe2}`;
+function ticketWorktreeRelPath(ticketId, runId) {
+  return (0, import_path65.join)(".omc", "worktrees", scopedName(ticketId, runId));
+}
+function ticketWorktreePath(directory, ticketId, runId) {
+  return (0, import_path65.join)(directory, ticketWorktreeRelPath(ticketId, runId));
+}
+function ticketWorktreeBranch(ticketId, runId) {
+  const ticket = ticketId.replace(/[^A-Za-z0-9_/-]/g, "-");
+  return runId ? `nikoflow/${safeSegment(runId)}/${ticket}` : `nikoflow/${ticket}`;
 }
 function shq(value) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
-function ticketWorktreeCreateCmd(directory, ticketId) {
-  const path22 = ticketWorktreeRelPath(ticketId);
-  const branch = ticketWorktreeBranch(ticketId);
+function ticketWorktreeCreateCmd(directory, ticketId, runId) {
+  const path22 = ticketWorktreeRelPath(ticketId, runId);
+  const branch = ticketWorktreeBranch(ticketId, runId);
   const d = shq(directory);
   const p = shq(path22);
-  return `git -C ${d} worktree prune; if [ -d ${shq((0, import_path64.join)(directory, path22))} ]; then :; elif git -C ${d} show-ref --verify --quiet refs/heads/${branch}; then git -C ${d} worktree add -q ${p} ${branch}; else git -C ${d} worktree add -q -b ${branch} ${p} HEAD; fi`;
+  return `git -C ${d} worktree prune; if [ -d ${shq((0, import_path65.join)(directory, path22))} ]; then :; elif git -C ${d} show-ref --verify --quiet refs/heads/${branch}; then git -C ${d} worktree add -q ${p} ${branch}; else git -C ${d} worktree add -q -b ${branch} ${p} HEAD; fi`;
 }
-function ticketWorktreeMergeCmd(directory, ticketId) {
-  const path22 = ticketWorktreeRelPath(ticketId);
-  const branch = ticketWorktreeBranch(ticketId);
+function ticketWorktreeMergeCmd(directory, ticketId, runId) {
+  const path22 = ticketWorktreeRelPath(ticketId, runId);
+  const branch = ticketWorktreeBranch(ticketId, runId);
   const d = shq(directory);
-  const w = shq((0, import_path64.join)(directory, path22));
+  const w = shq((0, import_path65.join)(directory, path22));
   const p = shq(path22);
   const msg = shq(`nikoflow: ${branch}`);
   return `git -C ${w} add -A && { git -C ${w} diff --cached --quiet || git -C ${w} commit -q -m ${msg}; } && git -C ${d} merge --no-ff -q ${branch} -m ${msg} && [ -z "$(git -C ${w} status --porcelain)" ] && git -C ${d} worktree remove ${p} && git -C ${d} branch -d ${branch}`;
 }
-function ticketWorktreeRemoveCmd(directory, ticketId) {
-  const path22 = ticketWorktreeRelPath(ticketId);
-  const branch = ticketWorktreeBranch(ticketId);
+function ticketWorktreeRemoveCmd(directory, ticketId, runId) {
+  const path22 = ticketWorktreeRelPath(ticketId, runId);
+  const branch = ticketWorktreeBranch(ticketId, runId);
   const d = shq(directory);
   return `git -C ${d} worktree remove --force ${shq(path22)} 2>/dev/null; git -C ${d} branch -D ${branch} 2>/dev/null; git -C ${d} worktree prune; true`;
 }
-var import_path64;
+var import_path65;
 var init_worktree = __esm({
   "src/hooks/nikoflow/worktree.ts"() {
     "use strict";
-    import_path64 = require("path");
+    import_path65 = require("path");
   }
 });
 
@@ -20165,6 +20412,11 @@ function injectRequestId(body, requestId) {
     (_full, open4, attrs, close) => `${open4}${attrs} request-id="${requestId}"${close}`
   );
 }
+function requestIdLine(requestId) {
+  if (!requestId) return "";
+  return `REQUIRED REQUEST-ID \u2014 COPY EXACTLY, do not invent your own: ${requestId}
+`;
+}
 function getDepthSelectionPrompt(state, requestId) {
   const gateTag = injectRequestId(
     `<nikoflow-gate phase="depth" depth="tactical|standard|deep" mode="approval-gated|autonomous">CONFIRMED</nikoflow-gate>`,
@@ -20181,7 +20433,7 @@ ${MONEY_CRITICAL_PREFLIGHT}
 ` + (state.roles?.panel && state.roles.panel.length > 1 ? `For standard/deep work, consult a divergent-opinion panel \u2014 ${renderPanel(state.roles.panel)} \u2014 on approach/risks/alternatives BEFORE committing, and surface where they disagree.
 ` : "") + `Once the user chooses depth + mode, record both by emitting on its own line:
 ${gateTag}
-(the tag is only accepted after the user has actually replied \u2014 do not self-confirm).
+` + requestIdLine(requestId) + `(the tag is only accepted after the user has actually replied \u2014 do not self-confirm).
 ${CANCEL_HINT}
 </nikoflow-continuation>`;
 }
@@ -20208,9 +20460,9 @@ Deep tier: property-based tests waived (${pbt.reason}).`;
   }
   const dir = state.project_path ?? ".";
   const executor = state.roles?.executor ?? "sonnet";
-  const wtRel = ticketWorktreeRelPath(ticket.id);
-  const createCmd = ticketWorktreeCreateCmd(dir, ticket.id);
-  const mergeCmd = ticketWorktreeMergeCmd(dir, ticket.id);
+  const wtRel = ticketWorktreeRelPath(ticket.id, state.run_id);
+  const createCmd = ticketWorktreeCreateCmd(dir, ticket.id, state.run_id);
+  const mergeCmd = ticketWorktreeMergeCmd(dir, ticket.id, state.run_id);
   const execIsCodex = isCodexRoleSpec(executor);
   const execSpawn = execIsCodex ? `a Codex-backed executor Task subagent (GPT-5.5 xhigh, foreground/--wait)` : `an executor Task subagent \u2014 Task(subagent_type="executor", model="${executor}")`;
   return `<nikoflow-continuation phase="execute" ticket="${ticket.id}" iteration="${state.iteration}">
@@ -20223,9 +20475,11 @@ BASE RULE \u2014 DELEGATE + ISOLATE: you (this thread) ORCHESTRATE only; you do 
 ${MONEY_CRITICAL_PREFLIGHT}
 2. Spawn ${execSpawn} whose working directory is "${wtRel}". It does RED\u2192GREEN for this ONE vertical slice (a failing test at a pre-agreed seam \u2192 the minimum code to pass) INSIDE that worktree and returns a summary + the diff. Do NOT edit files in the main tree yourself.${pbtLine}
 ` + (ticket.self_verify ? `Self-verify: ${ticket.self_verify}
-` : "") + `3. When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} \u2014 a FRESH reviewer that has NOT seen your reasoning \u2014 to review the worktree DIFF against the acceptance criteria and repo standards.${reviewerPbt} Tell it to REJECT if the change leaked outside the worktree (\`git -C "${dir}" status --porcelain\` shows ticket edits in the main tree). Pass it this request-id; it emits, in ITS OWN final output, the ticket gate on its own line ONLY if it approves on green validation:
+` : "") + `3. When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} \u2014 a FRESH reviewer that has NOT seen your reasoning \u2014 to review the worktree DIFF against the acceptance criteria and repo standards.${reviewerPbt} Tell it to REJECT if the change leaked outside the worktree (\`git -C "${dir}" status --porcelain\` shows ticket edits in the main tree). Pass it this request-id; it emits, in ITS OWN final output, TWO things ONLY if it approves on green validation \u2014 first its structured verdict (spec compliance and code quality are SEPARATE judgments; findings with file:line inside the block; use spec="fail" or quality="needs_fixes" to reject):
+<nikoflow-verdict spec="pass" quality="approved">findings / none</nikoflow-verdict>
+then the ticket gate on its own line (the gate does NOT count without the approving verdict):
 ${gateTag}
-4. ONLY after that reviewer approval, merge the worktree into the branch:
+` + requestIdLine(requestId) + `4. ONLY after that reviewer approval, merge the worktree into the branch:
    ${mergeCmd}
    If the merge conflicts, resolve it or run \`git -C "${dir}" merge --abort\` and re-review \u2014 the worktree is preserved, nothing is lost.
 The gate is accepted only from the reviewer subagent's output, never your own text. Do not merge unreviewed code, and do not start another ticket until this one is merged.
@@ -20248,7 +20502,7 @@ ${MONEY_CRITICAL_PREFLIGHT}
 Then spawn ${renderReviewerSpawn(state.roles?.verifier ?? "fable")} that has NOT seen your reasoning. Give it this request-id and the diff scope. The reviewer inspects the change for correctness, regressions, security, and missing high-value tests, and returns a score from 1\u201310. It must emit \u2014 in ITS OWN final output, replacing N.N with its actual score \u2014 exactly one of:
   ${okTag}   (score \u2265 9.5 on green validation), or
   ${noFindingsTag}   (no actionable findings remain).
-If the reviewer scores below 9.5 with actionable findings, fix them and a NEW reviewer runs next pass. The gate is accepted only from the reviewer subagent's output, never your own text.
+` + requestIdLine(requestId) + `If the reviewer scores below 9.5 with actionable findings, fix them and a NEW reviewer runs next pass. The gate is accepted only from the reviewer subagent's output, never your own text.
 ${CANCEL_HINT}
 </nikoflow-continuation>`;
 }
@@ -20262,7 +20516,7 @@ Architect model: ${state.roles.architect} \u2014 for a non-trivial trade-off, co
   const depth = state.depth ?? "undecided";
   return `<nikoflow-continuation phase="${phase}" depth="${depth}" iteration="${state.iteration}">
 ${body}
-${CANCEL_HINT}
+` + requestIdLine(requestId) + `${CANCEL_HINT}
 </nikoflow-continuation>`;
 }
 var CANCEL_HINT, AUTONOMY_MODE_PROTOCOL, MONEY_CRITICAL_PREFLIGHT, PHASE_BODIES;
@@ -20298,6 +20552,17 @@ function extractAttribute(attributes, name) {
 }
 function stripInjectedExamples(text) {
   return text.replace(STRIP_CONTINUATION, " ").replace(STRIP_FENCE_BACKTICK, " ").replace(STRIP_FENCE_TILDE, " ").replace(STRIP_INLINE_TAG, " ");
+}
+function detectNikoflowReviewerVerdict(text) {
+  const sanitized = stripInjectedExamples(text);
+  const re = /<nikoflow-verdict(?![\w-])([^>]*)>/gi;
+  for (const m of sanitized.matchAll(re)) {
+    const attrs = m[1] ?? "";
+    const spec = extractAttribute(attrs, "spec")?.toLowerCase();
+    const quality = extractAttribute(attrs, "quality")?.toLowerCase();
+    if (spec === "pass" && quality === "approved") return true;
+  }
+  return false;
 }
 function detectNikoflowGate(text, opts) {
   const expectedPayloads = opts.expectedPayloads ?? NIKOFLOW_GATE_PAYLOADS[opts.phase];
@@ -20367,220 +20632,14 @@ var init_gates = __esm({
       "request-id": /(?<![\w-])request-id=(["'])(.*?)\1/i,
       score: /(?<![\w-])score=(["'])(.*?)\1/i,
       depth: /(?<![\w-])depth=(["'])(.*?)\1/i,
-      mode: /(?<![\w-])mode=(["'])(.*?)\1/i
+      mode: /(?<![\w-])mode=(["'])(.*?)\1/i,
+      spec: /(?<![\w-])spec=(["'])(.*?)\1/i,
+      quality: /(?<![\w-])quality=(["'])(.*?)\1/i
     };
     STRIP_CONTINUATION = /<nikoflow-continuation\b[\s\S]*?<\/nikoflow-continuation>/gi;
     STRIP_FENCE_BACKTICK = /```[\s\S]*?```/g;
     STRIP_FENCE_TILDE = /~~~[\s\S]*?~~~/g;
     STRIP_INLINE_TAG = /`<nikoflow-gate\b[\s\S]*?<\/nikoflow-gate>`/gi;
-  }
-});
-
-// src/hooks/nikoflow/tickets.ts
-function ticketsPath(directory, sessionId) {
-  if (sessionId) {
-    return resolveSessionStatePath(TICKETS_STATE_KEY, sessionId, directory);
-  }
-  return (0, import_path65.join)(getOmcRoot(directory), `${TICKETS_STATE_KEY}.json`);
-}
-function asStringArray(value) {
-  if (!Array.isArray(value)) return [];
-  return value.filter((v) => typeof v === "string" && v.length > 0);
-}
-function normalizeTicketsFile(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const obj = raw;
-  if (!Array.isArray(obj.tickets)) return null;
-  const tickets = [];
-  for (const t of obj.tickets) {
-    if (!t || typeof t !== "object") continue;
-    const rec = t;
-    if (typeof rec.id !== "string" || !rec.id) continue;
-    if (typeof rec.title !== "string") continue;
-    const status = typeof rec.status === "string" && TICKET_STATUSES.includes(rec.status) ? rec.status : "todo";
-    tickets.push({
-      id: rec.id,
-      ...typeof rec.story_id === "string" ? { story_id: rec.story_id } : {},
-      title: rec.title,
-      acceptance: asStringArray(rec.acceptance),
-      blocked_by: asStringArray(rec.blocked_by),
-      ...typeof rec.self_verify === "string" ? { self_verify: rec.self_verify } : {},
-      ...typeof rec.pbt_required === "boolean" ? { pbt_required: rec.pbt_required } : {},
-      status,
-      ...rec.evidence && typeof rec.evidence === "object" ? { evidence: rec.evidence } : {}
-    });
-  }
-  return { version: 1, tickets };
-}
-function lintTicketsRaw(raw) {
-  const warnings = [];
-  if (!raw || typeof raw !== "object") {
-    return ["tickets.json is not an object"];
-  }
-  const obj = raw;
-  if (!Array.isArray(obj.tickets)) {
-    return ["tickets.json has no 'tickets' array"];
-  }
-  obj.tickets.forEach((t, i) => {
-    const label = `ticket #${i + 1}`;
-    if (!t || typeof t !== "object") {
-      warnings.push(`${label}: not an object`);
-      return;
-    }
-    const rec = t;
-    const id = typeof rec.id === "string" ? rec.id : label;
-    if (typeof rec.id !== "string" || !rec.id) warnings.push(`${label}: missing string id`);
-    if (typeof rec.title !== "string") warnings.push(`${id}: missing string title`);
-    if ("blocked_by" in rec && !Array.isArray(rec.blocked_by)) {
-      warnings.push(`${id}: blocked_by must be an array of ids, not ${typeof rec.blocked_by}`);
-    }
-    if ("acceptance" in rec && !Array.isArray(rec.acceptance)) {
-      warnings.push(`${id}: acceptance must be an array`);
-    }
-    if ("status" in rec && !(typeof rec.status === "string" && TICKET_STATUSES.includes(rec.status))) {
-      warnings.push(`${id}: invalid status ${JSON.stringify(rec.status)}`);
-    }
-  });
-  return warnings;
-}
-function lintTicketsFile(directory, sessionId) {
-  const path22 = ticketsPath(directory, sessionId);
-  if (!(0, import_fs56.existsSync)(path22)) return ["tickets.json not found"];
-  try {
-    return lintTicketsRaw(JSON.parse((0, import_fs56.readFileSync)(path22, "utf-8")));
-  } catch {
-    return ["tickets.json is not valid JSON"];
-  }
-}
-function readTickets(directory, sessionId) {
-  const path22 = ticketsPath(directory, sessionId);
-  if (!(0, import_fs56.existsSync)(path22)) return null;
-  try {
-    return normalizeTicketsFile(JSON.parse((0, import_fs56.readFileSync)(path22, "utf-8")));
-  } catch {
-    return null;
-  }
-}
-function writeTickets(directory, file, sessionId) {
-  const path22 = ticketsPath(directory, sessionId);
-  try {
-    if (sessionId) {
-      ensureSessionStateDir(sessionId, directory);
-    }
-    atomicWriteJsonSync(path22, file);
-    return true;
-  } catch {
-    return false;
-  }
-}
-function clearTickets(directory, sessionId) {
-  const path22 = ticketsPath(directory, sessionId);
-  if (!(0, import_fs56.existsSync)(path22)) return true;
-  try {
-    (0, import_fs56.unlinkSync)(path22);
-    return true;
-  } catch {
-    return false;
-  }
-}
-function validateTicketDag(file) {
-  const errors = [];
-  const ids = /* @__PURE__ */ new Set();
-  const dup = /* @__PURE__ */ new Set();
-  for (const t of file.tickets) {
-    if (ids.has(t.id)) dup.add(t.id);
-    ids.add(t.id);
-  }
-  for (const d of dup) errors.push(`duplicate ticket id: ${d}`);
-  if (file.tickets.length === 0) {
-    errors.push("no tickets defined");
-  }
-  const byId = new Map(file.tickets.map((t) => [t.id, t]));
-  for (const t of file.tickets) {
-    for (const dep of t.blocked_by) {
-      if (dep === t.id) errors.push(`${t.id} is blocked by itself`);
-      else if (!byId.has(dep)) errors.push(`${t.id} blocked_by unknown ticket: ${dep}`);
-    }
-  }
-  const colour = /* @__PURE__ */ new Map();
-  const cyclePath = [];
-  let cycleFound = null;
-  const visit = (id) => {
-    if (cycleFound) return;
-    colour.set(id, 1);
-    cyclePath.push(id);
-    const node = byId.get(id);
-    for (const dep of node?.blocked_by ?? []) {
-      if (dep === id) continue;
-      if (!byId.has(dep)) continue;
-      const c = colour.get(dep) ?? 0;
-      if (c === 1) {
-        cycleFound = dep;
-        break;
-      }
-      if (c === 0) visit(dep);
-      if (cycleFound) break;
-    }
-    if (!cycleFound) {
-      colour.set(id, 2);
-      cyclePath.pop();
-    }
-  };
-  for (const t of file.tickets) {
-    if ((colour.get(t.id) ?? 0) === 0) visit(t.id);
-    if (cycleFound) break;
-  }
-  if (cycleFound) {
-    const start = cyclePath.indexOf(cycleFound);
-    const loop = [...cyclePath.slice(start), cycleFound].join(" \u2192 ");
-    errors.push(`dependency cycle: ${loop}`);
-  }
-  return { ok: errors.length === 0, errors };
-}
-function getNextTicket(file) {
-  const byId = new Map(file.tickets.map((t) => [t.id, t]));
-  for (const t of file.tickets) {
-    if (t.status === "done") continue;
-    const blockersDone = t.blocked_by.every(
-      (d) => byId.get(d)?.status === "done"
-    );
-    if (blockersDone) return t;
-  }
-  return null;
-}
-function allTicketsDone(file) {
-  return file.tickets.length > 0 && file.tickets.every((t) => t.status === "done");
-}
-function markTicketStatus(directory, ticketId, status, sessionId, evidence) {
-  const file = readTickets(directory, sessionId);
-  if (!file) return false;
-  const ticket = file.tickets.find((t) => t.id === ticketId);
-  if (!ticket) return false;
-  ticket.status = status;
-  if (evidence) {
-    ticket.evidence = { ...ticket.evidence ?? {}, ...evidence };
-  }
-  return writeTickets(directory, file, sessionId);
-}
-function isTicketDeadlock(file) {
-  return !allTicketsDone(file) && getNextTicket(file) === null;
-}
-var import_fs56, import_path65, TICKET_STATUSES, TICKETS_STATE_KEY;
-var init_tickets = __esm({
-  "src/hooks/nikoflow/tickets.ts"() {
-    "use strict";
-    import_fs56 = require("fs");
-    init_atomic_write();
-    init_worktree_paths();
-    import_path65 = require("path");
-    TICKET_STATUSES = [
-      "todo",
-      "red",
-      "green",
-      "review",
-      "done"
-    ];
-    TICKETS_STATE_KEY = "nikoflow-tickets";
   }
 });
 
@@ -20685,6 +20744,7 @@ __export(nikoflow_exports, {
   advanceNikoflowPhase: () => advanceNikoflowPhase,
   allTicketsDone: () => allTicketsDone,
   bumpExecuteStall: () => bumpExecuteStall,
+  bumpNikoflowRidMismatch: () => bumpNikoflowRidMismatch,
   bumpVerifyNoVerdict: () => bumpVerifyNoVerdict,
   clearGateRequest: () => clearGateRequest,
   clearNikoflowState: () => clearNikoflowState,
@@ -20693,6 +20753,7 @@ __export(nikoflow_exports, {
   detectAutonomyModeFlag: () => detectAutonomyModeFlag,
   detectDepthFlag: () => detectDepthFlag,
   detectNikoflowGate: () => detectNikoflowGate,
+  detectNikoflowReviewerVerdict: () => detectNikoflowReviewerVerdict,
   detectPbtFramework: () => detectPbtFramework,
   detectRoleFlags: () => detectRoleFlags,
   getCurrentPhase: () => getCurrentPhase,
@@ -21371,7 +21432,7 @@ function readNikoflowGateText(transcriptPath) {
   }
   return parts.join("\n");
 }
-function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expectedPayloads) {
+function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expectedPayloads, requireApprovedVerdict = false) {
   let tail;
   try {
     tail = readTranscriptTail(transcriptPath, NIKOFLOW_REVIEWER_TAIL_BYTES);
@@ -21403,7 +21464,9 @@ function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expected
       const reviewerOutput = extractTranscriptText(block.content);
       if (!reviewerOutput) continue;
       const match = detectNikoflowGate(reviewerOutput, { phase, requestId, expectedPayloads });
-      if (match.matched) return match;
+      if (!match.matched) continue;
+      if (requireApprovedVerdict && !detectNikoflowReviewerVerdict(reviewerOutput)) continue;
+      return match;
     }
   }
   return { matched: false };
@@ -21443,6 +21506,43 @@ function nikoflowAdvanceFromExecute(workingDir, sessionId, current) {
     mode: "nikoflow"
   };
 }
+function gitRevParse(directory, ref) {
+  try {
+    const out = (0, import_child_process19.execFileSync)("git", ["-C", directory, "rev-parse", "--verify", "--quiet", ref], {
+      encoding: "utf-8",
+      timeout: 5e3,
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+    return /^[0-9a-f]{7,40}$/i.test(out) ? out : null;
+  } catch {
+    return null;
+  }
+}
+function gitIsAncestorOfHead(directory, sha) {
+  try {
+    (0, import_child_process19.execFileSync)("git", ["-C", directory, "merge-base", "--is-ancestor", sha, "HEAD"], {
+      timeout: 5e3,
+      stdio: "ignore"
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+function nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt) {
+  clearGateRequest(workingDir, sessionId);
+  resetExecuteStall(workingDir, sessionId);
+  const after = readTickets(workingDir, sessionId);
+  if (!after || allTicketsDone(after)) {
+    return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
+  }
+  const nextTicket = getNextTicket(after);
+  if (nextTicket) {
+    const nrid = mintGateRequest(workingDir, `execute:${nextTicket.id}`, sessionId) ?? void 0;
+    return { shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid, pbt), mode: "nikoflow" };
+  }
+  return nikoflowExecuteError(current, "ticket deadlock after completing a ticket \u2014 check blocked_by.");
+}
 function handleNikoflowExecute(workingDir, sessionId, current, transcriptPath) {
   const lint = lintTicketsFile(workingDir, sessionId);
   if (lint.length > 0) {
@@ -21465,24 +21565,52 @@ function handleNikoflowExecute(workingDir, sessionId, current, transcriptPath) {
   const pbt = pbtObligation(workingDir, current.pbt_enabled ?? false);
   const ticket = getNextTicket(tickets);
   const gate = `execute:${ticket.id}`;
+  if (ticket.status === "review") {
+    const reviewedSha = typeof ticket.evidence?.reviewed_sha === "string" ? ticket.evidence.reviewed_sha : null;
+    if (!reviewedSha || gitIsAncestorOfHead(workingDir, reviewedSha)) {
+      if (!markTicketStatus(workingDir, ticket.id, "done", sessionId)) {
+        return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
+      }
+      return nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt);
+    }
+    const stall2 = bumpExecuteStall(workingDir, ticket.id, sessionId);
+    if (stall2 >= NIKOFLOW_EXECUTE_MAX_STALL) {
+      return nikoflowExecuteError(
+        current,
+        `ticket ${ticket.id} was reviewer-approved but its merge has not landed after ${stall2} attempts. Resolve the merge or ask the user how to proceed.`
+      );
+    }
+    return nikoflowExecuteError(
+      current,
+      `ticket ${ticket.id} is reviewer-APPROVED but NOT MERGED yet (commit ${reviewedSha.slice(0, 10)} is not on the branch). Merge the approved worktree now:
+   ` + ticketWorktreeMergeCmd(workingDir, ticket.id, current.run_id) + `
+Do not start other work until the merge lands.`
+    );
+  }
   const requestId = mintGateRequest(workingDir, gate, sessionId) ?? void 0;
   if (requestId && // fail closed: no correlation id → don't accept any tag
-  transcriptPath && (0, import_fs58.existsSync)(transcriptPath) && nikoflowReviewerAuthoredGate(transcriptPath, gate, requestId, ["TICKET_DONE"]).matched) {
-    if (!markTicketStatus(workingDir, ticket.id, "done", sessionId)) {
+  transcriptPath && (0, import_fs58.existsSync)(transcriptPath) && nikoflowReviewerAuthoredGate(transcriptPath, gate, requestId, ["TICKET_DONE"], true).matched) {
+    const branchSha = gitRevParse(
+      workingDir,
+      `refs/heads/${ticketWorktreeBranch(ticket.id, current.run_id)}`
+    );
+    if (branchSha && !gitIsAncestorOfHead(workingDir, branchSha)) {
+      if (!markTicketStatus(workingDir, ticket.id, "review", sessionId, { reviewed_sha: branchSha })) {
+        return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
+      }
+      clearGateRequest(workingDir, sessionId);
+      return nikoflowExecuteError(
+        current,
+        `ticket ${ticket.id} is reviewer-APPROVED (worktree commit ${branchSha.slice(0, 10)}). Now merge the approved worktree into the branch:
+   ` + ticketWorktreeMergeCmd(workingDir, ticket.id, current.run_id) + `
+The ticket completes only after the merge lands on HEAD.`
+      );
+    }
+    const evidence = branchSha ? { reviewed_sha: branchSha } : { worktree_used: false };
+    if (!markTicketStatus(workingDir, ticket.id, "done", sessionId, evidence)) {
       return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
     }
-    clearGateRequest(workingDir, sessionId);
-    resetExecuteStall(workingDir, sessionId);
-    const after = readTickets(workingDir, sessionId);
-    if (!after || allTicketsDone(after)) {
-      return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
-    }
-    const nextTicket = getNextTicket(after);
-    if (nextTicket) {
-      const nrid = mintGateRequest(workingDir, `execute:${nextTicket.id}`, sessionId) ?? void 0;
-      return { shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid, pbt), mode: "nikoflow" };
-    }
-    return nikoflowExecuteError(current, "ticket deadlock after completing a ticket \u2014 check blocked_by.");
+    return nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt);
   }
   const stall = bumpExecuteStall(workingDir, ticket.id, sessionId);
   if (stall >= NIKOFLOW_EXECUTE_MAX_STALL) {
@@ -21568,6 +21696,7 @@ async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcr
   }
   const gate = phase ?? "depth";
   const requestId = mintGateRequest(workingDir, gate, sessionId) ?? void 0;
+  let ridMismatchNote = "";
   if (NIKOFLOW_ADVANCING_GATES.has(gate) && transcriptPath && (0, import_fs58.existsSync)(transcriptPath)) {
     let gateText = "";
     try {
@@ -21618,12 +21747,20 @@ async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcr
     if (match.matched && isHumanGate && !humanOk) {
       rotateGateRequest(workingDir, gate, sessionId);
     }
+    if (!match.matched && requestId) {
+      const anyRid = detectNikoflowGate(gateText, { phase: gate });
+      if (anyRid.matched) {
+        const mismatches = bumpNikoflowRidMismatch(workingDir, sessionId);
+        ridMismatchNote = `
+<nikoflow-blocked>request-id mismatch (attempt ${mismatches}): your tag has the right phase and payload but the WRONG request-id. Re-emit the tag copying this id EXACTLY: ${requestId}` + (mismatches >= 4 ? ` \u2014 ${mismatches} mismatches in a row: stop retrying blindly; re-read the gate instructions or ask the user / run /oh-my-claudecode:cancel.` : "") + `</nikoflow-blocked>`;
+      }
+    }
   }
   const blockState = readNikoflowState(workingDir, sessionId) ?? current;
   const blockRid = blockState.request_id;
   return {
     shouldBlock: true,
-    message: phase ? getPhasePrompt2(phase, blockState, blockRid) : getDepthSelectionPrompt(blockState, blockRid),
+    message: (phase ? getPhasePrompt2(phase, blockState, blockRid) : getDepthSelectionPrompt(blockState, blockRid)) + ridMismatchNote,
     mode: "nikoflow"
   };
 }
@@ -22512,11 +22649,12 @@ function createHookOutput(result) {
     message: result.message || void 0
   };
 }
-var import_fs58, import_path67, CANCEL_SIGNAL_TTL_MS2, STALE_STATE_THRESHOLD_MS, PENDING_ASYNC_STATE_STALE_MS, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_MAX, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_TTL_MS, TERMINAL_WORKFLOW_SLOT_MODES, TERMINAL_WORKFLOW_PHASES, todoContinuationAttempts, TRANSCRIPT_TAIL_BYTES, NIKOFLOW_REVIEWER_TAIL_BYTES, CRITICAL_CONTEXT_STOP_PERCENT, RALPLAN_TERMINAL_PHASES, REVIEWER_TASK_TOOL_NAMES, REVIEWER_COMMAND_TOOL_NAMES, NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES, AWAITING_CONFIRMATION_TTL_MS, NIKOFLOW_ADVANCING_GATES, THINKING_ONLY_STREAK_BREAKER, THINKING_ONLY_STREAK_MAX, THINKING_ONLY_STREAK_TTL_MS, THINKING_ONLY_STREAK_BAILOUT_MESSAGE, TEAM_PIPELINE_STOP_BLOCKER_MAX, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS, RALPLAN_STOP_BLOCKER_MAX, RALPLAN_STOP_BLOCKER_TTL_MS, RALPLAN_ACTIVE_AGENT_RECENCY_WINDOW_MS;
+var import_fs58, import_child_process19, import_path67, CANCEL_SIGNAL_TTL_MS2, STALE_STATE_THRESHOLD_MS, PENDING_ASYNC_STATE_STALE_MS, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_MAX, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_TTL_MS, TERMINAL_WORKFLOW_SLOT_MODES, TERMINAL_WORKFLOW_PHASES, todoContinuationAttempts, TRANSCRIPT_TAIL_BYTES, NIKOFLOW_REVIEWER_TAIL_BYTES, CRITICAL_CONTEXT_STOP_PERCENT, RALPLAN_TERMINAL_PHASES, REVIEWER_TASK_TOOL_NAMES, REVIEWER_COMMAND_TOOL_NAMES, NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES, AWAITING_CONFIRMATION_TTL_MS, NIKOFLOW_ADVANCING_GATES, THINKING_ONLY_STREAK_BREAKER, THINKING_ONLY_STREAK_MAX, THINKING_ONLY_STREAK_TTL_MS, THINKING_ONLY_STREAK_BAILOUT_MESSAGE, TEAM_PIPELINE_STOP_BLOCKER_MAX, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS, RALPLAN_STOP_BLOCKER_MAX, RALPLAN_STOP_BLOCKER_TTL_MS, RALPLAN_ACTIVE_AGENT_RECENCY_WINDOW_MS;
 var init_persistent_mode = __esm({
   "src/hooks/persistent-mode/index.ts"() {
     "use strict";
     import_fs58 = require("fs");
+    import_child_process19 = require("child_process");
     init_atomic_write();
     import_path67 = require("path");
     init_security_config();
@@ -24817,12 +24955,12 @@ function resolveTmuxInvocation(args) {
 function tmuxExec(args, opts) {
   const { stripTmux: _, ...execOpts } = opts ?? {};
   const invocation = resolveTmuxInvocation(args);
-  return (0, import_child_process19.execFileSync)(invocation.command, invocation.args, { encoding: "utf-8", ...execOpts, env: resolveEnv(opts) });
+  return (0, import_child_process20.execFileSync)(invocation.command, invocation.args, { encoding: "utf-8", ...execOpts, env: resolveEnv(opts) });
 }
 async function tmuxExecAsync(args, opts) {
   const { stripTmux: _, timeout, ...rest } = opts ?? {};
   const invocation = resolveTmuxInvocation(args);
-  return (0, import_util7.promisify)(import_child_process19.execFile)(invocation.command, invocation.args, {
+  return (0, import_util7.promisify)(import_child_process20.execFile)(invocation.command, invocation.args, {
     encoding: "utf-8",
     env: resolveEnv(opts),
     ...timeout !== void 0 ? { timeout } : {},
@@ -24831,11 +24969,11 @@ async function tmuxExecAsync(args, opts) {
 }
 function tmuxShell(command, opts) {
   const { stripTmux: _, ...execOpts } = opts ?? {};
-  return (0, import_child_process19.execSync)(`tmux ${command}`, { encoding: "utf-8", ...execOpts, env: resolveEnv(opts) });
+  return (0, import_child_process20.execSync)(`tmux ${command}`, { encoding: "utf-8", ...execOpts, env: resolveEnv(opts) });
 }
 async function tmuxShellAsync(command, opts) {
   const { stripTmux: _, timeout, ...rest } = opts ?? {};
-  return (0, import_util7.promisify)(import_child_process19.exec)(`tmux ${command}`, {
+  return (0, import_util7.promisify)(import_child_process20.exec)(`tmux ${command}`, {
     encoding: "utf-8",
     env: resolveEnv(opts),
     ...timeout !== void 0 ? { timeout } : {},
@@ -24845,7 +24983,7 @@ async function tmuxShellAsync(command, opts) {
 function tmuxSpawn(args, opts) {
   const { stripTmux: _, ...spawnOpts } = opts ?? {};
   const invocation = resolveTmuxInvocation(args);
-  return (0, import_child_process19.spawnSync)(invocation.command, invocation.args, { encoding: "utf-8", ...spawnOpts, env: resolveEnv(opts) });
+  return (0, import_child_process20.spawnSync)(invocation.command, invocation.args, { encoding: "utf-8", ...spawnOpts, env: resolveEnv(opts) });
 }
 async function tmuxCmdAsync(args, opts) {
   if (args.some((a) => a.includes("#{")) && !isNativeWindowsShell()) {
@@ -24859,7 +24997,7 @@ function resolveTmuxBinaryPath() {
     return "tmux";
   }
   try {
-    const result = (0, import_child_process19.spawnSync)("where", ["tmux"], {
+    const result = (0, import_child_process20.spawnSync)("where", ["tmux"], {
       timeout: 5e3,
       encoding: "utf8"
     });
@@ -24878,11 +25016,11 @@ function isTmuxAvailable() {
     const resolvedBinary = resolveTmuxBinaryPath();
     if (process.platform === "win32" && /\.(cmd|bat)$/i.test(resolvedBinary)) {
       const comspec = process.env.COMSPEC || "cmd.exe";
-      const result = (0, import_child_process19.spawnSync)(comspec, ["/d", "/s", "/c", `"${resolvedBinary}" -V`], { timeout: 5e3 });
+      const result = (0, import_child_process20.spawnSync)(comspec, ["/d", "/s", "/c", `"${resolvedBinary}" -V`], { timeout: 5e3 });
       return result.status === 0;
     }
     if (process.platform === "win32") {
-      const result = (0, import_child_process19.spawnSync)(resolvedBinary, ["-V"], { timeout: 5e3, shell: true });
+      const result = (0, import_child_process20.spawnSync)(resolvedBinary, ["-V"], { timeout: 5e3, shell: true });
       return result.status === 0;
     }
     tmuxExec(["-V"], { stripTmux: true, stdio: "ignore" });
@@ -24893,7 +25031,7 @@ function isTmuxAvailable() {
 }
 function isClaudeAvailable() {
   try {
-    (0, import_child_process19.execFileSync)("claude", ["--version"], {
+    (0, import_child_process20.execFileSync)("claude", ["--version"], {
       stdio: "ignore",
       shell: process.platform === "win32"
     });
@@ -24917,7 +25055,7 @@ function buildTmuxSessionName(cwd2) {
   const dirToken = sanitizeTmuxToken((0, import_path69.basename)(cwd2));
   let branchToken = "detached";
   try {
-    const branch = (0, import_child_process19.execFileSync)("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    const branch = (0, import_child_process20.execFileSync)("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
       cwd: cwd2,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"]
@@ -24971,11 +25109,11 @@ function wrapWithLoginShell(command) {
 function quoteShellArg2(value) {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
-var import_child_process19, import_path69, import_util7;
+var import_child_process20, import_path69, import_util7;
 var init_tmux_utils = __esm({
   "src/cli/tmux-utils.ts"() {
     "use strict";
-    import_child_process19 = require("child_process");
+    import_child_process20 = require("child_process");
     import_path69 = require("path");
     import_util7 = require("util");
   }
@@ -27550,7 +27688,7 @@ function startReplyListener(_config) {
     }).catch((err) => { console.error('[reply-listener] Fatal:', err instanceof Error ? err.message : 'unknown error'); process.exit(1); });
   `;
   try {
-    const child = (0, import_child_process20.spawn)("node", ["-e", daemonScript], {
+    const child = (0, import_child_process21.spawn)("node", ["-e", daemonScript], {
       detached: true,
       stdio: "ignore",
       cwd: process.cwd(),
@@ -27707,14 +27845,14 @@ function processSlackSocketMessage(rawMessage, connectionState, paneId, config2,
   }
   return { injected: success, validation };
 }
-var import_fs64, import_path75, import_url11, import_child_process20, import_https, __filename2, SECURE_FILE_MODE2, MAX_LOG_SIZE_BYTES, DAEMON_ENV_ALLOWLIST, DEFAULT_STATE_DIR, PID_FILE_PATH, STATE_FILE_PATH, LOG_FILE_PATH, RateLimiter, discordBackoffUntil, PRUNE_INTERVAL_MS;
+var import_fs64, import_path75, import_url11, import_child_process21, import_https, __filename2, SECURE_FILE_MODE2, MAX_LOG_SIZE_BYTES, DAEMON_ENV_ALLOWLIST, DEFAULT_STATE_DIR, PID_FILE_PATH, STATE_FILE_PATH, LOG_FILE_PATH, RateLimiter, discordBackoffUntil, PRUNE_INTERVAL_MS;
 var init_reply_listener = __esm({
   "src/notifications/reply-listener.ts"() {
     "use strict";
     import_fs64 = require("fs");
     import_path75 = require("path");
     import_url11 = require("url");
-    import_child_process20 = require("child_process");
+    import_child_process21 = require("child_process");
     init_tmux_utils();
     import_https = require("https");
     init_daemon_module_path();
@@ -29851,7 +29989,7 @@ async function dispatchNotifications(config2, event, payload, platformMessages) 
     if (timer) clearTimeout(timer);
   }
 }
-var import_https2, import_net, import_tls, import_child_process21, import_util8, SEND_TIMEOUT_MS, DISPATCH_TIMEOUT_MS, DISCORD_MAX_CONTENT_LENGTH, TELEGRAM_API_HOST, TELEGRAM_API_PORT, execFileAsync4;
+var import_https2, import_net, import_tls, import_child_process22, import_util8, SEND_TIMEOUT_MS, DISPATCH_TIMEOUT_MS, DISCORD_MAX_CONTENT_LENGTH, TELEGRAM_API_HOST, TELEGRAM_API_PORT, execFileAsync4;
 var init_dispatcher2 = __esm({
   "src/notifications/dispatcher.ts"() {
     "use strict";
@@ -29859,7 +29997,7 @@ var init_dispatcher2 = __esm({
     import_net = require("net");
     import_tls = require("tls");
     init_config();
-    import_child_process21 = require("child_process");
+    import_child_process22 = require("child_process");
     import_util8 = require("util");
     init_template_engine();
     init_config();
@@ -29868,7 +30006,7 @@ var init_dispatcher2 = __esm({
     DISCORD_MAX_CONTENT_LENGTH = 2e3;
     TELEGRAM_API_HOST = "api.telegram.org";
     TELEGRAM_API_PORT = 443;
-    execFileAsync4 = (0, import_util8.promisify)(import_child_process21.execFile);
+    execFileAsync4 = (0, import_util8.promisify)(import_child_process22.execFile);
   }
 });
 
@@ -31731,7 +31869,7 @@ function resolveCliBinaryPath(binary) {
   const cached2 = resolvedPathCache.get(binary);
   if (cached2) return cached2;
   const finder = process.platform === "win32" ? "where" : "which";
-  const result = (0, import_child_process22.spawnSync)(finder, [binary], {
+  const result = (0, import_child_process23.spawnSync)(finder, [binary], {
     timeout: 5e3,
     env: process.env
   });
@@ -31812,7 +31950,7 @@ function resolveBinaryPath(binary) {
   if ((0, import_path87.isAbsolute)(binary)) return binary;
   try {
     const resolver = process.platform === "win32" ? "where" : "which";
-    const result = (0, import_child_process22.spawnSync)(resolver, [binary], { timeout: 5e3, encoding: "utf8" });
+    const result = (0, import_child_process23.spawnSync)(resolver, [binary], { timeout: 5e3, encoding: "utf8" });
     if (result.status !== 0) return binary;
     const lines = result.stdout?.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) ?? [];
     const firstPath = lines[0];
@@ -31828,10 +31966,10 @@ function isCliAvailable(agentType) {
     const resolvedBinary = resolveBinaryPath(contract.binary);
     if (process.platform === "win32" && /\.(cmd|bat)$/i.test(resolvedBinary)) {
       const comspec = process.env.COMSPEC || "cmd.exe";
-      const result2 = (0, import_child_process22.spawnSync)(comspec, ["/d", "/s", "/c", `"${resolvedBinary}" --version`], { timeout: 5e3 });
+      const result2 = (0, import_child_process23.spawnSync)(comspec, ["/d", "/s", "/c", `"${resolvedBinary}" --version`], { timeout: 5e3 });
       return result2.status === 0;
     }
-    const result = (0, import_child_process22.spawnSync)(resolvedBinary, ["--version"], {
+    const result = (0, import_child_process23.spawnSync)(resolvedBinary, ["--version"], {
       timeout: 5e3,
       shell: process.platform === "win32"
     });
@@ -31921,11 +32059,11 @@ function getPromptModeArgs(agentType, instruction) {
   }
   return [instruction];
 }
-var import_child_process22, import_path87, resolvedPathCache, UNTRUSTED_PATH_PATTERNS, CONTRACTS, WORKER_MODEL_ENV_ALLOWLIST;
+var import_child_process23, import_path87, resolvedPathCache, UNTRUSTED_PATH_PATTERNS, CONTRACTS, WORKER_MODEL_ENV_ALLOWLIST;
 var init_model_contract = __esm({
   "src/team/model-contract.ts"() {
     "use strict";
-    import_child_process22 = require("child_process");
+    import_child_process23 = require("child_process");
     import_path87 = require("path");
     init_team_name();
     init_delegation_enforcer();
@@ -33288,13 +33426,13 @@ async function killTeamSession(sessionName2, workerPaneIds, leaderPaneId, option
   } catch {
   }
 }
-var import_fs71, import_crypto17, import_child_process23, import_util9, import_path88, import_promises10, sleep4, execFileAsync5, TMUX_SESSION_PREFIX, SUPPORTED_POSIX_SHELLS, ZSH_CANDIDATES, BASH_CANDIDATES, DANGEROUS_LAUNCH_BINARY_CHARS;
+var import_fs71, import_crypto17, import_child_process24, import_util9, import_path88, import_promises10, sleep4, execFileAsync5, TMUX_SESSION_PREFIX, SUPPORTED_POSIX_SHELLS, ZSH_CANDIDATES, BASH_CANDIDATES, DANGEROUS_LAUNCH_BINARY_CHARS;
 var init_tmux_session = __esm({
   "src/team/tmux-session.ts"() {
     "use strict";
     import_fs71 = require("fs");
     import_crypto17 = require("crypto");
-    import_child_process23 = require("child_process");
+    import_child_process24 = require("child_process");
     import_util9 = require("util");
     import_path88 = require("path");
     import_promises10 = __toESM(require("fs/promises"), 1);
@@ -33303,7 +33441,7 @@ var init_tmux_session = __esm({
     init_tmux_utils();
     init_tmux_clipboard();
     sleep4 = (ms) => new Promise((r) => setTimeout(r, ms));
-    execFileAsync5 = (0, import_util9.promisify)(import_child_process23.execFile);
+    execFileAsync5 = (0, import_util9.promisify)(import_child_process24.execFile);
     TMUX_SESSION_PREFIX = "omc-team";
     SUPPORTED_POSIX_SHELLS = /* @__PURE__ */ new Set(["sh", "bash", "zsh", "fish", "ksh"]);
     ZSH_CANDIDATES = ["/bin/zsh", "/usr/bin/zsh", "/usr/local/bin/zsh", "/opt/homebrew/bin/zsh"];
@@ -35441,7 +35579,7 @@ function startFallbackPoller(worktreePath, workerName2, opts) {
     if (stopped) return;
     if (isHookPaused(worktreePath)) return;
     const cmd = buildHookCommand2(workerName2);
-    (0, import_child_process24.exec)(cmd, { cwd: worktreePath }, (_err) => {
+    (0, import_child_process25.exec)(cmd, { cwd: worktreePath }, (_err) => {
     });
   };
   const scheduleDebounce = () => {
@@ -35500,14 +35638,14 @@ async function uninstallCommitCadence(ctx) {
   } catch {
   }
 }
-var import_fs75, import_promises14, import_path93, import_child_process24, SENTINEL_FILENAME, HOOK_MATCHER, DEFAULT_POLL_DEBOUNCE_MS, WORKER_NAME_RE;
+var import_fs75, import_promises14, import_path93, import_child_process25, SENTINEL_FILENAME, HOOK_MATCHER, DEFAULT_POLL_DEBOUNCE_MS, WORKER_NAME_RE;
 var init_worker_commit_cadence = __esm({
   "src/team/worker-commit-cadence.ts"() {
     "use strict";
     import_fs75 = require("fs");
     import_promises14 = require("fs/promises");
     import_path93 = require("path");
-    import_child_process24 = require("child_process");
+    import_child_process25 = require("child_process");
     SENTINEL_FILENAME = ".hook-paused";
     HOOK_MATCHER = "Write|Edit|MultiEdit";
     DEFAULT_POLL_DEBOUNCE_MS = 3e3;
@@ -39131,7 +39269,7 @@ function decodeCleanupWorkerPayload(encoded) {
 }
 function spawnSessionEndCleanupWorker(payload) {
   try {
-    const child = (0, import_child_process25.spawn)(
+    const child = (0, import_child_process26.spawn)(
       process.execPath,
       [(0, import_url12.fileURLToPath)(importMetaUrl), SESSION_END_CLEANUP_WORKER_ARG, encodeCleanupWorkerPayload(payload)],
       {
@@ -39244,14 +39382,14 @@ async function processSessionEnd(input) {
 async function handleSessionEnd(input) {
   return processSessionEnd(input);
 }
-var fs12, path16, readline, import_child_process25, import_url12, SESSION_STARTED_MARKER_FILE, DEFAULT_SESSION_END_CLEANUP_BUDGET_MS, MAX_SESSION_END_CLEANUP_BUDGET_MS, SESSION_END_CLEANUP_BUDGET_ENV, SESSION_END_CLEANUP_WORKER_ARG, SESSION_END_SAFE_TEAM_NAME_PATTERN, PYTHON_REPL_TOOL_NAMES, cleanupWorkerArgIndex;
+var fs12, path16, readline, import_child_process26, import_url12, SESSION_STARTED_MARKER_FILE, DEFAULT_SESSION_END_CLEANUP_BUDGET_MS, MAX_SESSION_END_CLEANUP_BUDGET_MS, SESSION_END_CLEANUP_BUDGET_ENV, SESSION_END_CLEANUP_WORKER_ARG, SESSION_END_SAFE_TEAM_NAME_PATTERN, PYTHON_REPL_TOOL_NAMES, cleanupWorkerArgIndex;
 var init_session_end = __esm({
   "src/hooks/session-end/index.ts"() {
     "use strict";
     fs12 = __toESM(require("fs"), 1);
     path16 = __toESM(require("path"), 1);
     readline = __toESM(require("readline"), 1);
-    import_child_process25 = require("child_process");
+    import_child_process26 = require("child_process");
     import_url12 = require("url");
     init_callbacks();
     init_auto_update();
@@ -40282,7 +40420,7 @@ function isCodeSimplifierEnabled() {
 }
 function getModifiedFiles(cwd2, extensions = DEFAULT_EXTENSIONS, maxFiles = DEFAULT_MAX_FILES) {
   try {
-    const output = (0, import_child_process26.execSync)("git diff HEAD --name-only", {
+    const output = (0, import_child_process27.execSync)("git diff HEAD --name-only", {
       cwd: cwd2,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
@@ -40344,13 +40482,13 @@ function processCodeSimplifier(cwd2, stateDir) {
     message: buildSimplifierMessage(files)
   };
 }
-var import_fs83, import_path100, import_child_process26, DEFAULT_EXTENSIONS, DEFAULT_MAX_FILES, TRIGGER_MARKER_FILENAME;
+var import_fs83, import_path100, import_child_process27, DEFAULT_EXTENSIONS, DEFAULT_MAX_FILES, TRIGGER_MARKER_FILENAME;
 var init_code_simplifier = __esm({
   "src/hooks/code-simplifier/index.ts"() {
     "use strict";
     import_fs83 = require("fs");
     import_path100 = require("path");
-    import_child_process26 = require("child_process");
+    import_child_process27 = require("child_process");
     init_paths();
     DEFAULT_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs"];
     DEFAULT_MAX_FILES = 10;
@@ -46269,7 +46407,7 @@ function isCredentialExpired(creds) {
 function readKeychainCredential(serviceName, account) {
   try {
     const args = account ? ["find-generic-password", "-s", serviceName, "-a", account, "-w"] : ["find-generic-password", "-s", serviceName, "-w"];
-    const result = (0, import_child_process31.execFileSync)("/usr/bin/security", args, {
+    const result = (0, import_child_process32.execFileSync)("/usr/bin/security", args, {
       encoding: "utf-8",
       timeout: 2e3,
       stdio: ["pipe", "pipe", "pipe"]
@@ -46527,7 +46665,7 @@ function writeKeychainCredentials(creds) {
     const readArgs = account ? ["find-generic-password", "-s", serviceName, "-a", account, "-w"] : ["find-generic-password", "-s", serviceName, "-w"];
     let existing = {};
     try {
-      const raw = (0, import_child_process31.execFileSync)("/usr/bin/security", readArgs, {
+      const raw = (0, import_child_process32.execFileSync)("/usr/bin/security", readArgs, {
         encoding: "utf-8",
         timeout: 2e3,
         stdio: ["pipe", "pipe", "pipe"]
@@ -46547,7 +46685,7 @@ function writeKeychainCredentials(creds) {
     }
     const newJson = JSON.stringify(existing);
     const writeArgs = account ? ["add-generic-password", "-s", serviceName, "-a", account, "-w", newJson, "-U"] : ["add-generic-password", "-s", serviceName, "-w", newJson, "-U"];
-    (0, import_child_process31.execFileSync)("/usr/bin/security", writeArgs, {
+    (0, import_child_process32.execFileSync)("/usr/bin/security", writeArgs, {
       encoding: "utf-8",
       timeout: 2e3,
       stdio: ["pipe", "pipe", "pipe"]
@@ -46958,14 +47096,14 @@ async function getUsage() {
     return { rateLimits: null, error: "network" };
   }
 }
-var import_fs100, import_path119, import_child_process31, import_crypto21, import_os19, import_https3, CACHE_TTL_FAILURE_MS, CACHE_TTL_TRANSIENT_NETWORK_MS, MAX_RATE_LIMITED_BACKOFF_MS, API_TIMEOUT_MS2, MAX_STALE_DATA_MS, TOKEN_REFRESH_URL_HOSTNAME, USAGE_CACHE_LOCK_OPTS, TOKEN_REFRESH_URL_PATH, DEFAULT_OAUTH_CLIENT_ID, ZAI_UNIT_WEEK;
+var import_fs100, import_path119, import_child_process32, import_crypto21, import_os19, import_https3, CACHE_TTL_FAILURE_MS, CACHE_TTL_TRANSIENT_NETWORK_MS, MAX_RATE_LIMITED_BACKOFF_MS, API_TIMEOUT_MS2, MAX_STALE_DATA_MS, TOKEN_REFRESH_URL_HOSTNAME, USAGE_CACHE_LOCK_OPTS, TOKEN_REFRESH_URL_PATH, DEFAULT_OAUTH_CLIENT_ID, ZAI_UNIT_WEEK;
 var init_usage_api = __esm({
   "src/hud/usage-api.ts"() {
     "use strict";
     import_fs100 = require("fs");
     init_config_dir();
     import_path119 = require("path");
-    import_child_process31 = require("child_process");
+    import_child_process32 = require("child_process");
     import_crypto21 = require("crypto");
     import_os19 = require("os");
     import_https3 = __toESM(require("https"), 1);
@@ -47938,7 +48076,7 @@ function isCacheValid2(cache) {
 function spawnWithTimeout(cmd, timeoutMs) {
   return new Promise((resolve25, reject) => {
     const [executable, ...args] = Array.isArray(cmd) ? cmd : ["sh", "-c", cmd];
-    const child = (0, import_child_process38.spawn)(executable, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = (0, import_child_process39.spawn)(executable, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
@@ -48026,11 +48164,11 @@ async function executeCustomProvider(config2) {
     return { buckets: [], stale: false, error: "command failed" };
   }
 }
-var import_child_process38, import_fs111, import_path130, CACHE_TTL_MS2, DEFAULT_TIMEOUT_MS2;
+var import_child_process39, import_fs111, import_path130, CACHE_TTL_MS2, DEFAULT_TIMEOUT_MS2;
 var init_custom_rate_provider = __esm({
   "src/hud/custom-rate-provider.ts"() {
     "use strict";
-    import_child_process38 = require("child_process");
+    import_child_process39 = require("child_process");
     import_fs111 = require("fs");
     import_path130 = require("path");
     init_config_dir();
@@ -50366,7 +50504,7 @@ function spawnSessionSummaryScript(transcriptPath, stateDir, sessionId) {
     return;
   }
   try {
-    const child = (0, import_child_process39.spawn)(
+    const child = (0, import_child_process40.spawn)(
       "node",
       [scriptPath, transcriptPath, stateDir, sessionId],
       {
@@ -50640,7 +50778,7 @@ async function main2(watchMode = false, skipInit = false) {
     }
   }
 }
-var import_fs114, import_promises22, import_path132, import_child_process39, import_url18, lastSummarySpawnTimestamp, summaryProcessPid;
+var import_fs114, import_promises22, import_path132, import_child_process40, import_url18, lastSummarySpawnTimestamp, summaryProcessPid;
 var init_hud = __esm({
   "src/hud/index.ts"() {
     "use strict";
@@ -50661,7 +50799,7 @@ var init_hud = __esm({
     import_fs114 = require("fs");
     import_promises22 = require("fs/promises");
     import_path132 = require("path");
-    import_child_process39 = require("child_process");
+    import_child_process40 = require("child_process");
     import_url18 = require("url");
     init_worktree_paths();
     init_config_dir();
@@ -85120,7 +85258,10 @@ var KEYWORD_PATTERNS = {
 };
 var KEYWORD_DETECTOR_DOC_TRIGGER_EXAMPLES = {
   cancel: ["cancelomc", "stopomc"],
-  ralph: ["ralph"],
+  // Bare "ralph" is no longer a public trigger — mention-only prompts are inert
+  // since the explicit-invocation guard (ca05fa6f); the doc example must carry
+  // an imperative so it still activates.
+  ralph: ["ralph fix the failing tests"],
   autopilot: ["autopilot", "auto pilot", "auto-pilot", "fullsend", "full auto"],
   ultrawork: ["ultrawork", "ulw"],
   "deep-interview": ["deep-interview", "deep interview"]
@@ -85577,6 +85718,47 @@ function findActionableKeywordMatch(text, pattern) {
   }
   return null;
 }
+function hasExplicitNikoflowInvocationContext(text, position, keywordLength, keywordText) {
+  const prefix = text.slice(0, position);
+  const suffix = text.slice(position + keywordLength);
+  if (/^\s*(?:[$/!]\s*|force:\s*|\/?oh-my-(?:claudecode|codex):\s*)$/i.test(prefix)) {
+    return true;
+  }
+  if (/^\s*[:：]\s*\S/.test(suffix)) {
+    return true;
+  }
+  const start = Math.max(0, position - INFORMATIONAL_CONTEXT_WINDOW2);
+  const end = Math.min(text.length, position + keywordLength + INFORMATIONAL_CONTEXT_WINDOW2);
+  const context = text.slice(start, end);
+  if (hasActivationIntentNearKeyword(context, keywordText)) {
+    return true;
+  }
+  if (/(?:запусти(?:ть)?|включи(?:ть)?|активируй|используй|юзай|давай|погнали)\s+(?:режим\s+)?$/iu.test(prefix)) {
+    return true;
+  }
+  return /^['"]?\s+(?:this\b|and\s+)?(?:fix|debug|investigate|resolve|handle|patch|address|implement|build|refactor|run|start|enable|activate|invoke|trigger|launch)\b|^['"]?\s+(?:почини|исправь|реализуй|запили|добавь|внеси|построй)/iu.test(suffix);
+}
+function findActionableNikoflowMatch(text, pattern) {
+  const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+  const globalPattern = new RegExp(pattern.source, flags);
+  for (const match of text.matchAll(globalPattern)) {
+    if (match.index === void 0) {
+      continue;
+    }
+    const keyword = match[0];
+    if (isInformationalKeywordContext2(text, match.index, keyword.length, keyword)) {
+      continue;
+    }
+    if (!hasExplicitNikoflowInvocationContext(text, match.index, keyword.length, keyword)) {
+      continue;
+    }
+    return {
+      keyword,
+      position: match.index
+    };
+  }
+  return null;
+}
 function findActionableRalplanMatch(text, pattern) {
   const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
   const globalPattern = new RegExp(pattern.source, flags);
@@ -85623,7 +85805,7 @@ function detectKeywordsWithType(text, _agentName) {
     if (skipPredicate && skipPredicate(cleanedText)) {
       continue;
     }
-    const match = type === "ralplan" ? findActionableRalplanMatch(cleanedText, pattern) : findActionableKeywordMatch(cleanedText, pattern);
+    const match = type === "ralplan" ? findActionableRalplanMatch(cleanedText, pattern) : type === "nikoflow" ? findActionableNikoflowMatch(cleanedText, pattern) : findActionableKeywordMatch(cleanedText, pattern);
     if (match) {
       detected.push({
         ...match,
@@ -89277,7 +89459,7 @@ init_config_dir();
 init_worktree_paths();
 
 // src/hooks/auto-slash-command/live-data.ts
-var import_child_process27 = require("child_process");
+var import_child_process28 = require("child_process");
 var import_fs87 = require("fs");
 var import_path105 = require("path");
 var import_safe_regex = __toESM(require_safe_regex(), 1);
@@ -89894,7 +90076,7 @@ init_persistent_mode();
 // src/hooks/plugin-patterns/index.ts
 var import_fs93 = require("fs");
 var import_path112 = require("path");
-var import_child_process28 = require("child_process");
+var import_child_process29 = require("child_process");
 
 // src/hooks/index.ts
 init_ultraqa();
@@ -89964,7 +90146,7 @@ init_auto_update();
 init_context_injector();
 
 // src/features/session-friction-report/index.ts
-var import_child_process29 = require("child_process");
+var import_child_process30 = require("child_process");
 var import_fs97 = require("fs");
 var import_path116 = require("path");
 var import_readline3 = require("readline");
@@ -89998,7 +90180,7 @@ function parseSinceSpec2(since) {
 }
 function getMainRepoRoot2(projectRoot) {
   try {
-    const gitCommonDir = (0, import_child_process29.execSync)("git rev-parse --git-common-dir", {
+    const gitCommonDir = (0, import_child_process30.execSync)("git rev-parse --git-common-dir", {
       cwd: projectRoot,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"]
@@ -90407,9 +90589,9 @@ var GLOBAL_STATE_DIR = getGlobalOmcStateRoot();
 var MAX_STATE_AGE_MS = 4 * 60 * 60 * 1e3;
 
 // src/features/verification/index.ts
-var import_child_process30 = require("child_process");
+var import_child_process31 = require("child_process");
 var import_util10 = require("util");
-var execAsync = (0, import_util10.promisify)(import_child_process30.exec);
+var execAsync = (0, import_util10.promisify)(import_child_process31.exec);
 
 // src/agents/index.ts
 init_utils();
@@ -90668,7 +90850,7 @@ init_tmux_detector();
 var import_fs101 = require("fs");
 var import_path120 = require("path");
 var import_url16 = require("url");
-var import_child_process32 = require("child_process");
+var import_child_process33 = require("child_process");
 init_daemon_module_path();
 init_paths();
 init_tmux_detector();
@@ -91004,7 +91186,7 @@ function startDaemon(config2) {
       ...createMinimalDaemonEnv2(),
       OMC_DAEMON_CONFIG_FILE: configPath
     };
-    const child = (0, import_child_process32.spawn)("node", ["-e", daemonScript], {
+    const child = (0, import_child_process33.spawn)("node", ["-e", daemonScript], {
       detached: true,
       stdio: "ignore",
       cwd: process.cwd(),
@@ -91873,7 +92055,7 @@ async function doctorConflictsCommand(options) {
 }
 
 // src/cli/commands/doctor-team-routing.ts
-var import_child_process33 = require("child_process");
+var import_child_process34 = require("child_process");
 init_formatting();
 init_loader();
 var PROVIDER_BINARY = {
@@ -91888,12 +92070,12 @@ function probeProvider(provider) {
   const binary = PROVIDER_BINARY[provider];
   const probe = { provider, binary, found: false };
   try {
-    const resolved = (0, import_child_process33.execSync)(`command -v ${binary}`, { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const resolved = (0, import_child_process34.execSync)(`command -v ${binary}`, { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     if (resolved) {
       probe.found = true;
       probe.path = resolved;
       try {
-        const version3 = (0, import_child_process33.execSync)(`${binary} --version`, { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 3e3 }).trim().split("\n")[0];
+        const version3 = (0, import_child_process34.execSync)(`${binary} --version`, { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 3e3 }).trim().split("\n")[0];
         if (version3) probe.version = version3;
       } catch {
       }
@@ -95551,7 +95733,7 @@ ${ULTRAGOAL_HELP}`);
 }
 
 // src/cli/commands/teleport.ts
-var import_child_process34 = require("child_process");
+var import_child_process35 = require("child_process");
 var import_fs105 = require("fs");
 var import_os20 = require("os");
 var import_path123 = require("path");
@@ -95607,7 +95789,7 @@ function installDependencies(worktreePath, packageManager) {
     pnpm: ["install"],
     yarn: ["install"]
   };
-  (0, import_child_process34.execFileSync)(packageManager, argsByManager[packageManager], {
+  (0, import_child_process35.execFileSync)(packageManager, argsByManager[packageManager], {
     cwd: worktreePath,
     stdio: "inherit"
   });
@@ -95785,8 +95967,8 @@ function sanitize(str, maxLen = 30) {
 }
 function getCurrentRepo() {
   try {
-    const root2 = (0, import_child_process34.execSync)("git rev-parse --show-toplevel", { encoding: "utf-8", timeout: 5e3 }).trim();
-    const remoteUrl = (0, import_child_process34.execSync)("git remote get-url origin", { encoding: "utf-8", timeout: 5e3 }).trim();
+    const root2 = (0, import_child_process35.execSync)("git rev-parse --show-toplevel", { encoding: "utf-8", timeout: 5e3 }).trim();
+    const remoteUrl = (0, import_child_process35.execSync)("git remote get-url origin", { encoding: "utf-8", timeout: 5e3 }).trim();
     const parsed = parseRemoteUrl(remoteUrl);
     if (parsed) {
       return { owner: parsed.owner, repo: parsed.repo, root: root2, provider: parsed.provider };
@@ -95812,18 +95994,18 @@ function createWorktree(repoRoot, worktreePath, branchName, baseBranch) {
     if ((0, import_fs105.existsSync)(worktreePath)) {
       return { success: false, error: `Worktree already exists at ${worktreePath}` };
     }
-    (0, import_child_process34.execFileSync)("git", ["fetch", "origin", baseBranch], {
+    (0, import_child_process35.execFileSync)("git", ["fetch", "origin", baseBranch], {
       cwd: repoRoot,
       stdio: "pipe"
     });
     try {
-      (0, import_child_process34.execFileSync)("git", ["branch", branchName, `origin/${baseBranch}`], {
+      (0, import_child_process35.execFileSync)("git", ["branch", branchName, `origin/${baseBranch}`], {
         cwd: repoRoot,
         stdio: "pipe"
       });
     } catch {
     }
-    (0, import_child_process34.execFileSync)("git", ["worktree", "add", worktreePath, branchName], {
+    (0, import_child_process35.execFileSync)("git", ["worktree", "add", worktreePath, branchName], {
       cwd: repoRoot,
       stdio: "pipe"
     });
@@ -95902,7 +96084,7 @@ async function teleportCommand(ref, options) {
       if (provider.prRefspec) {
         try {
           const refspec = provider.prRefspec.replace("{number}", String(parsed.number)).replace("{branch}", branchName);
-          (0, import_child_process34.execFileSync)(
+          (0, import_child_process35.execFileSync)(
             "git",
             ["fetch", "origin", refspec],
             { cwd: repoRoot, stdio: ["pipe", "pipe", "pipe"], timeout: 3e4 }
@@ -95911,7 +96093,7 @@ async function teleportCommand(ref, options) {
         }
       } else if (info.branch) {
         try {
-          (0, import_child_process34.execFileSync)(
+          (0, import_child_process35.execFileSync)(
             "git",
             ["fetch", "origin", `${info.branch}:${branchName}`],
             { cwd: repoRoot, stdio: ["pipe", "pipe", "pipe"], timeout: 3e4 }
@@ -96014,7 +96196,7 @@ async function teleportListCommand(options) {
     const relativePath = (0, import_path123.relative)(worktreeRoot, worktreePath);
     let branch = "unknown";
     try {
-      branch = (0, import_child_process34.execSync)("git branch --show-current", {
+      branch = (0, import_child_process35.execSync)("git branch --show-current", {
         cwd: worktreePath,
         encoding: "utf-8"
       }).trim();
@@ -96062,7 +96244,7 @@ async function teleportRemoveCommand(pathOrName, options) {
   }
   try {
     if (!options.force) {
-      const status = (0, import_child_process34.execSync)("git status --porcelain", {
+      const status = (0, import_child_process35.execSync)("git status --porcelain", {
         cwd: worktreePath,
         encoding: "utf-8"
       });
@@ -96076,7 +96258,7 @@ async function teleportRemoveCommand(pathOrName, options) {
         return 1;
       }
     }
-    const gitDir = (0, import_child_process34.execSync)("git rev-parse --git-dir", {
+    const gitDir = (0, import_child_process35.execSync)("git rev-parse --git-dir", {
       cwd: worktreePath,
       encoding: "utf-8"
     }).trim();
@@ -96093,7 +96275,7 @@ async function teleportRemoveCommand(pathOrName, options) {
       mainRepoRoots: [mainRepo]
     });
     const args = options.force ? ["worktree", "remove", "--force", worktreePath] : ["worktree", "remove", worktreePath];
-    (0, import_child_process34.execFileSync)("git", args, {
+    (0, import_child_process35.execFileSync)("git", args, {
       cwd: mainRepo,
       stdio: "pipe"
     });
@@ -96130,7 +96312,7 @@ function resolvePluginDirArg(rawPath) {
 }
 
 // src/cli/launch.ts
-var import_child_process35 = require("child_process");
+var import_child_process36 = require("child_process");
 var import_fs106 = require("fs");
 var import_os21 = require("os");
 var import_path125 = require("path");
@@ -96463,7 +96645,7 @@ function runClaudeInsideTmux(cwd2, args) {
   } catch {
   }
   try {
-    (0, import_child_process35.execFileSync)("claude", args, {
+    (0, import_child_process36.execFileSync)("claude", args, {
       cwd: cwd2,
       stdio: "inherit",
       shell: process.platform === "win32"
@@ -96539,7 +96721,7 @@ function runClaudeOutsideTmux(cwd2, args, _sessionId, options = {}) {
 }
 function runClaudeDirect(cwd2, args) {
   try {
-    (0, import_child_process35.execFileSync)("claude", args, {
+    (0, import_child_process36.execFileSync)("claude", args, {
       cwd: cwd2,
       stdio: "inherit",
       shell: process.platform === "win32"
@@ -96642,7 +96824,7 @@ async function launchCommand(args) {
 }
 
 // src/cli/interop.ts
-var import_child_process36 = require("child_process");
+var import_child_process37 = require("child_process");
 var import_crypto22 = require("crypto");
 init_tmux_utils();
 function readInteropRuntimeFlags(env2 = process.env) {
@@ -96666,7 +96848,7 @@ function validateInteropRuntimeFlags(flags) {
 }
 function isCodexAvailable() {
   try {
-    (0, import_child_process36.execFileSync)("codex", ["--version"], { stdio: "ignore" });
+    (0, import_child_process37.execFileSync)("codex", ["--version"], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -96756,7 +96938,7 @@ function interopCommand(options = {}) {
 }
 
 // src/cli/ask.ts
-var import_child_process37 = require("child_process");
+var import_child_process38 = require("child_process");
 var import_fs107 = require("fs");
 var import_promises21 = require("fs/promises");
 var import_os22 = require("os");
@@ -96934,7 +97116,7 @@ async function askCommand(args) {
 
 ${parsed.prompt}`;
   }
-  const child = (0, import_child_process37.spawnSync)(
+  const child = (0, import_child_process38.spawnSync)(
     process.execPath,
     [advisorScriptPath, parsed.provider, finalPrompt],
     {

@@ -60,6 +60,8 @@ const ATTR_REGEXES: Record<string, RegExp> = {
   score: /(?<![\w-])score=(["'])(.*?)\1/i,
   depth: /(?<![\w-])depth=(["'])(.*?)\1/i,
   mode: /(?<![\w-])mode=(["'])(.*?)\1/i,
+  spec: /(?<![\w-])spec=(["'])(.*?)\1/i,
+  quality: /(?<![\w-])quality=(["'])(.*?)\1/i,
 };
 
 function extractAttribute(attributes: string, name: string): string | undefined {
@@ -86,6 +88,26 @@ function stripInjectedExamples(text: string): string {
     .replace(STRIP_FENCE_BACKTICK, " ")
     .replace(STRIP_FENCE_TILDE, " ")
     .replace(STRIP_INLINE_TAG, " ");
+}
+
+/**
+ * Structured reviewer verdict. A ticket gate (TICKET_DONE) only counts when
+ * the SAME reviewer output also carries an approving verdict block:
+ *   <nikoflow-verdict spec="pass" quality="approved">…findings…</nikoflow-verdict>
+ * A scalar approval hides scope drift — spec compliance (built what the ticket
+ * asked, nothing missing/extra) and code quality are separate judgments and
+ * must both pass explicitly (adopted from superpowers' two-verdict review).
+ */
+export function detectNikoflowReviewerVerdict(text: string): boolean {
+  const sanitized = stripInjectedExamples(text);
+  const re = /<nikoflow-verdict(?![\w-])([^>]*)>/gi;
+  for (const m of sanitized.matchAll(re)) {
+    const attrs = m[1] ?? "";
+    const spec = extractAttribute(attrs, "spec")?.toLowerCase();
+    const quality = extractAttribute(attrs, "quality")?.toLowerCase();
+    if (spec === "pass" && quality === "approved") return true;
+  }
+  return false;
 }
 
 /**

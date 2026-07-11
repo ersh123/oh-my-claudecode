@@ -45,6 +45,10 @@ const taskResult = (toolUseId: string, subagentType: string, text: string) => [
 // A reviewer subagent invocation + its tool_result carrying `text`.
 const reviewerResult = (toolUseId: string, text: string) => taskResult(toolUseId, "code-reviewer", text);
 
+// Approving structured verdict (S2-8): a TICKET_DONE gate only counts when the
+// same reviewer output carries this block.
+const APPROVED_VERDICT = `<nikoflow-verdict spec="pass" quality="approved">none</nikoflow-verdict>`;
+
 describe("nikoflow execute orchestration (TSK-005)", () => {
   let dir: string;
   const sid = "sess-exec-orch";
@@ -110,7 +114,7 @@ describe("nikoflow execute orchestration (TSK-005)", () => {
     const rid = readNikoflowState(dir, sid)!.request_id!;
     writeEntries(transcript, reviewerResult(
       "tu-1",
-      `Reviewed, looks good.\n<nikoflow-gate phase="execute:TSK-001" request-id="${rid}">TICKET_DONE</nikoflow-gate>`,
+      `Reviewed, looks good.\n${APPROVED_VERDICT}\n<nikoflow-gate phase="execute:TSK-001" request-id="${rid}">TICKET_DONE</nikoflow-gate>`,
     ));
     const r = run();
     expect(readTickets(dir, sid)!.tickets.find((t) => t.id === "TSK-001")!.status).toBe("done");
@@ -118,14 +122,37 @@ describe("nikoflow execute orchestration (TSK-005)", () => {
     expect(r.message).toContain("TSK-002");
   });
 
+  it("does NOT accept a TICKET_DONE without an approving structured verdict", () => {
+    run(); // mint rid for TSK-001
+    const rid = readNikoflowState(dir, sid)!.request_id!;
+    writeEntries(transcript, reviewerResult(
+      "tu-nv",
+      `Looks fine to me.\n<nikoflow-gate phase="execute:TSK-001" request-id="${rid}">TICKET_DONE</nikoflow-gate>`,
+    ));
+    run();
+    expect(readTickets(dir, sid)!.tickets[0].status).toBe("todo");
+  });
+
+  it("does NOT accept a TICKET_DONE whose verdict rejects (spec fail / needs_fixes)", () => {
+    run();
+    const rid = readNikoflowState(dir, sid)!.request_id!;
+    writeEntries(transcript, reviewerResult(
+      "tu-rej",
+      `<nikoflow-verdict spec="fail" quality="needs_fixes">missing acceptance #2 at src/x.ts:10</nikoflow-verdict>\n` +
+        `<nikoflow-gate phase="execute:TSK-001" request-id="${rid}">TICKET_DONE</nikoflow-gate>`,
+    ));
+    run();
+    expect(readTickets(dir, sid)!.tickets[0].status).toBe("todo");
+  });
+
   it("advances to the verify phase once every ticket is reviewer-approved", () => {
     // TSK-001 done via reviewer.
     run();
     let rid = readNikoflowState(dir, sid)!.request_id!;
-    writeEntries(transcript, reviewerResult("tu-1", `<nikoflow-gate phase="execute:TSK-001" request-id="${rid}">TICKET_DONE</nikoflow-gate>`));
+    writeEntries(transcript, reviewerResult("tu-1", `${APPROVED_VERDICT}\n<nikoflow-gate phase="execute:TSK-001" request-id="${rid}">TICKET_DONE</nikoflow-gate>`));
     run(); // marks TSK-001 done, emits TSK-002 prompt, mints TSK-002 rid
     rid = readNikoflowState(dir, sid)!.request_id!;
-    writeEntries(transcript, reviewerResult("tu-2", `<nikoflow-gate phase="execute:TSK-002" request-id="${rid}">TICKET_DONE</nikoflow-gate>`));
+    writeEntries(transcript, reviewerResult("tu-2", `${APPROVED_VERDICT}\n<nikoflow-gate phase="execute:TSK-002" request-id="${rid}">TICKET_DONE</nikoflow-gate>`));
     const r = run();
     expect(getCurrentPhase(readNikoflowState(dir, sid)!)).toBe("verify");
     expect(r.message).toContain("VERIFICATION");

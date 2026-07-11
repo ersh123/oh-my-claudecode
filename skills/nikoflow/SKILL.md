@@ -1,7 +1,7 @@
 ---
 name: nikoflow
 description: Phase-gated Niko Flow v2.1 methodology loop (Grilling → ADR → PRD → Ticketization → TDD → Verification) with Tactical/Standard/Deep depth tiers and hard quality gates
-argument-hint: "[nikoflow:tactical|standard|deep] [--exec=sonnet] [--qa=fable|codex] [--panel=fable+gpt-5.5] <task description>"
+argument-hint: "[nikoflow:tactical|standard|deep] [--auto|--approval-gated] [--exec=sonnet] [--qa=fable|codex] [--panel=fable+gpt-5.5] <task description>"
 level: 4
 ---
 
@@ -65,8 +65,13 @@ the `request-id` that the phase prompt gives you. Emit each tag on its own line.
 - ADR: `<nikoflow-gate phase="adr" decision="docs/adr/NNNN-slug.md" request-id="…">RECORDED</nikoflow-gate>` or `<nikoflow-gate phase="adr" skip="reason" request-id="…">SKIPPED</nikoflow-gate>`
 - PRD: `<nikoflow-gate phase="prd" request-id="…">SEAMS_CONFIRMED</nikoflow-gate>`
 - Tickets: `<nikoflow-gate phase="tickets" request-id="…">APPROVED</nikoflow-gate>` — also requires a valid `tickets.json` (see below).
-- Execute (per ticket): the reviewer emits `<nikoflow-gate phase="execute:TSK-NNN" request-id="…">TICKET_DONE</nikoflow-gate>`.
-- Verify: the reviewer emits `<nikoflow-gate phase="verify" score="9.6" request-id="…">VERIFIED</nikoflow-gate>` (a real numeric `score` in 0–10, ≥ 9.5 to pass) or `<nikoflow-gate phase="verify" request-id="…">NO_ACTIONABLE_FINDINGS</nikoflow-gate>`. A VERIFIED without a valid numeric score is treated as a failed pass.
+- Execute (per ticket): the reviewer emits BOTH a structured verdict and the gate — a bare gate does not count:
+  `<nikoflow-verdict spec="pass" quality="approved">findings with file:line / none</nikoflow-verdict>` then
+  `<nikoflow-gate phase="execute:TSK-NNN" request-id="…">TICKET_DONE</nikoflow-gate>`.
+  Spec compliance and code quality are separate judgments; `spec="fail"` or `quality="needs_fixes"` rejects.
+  After reviewer approval the ticket is `review`, NOT done — it completes only once the approved worktree
+  commit is merged onto the branch (the Stop hook verifies ancestry with read-only git).
+- Verify: the reviewer emits `<nikoflow-gate phase="verify" score="9.6" request-id="…">VERIFIED</nikoflow-gate>` (a real numeric `score` in 1–10, ≥ 9.5 to pass) or `<nikoflow-gate phase="verify" request-id="…">NO_ACTIONABLE_FINDINGS</nikoflow-gate>`. A VERIFIED without a valid numeric score is treated as a failed pass.
 
 Anti-self-approval — the gates are enforced, not honour-system:
 - Human gates (depth, interview, prd, tickets) are accepted only after a REAL user turn occurs

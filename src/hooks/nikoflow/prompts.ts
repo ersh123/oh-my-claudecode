@@ -75,6 +75,16 @@ function injectRequestId(body: string, requestId?: string): string {
 }
 
 /**
+ * Models routinely invent their own request-id instead of copying the minted
+ * UUID (observed live 2026-07-06/10), which silently fails correlation and
+ * loops the gate. A dedicated COPY-EXACTLY line makes the contract unmissable.
+ */
+function requestIdLine(requestId?: string): string {
+  if (!requestId) return "";
+  return `REQUIRED REQUEST-ID — COPY EXACTLY, do not invent your own: ${requestId}\n`;
+}
+
+/**
  * Prompt shown while no depth tier has been chosen yet. Depth selection is the
  * first act of Grilling — propose a tier with justification and confirm.
  */
@@ -101,6 +111,7 @@ export function getDepthSelectionPrompt(
       : "") +
     `Once the user chooses depth + mode, record both by emitting on its own line:\n` +
     `${gateTag}\n` +
+    requestIdLine(requestId) +
     `(the tag is only accepted after the user has actually replied — do not self-confirm).\n` +
     `${CANCEL_HINT}\n` +
     `</nikoflow-continuation>`
@@ -195,9 +206,9 @@ export function getExecuteTicketPrompt(
   }
   const dir = state.project_path ?? ".";
   const executor = state.roles?.executor ?? "sonnet";
-  const wtRel = ticketWorktreeRelPath(ticket.id);
-  const createCmd = ticketWorktreeCreateCmd(dir, ticket.id);
-  const mergeCmd = ticketWorktreeMergeCmd(dir, ticket.id);
+  const wtRel = ticketWorktreeRelPath(ticket.id, state.run_id);
+  const createCmd = ticketWorktreeCreateCmd(dir, ticket.id, state.run_id);
+  const mergeCmd = ticketWorktreeMergeCmd(dir, ticket.id, state.run_id);
   const execIsCodex = isCodexRoleSpec(executor);
   const execSpawn = execIsCodex
     ? `a Codex-backed executor Task subagent (GPT-5.5 xhigh, foreground/--wait)`
@@ -219,9 +230,14 @@ export function getExecuteTicketPrompt(
     `FRESH reviewer that has NOT seen your reasoning — to review the worktree DIFF against the ` +
     `acceptance criteria and repo standards.${reviewerPbt} Tell it to REJECT if the change leaked ` +
     `outside the worktree (\`git -C "${dir}" status --porcelain\` shows ticket edits in the main tree). ` +
-    `Pass it this request-id; it emits, in ITS OWN final output, the ticket gate on its own line ONLY ` +
-    `if it approves on green validation:\n` +
+    `Pass it this request-id; it emits, in ITS OWN final output, TWO things ONLY if it approves on ` +
+    `green validation — first its structured verdict (spec compliance and code quality are SEPARATE ` +
+    `judgments; findings with file:line inside the block; use spec="fail" or quality="needs_fixes" ` +
+    `to reject):\n` +
+    `<nikoflow-verdict spec="pass" quality="approved">findings / none</nikoflow-verdict>\n` +
+    `then the ticket gate on its own line (the gate does NOT count without the approving verdict):\n` +
     `${gateTag}\n` +
+    requestIdLine(requestId) +
     `4. ONLY after that reviewer approval, merge the worktree into the branch:\n   ${mergeCmd}\n` +
     `   If the merge conflicts, resolve it or run \`git -C "${dir}" merge --abort\` and re-review — the ` +
     `worktree is preserved, nothing is lost.\n` +
@@ -267,6 +283,7 @@ export function getVerifyPrompt(
     `1–10. It must emit — in ITS OWN final output, replacing N.N with its actual score — exactly one of:\n` +
     `  ${okTag}   (score ≥ 9.5 on green validation), or\n` +
     `  ${noFindingsTag}   (no actionable findings remain).\n` +
+    requestIdLine(requestId) +
     `If the reviewer scores below 9.5 with actionable findings, fix them and a NEW reviewer runs ` +
     `next pass. The gate is accepted only from the reviewer subagent's output, never your own text.\n` +
     `${CANCEL_HINT}\n` +
@@ -292,6 +309,7 @@ export function getPhasePrompt(
   return (
     `<nikoflow-continuation phase="${phase}" depth="${depth}" iteration="${state.iteration}">\n` +
     `${body}\n` +
+    requestIdLine(requestId) +
     `${CANCEL_HINT}\n` +
     `</nikoflow-continuation>`
   );

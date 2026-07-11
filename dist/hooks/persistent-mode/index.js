@@ -10,6 +10,7 @@
  * Priority order: Ralph > Ultrawork > Todo Continuation
  */
 import { existsSync, readFileSync, unlinkSync, statSync, openSync, readSync, closeSync, mkdirSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { atomicWriteJsonSync } from '../../lib/atomic-write.js';
 import { join } from 'path';
 import { getHardMaxIterations } from '../../lib/security-config.js';
@@ -19,7 +20,7 @@ import { readUltraworkState, writeUltraworkState, incrementReinforcement, deacti
 import { resolveToWorktreeRoot, resolveSessionStatePath, resolveStatePath, getOmcRoot } from '../../lib/worktree-paths.js';
 import { readModeState, writeModeState } from '../../lib/mode-state-io.js';
 import { readRalphState, writeRalphState, incrementRalphIteration, clearRalphState, findPrdPath, getPrdCompletionStatus, getRalphContext, getStory, markStoryIncomplete, markStoryArchitectVerified, readVerificationState, startVerification, recordArchitectFeedback, getArchitectVerificationPrompt, getArchitectRejectionContinuationPrompt, detectArchitectApproval, detectArchitectRejection, clearVerificationState, } from '../ralph/index.js';
-import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, setNikoflowAutonomyMode, advanceNikoflowPhase, requiresNikoflowHumanGate, mintGateRequest, rotateGateRequest, clearGateRequest, userRepliedAfterMint, isNikoflowUserTurnFresh, detectNikoflowGate, readTickets, validateTicketDag, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, getVerifyPrompt, pbtObligation, recordVerifyPass, bumpVerifyNoVerdict, resetVerifyNoVerdict, bumpExecuteStall, resetExecuteStall, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, } from '../nikoflow/index.js';
+import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, setNikoflowAutonomyMode, advanceNikoflowPhase, requiresNikoflowHumanGate, mintGateRequest, rotateGateRequest, clearGateRequest, bumpNikoflowRidMismatch, userRepliedAfterMint, isNikoflowUserTurnFresh, detectNikoflowGate, detectNikoflowReviewerVerdict, readTickets, validateTicketDag, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, getVerifyPrompt, ticketWorktreeBranch, ticketWorktreeMergeCmd, pbtObligation, recordVerifyPass, bumpVerifyNoVerdict, resetVerifyNoVerdict, bumpExecuteStall, resetExecuteStall, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
 import { isAutopilotActive } from '../autopilot/index.js';
@@ -809,7 +810,7 @@ function readNikoflowGateText(transcriptPath) {
  * echoing the tag. Returns the matched GateMatch (with payload/score) or a
  * non-match.
  */
-function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expectedPayloads) {
+function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expectedPayloads, requireApprovedVerdict = false) {
     let tail;
     try {
         tail = readTranscriptTail(transcriptPath, NIKOFLOW_REVIEWER_TAIL_BYTES);
@@ -857,8 +858,14 @@ function nikoflowReviewerAuthoredGate(transcriptPath, phase, requestId, expected
             if (!reviewerOutput)
                 continue;
             const match = detectNikoflowGate(reviewerOutput, { phase, requestId, expectedPayloads });
-            if (match.matched)
-                return match;
+            if (!match.matched)
+                continue;
+            // Ticket gates additionally require the reviewer's structured verdict
+            // (spec="pass" quality="approved") in the SAME tool_result — a bare
+            // TICKET_DONE echo from a whitelisted reviewer is not an approval.
+            if (requireApprovedVerdict && !detectNikoflowReviewerVerdict(reviewerOutput))
+                continue;
+            return match;
         }
     }
     return { matched: false };
@@ -908,6 +915,49 @@ function nikoflowAdvanceFromExecute(workingDir, sessionId, current) {
         mode: 'nikoflow',
     };
 }
+/** Read-only git probe: the SHA a ref currently points at, or null. */
+function gitRevParse(directory, ref) {
+    try {
+        const out = execFileSync('git', ['-C', directory, 'rev-parse', '--verify', '--quiet', ref], {
+            encoding: 'utf-8',
+            timeout: 5000,
+            stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+        return /^[0-9a-f]{7,40}$/i.test(out) ? out : null;
+    }
+    catch {
+        return null;
+    }
+}
+/** Read-only git probe: is `sha` an ancestor of (or equal to) HEAD? */
+function gitIsAncestorOfHead(directory, sha) {
+    try {
+        execFileSync('git', ['-C', directory, 'merge-base', '--is-ancestor', sha, 'HEAD'], {
+            timeout: 5000,
+            stdio: 'ignore',
+        });
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+/** Advance past a completed ticket: next ticket prompt, or verify/complete. */
+function nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt) {
+    clearGateRequest(workingDir, sessionId);
+    resetExecuteStall(workingDir, sessionId); // a ticket advanced → clear stall guard
+    const after = readTickets(workingDir, sessionId);
+    if (!after || allTicketsDone(after)) {
+        return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
+    }
+    const nextTicket = getNextTicket(after);
+    if (nextTicket) {
+        const nrid = mintGateRequest(workingDir, `execute:${nextTicket.id}`, sessionId) ?? undefined;
+        return { shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid, pbt), mode: 'nikoflow' };
+    }
+    // Completed a ticket but nothing is startable and not all done → deadlock.
+    return nikoflowExecuteError(current, 'ticket deadlock after completing a ticket — check blocked_by.');
+}
 /**
  * Execute phase: drive tickets one at a time (red→green→review→done). Each ticket
  * is gated by a reviewer-authored ticket-scoped tag; when all are done, advance
@@ -937,29 +987,62 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
     const pbt = pbtObligation(workingDir, current.pbt_enabled ?? false);
     const ticket = getNextTicket(tickets); // non-null: not all done and not deadlocked
     const gate = `execute:${ticket.id}`;
+    // Merge gate: a reviewer-approved ticket (status "review") becomes "done"
+    // ONLY once its recorded reviewed commit is an ancestor of HEAD — i.e. the
+    // approved worktree diff actually landed on the branch. Without this the
+    // model could stop right after the reviewer verdict and verify would inspect
+    // a branch that never received the approved implementation (audit F-03).
+    if (ticket.status === 'review') {
+        const reviewedSha = typeof ticket.evidence?.reviewed_sha === 'string' ? ticket.evidence.reviewed_sha : null;
+        if (!reviewedSha || gitIsAncestorOfHead(workingDir, reviewedSha)) {
+            // Merged (or nothing recorded to check — legacy state): complete it.
+            if (!markTicketStatus(workingDir, ticket.id, 'done', sessionId)) {
+                return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
+            }
+            return nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt);
+        }
+        // Approved but not merged yet. Re-emit the merge instruction, bounded by
+        // the same stall cap as the review loop.
+        const stall = bumpExecuteStall(workingDir, ticket.id, sessionId);
+        if (stall >= NIKOFLOW_EXECUTE_MAX_STALL) {
+            return nikoflowExecuteError(current, `ticket ${ticket.id} was reviewer-approved but its merge has not landed after ${stall} attempts. ` +
+                `Resolve the merge or ask the user how to proceed.`);
+        }
+        return nikoflowExecuteError(current, `ticket ${ticket.id} is reviewer-APPROVED but NOT MERGED yet (commit ${reviewedSha.slice(0, 10)} ` +
+            `is not on the branch). Merge the approved worktree now:\n   ` +
+            ticketWorktreeMergeCmd(workingDir, ticket.id, current.run_id) +
+            `\nDo not start other work until the merge lands.`);
+    }
     const requestId = mintGateRequest(workingDir, gate, sessionId) ?? undefined;
     // The ticket advances ONLY on a reviewer-subagent-authored TICKET_DONE tag.
     if (requestId && // fail closed: no correlation id → don't accept any tag
         transcriptPath &&
         existsSync(transcriptPath) &&
-        nikoflowReviewerAuthoredGate(transcriptPath, gate, requestId, ['TICKET_DONE']).matched) {
-        if (!markTicketStatus(workingDir, ticket.id, 'done', sessionId)) {
+        nikoflowReviewerAuthoredGate(transcriptPath, gate, requestId, ['TICKET_DONE'], true).matched) {
+        // Reviewer approved. Record what was approved and require the merge to
+        // land before "done" — the hook only ever VERIFIES git state, it does not
+        // run the merge itself.
+        const branchSha = gitRevParse(workingDir, `refs/heads/${ticketWorktreeBranch(ticket.id, current.run_id)}`);
+        if (branchSha && !gitIsAncestorOfHead(workingDir, branchSha)) {
+            if (!markTicketStatus(workingDir, ticket.id, 'review', sessionId, { reviewed_sha: branchSha })) {
+                return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
+            }
+            clearGateRequest(workingDir, sessionId);
+            return nikoflowExecuteError(current, `ticket ${ticket.id} is reviewer-APPROVED (worktree commit ${branchSha.slice(0, 10)}). ` +
+                `Now merge the approved worktree into the branch:\n   ` +
+                ticketWorktreeMergeCmd(workingDir, ticket.id, current.run_id) +
+                `\nThe ticket completes only after the merge lands on HEAD.`);
+        }
+        // Branch already merged (fast worker), or no ticket branch exists (the
+        // executor worked without isolation — prompt-only convention; note it).
+        const evidence = branchSha
+            ? { reviewed_sha: branchSha }
+            : { worktree_used: false };
+        if (!markTicketStatus(workingDir, ticket.id, 'done', sessionId, evidence)) {
             // Persistence failed — surface it instead of silently re-looping forever.
             return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
         }
-        clearGateRequest(workingDir, sessionId);
-        resetExecuteStall(workingDir, sessionId); // a ticket advanced → clear stall guard
-        const after = readTickets(workingDir, sessionId);
-        if (!after || allTicketsDone(after)) {
-            return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
-        }
-        const nextTicket = getNextTicket(after);
-        if (nextTicket) {
-            const nrid = mintGateRequest(workingDir, `execute:${nextTicket.id}`, sessionId) ?? undefined;
-            return { shouldBlock: true, message: getExecuteTicketPrompt(nextTicket, current, nrid, pbt), mode: 'nikoflow' };
-        }
-        // Completed a ticket but nothing is startable and not all done → deadlock.
-        return nikoflowExecuteError(current, 'ticket deadlock after completing a ticket — check blocked_by.');
+        return nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt);
     }
     // No reviewer verdict for this ticket yet. Bound it: if a ticket never gets a
     // reviewer-authored TICKET_DONE for many Stops, surface it instead of looping
@@ -1076,6 +1159,7 @@ export async function checkNikoflowLoop(sessionId, directory, cancelInProgress, 
     // Gate satisfaction: a correlated confirmation tag in the transcript, plus —
     // for human gates — proof that a real user turn arrived after the request was
     // minted (the model cannot self-confirm a human gate).
+    let ridMismatchNote = '';
     if (NIKOFLOW_ADVANCING_GATES.has(gate) &&
         transcriptPath &&
         existsSync(transcriptPath)) {
@@ -1147,6 +1231,25 @@ export async function checkNikoflowLoop(sessionId, directory, cancelInProgress, 
         if (match.matched && isHumanGate && !humanOk) {
             rotateGateRequest(workingDir, gate, sessionId);
         }
+        // Right phase+payload but a wrong/missing request-id: models invent their
+        // own id instead of copying the minted one (observed live), which fails
+        // correlation SILENTLY and loops the gate forever. Name the exact problem
+        // and the exact expected id instead of re-emitting a generic continuation.
+        if (!match.matched && requestId) {
+            const anyRid = detectNikoflowGate(gateText, { phase: gate });
+            if (anyRid.matched) {
+                const mismatches = bumpNikoflowRidMismatch(workingDir, sessionId);
+                ridMismatchNote =
+                    `\n<nikoflow-blocked>request-id mismatch (attempt ${mismatches}): your tag has the right ` +
+                        `phase and payload but the WRONG request-id. Re-emit the tag copying this id EXACTLY: ` +
+                        `${requestId}` +
+                        (mismatches >= 4
+                            ? ` — ${mismatches} mismatches in a row: stop retrying blindly; re-read the gate ` +
+                                `instructions or ask the user / run /oh-my-claudecode:cancel.`
+                            : '') +
+                        `</nikoflow-blocked>`;
+            }
+        }
     }
     // Gate not satisfied → block with the current gate's prompt (carrying the
     // current request-id, which may have just been rotated above).
@@ -1154,9 +1257,9 @@ export async function checkNikoflowLoop(sessionId, directory, cancelInProgress, 
     const blockRid = blockState.request_id;
     return {
         shouldBlock: true,
-        message: phase
+        message: (phase
             ? getPhasePrompt(phase, blockState, blockRid)
-            : getDepthSelectionPrompt(blockState, blockRid),
+            : getDepthSelectionPrompt(blockState, blockRid)) + ridMismatchNote,
         mode: 'nikoflow',
     };
 }

@@ -42,6 +42,7 @@ export {
   mintGateRequest,
   rotateGateRequest,
   clearGateRequest,
+  bumpNikoflowRidMismatch,
   recordNikoflowUserPrompt,
   readNikoflowUserTurnAt,
   userRepliedAfterMint,
@@ -80,6 +81,7 @@ export {
 
 export {
   detectNikoflowGate,
+  detectNikoflowReviewerVerdict,
   NIKOFLOW_GATE_PAYLOADS,
   HUMAN_GATE_PHASES,
   type GateMatch,

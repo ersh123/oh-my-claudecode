@@ -19,6 +19,7 @@ import {
 } from "../../lib/mode-state-io.js";
 import { atomicWriteJsonSync } from "../../lib/atomic-write.js";
 import { resolveSessionStatePath } from "../../lib/worktree-paths.js";
+import { clearTickets } from "./tickets.js";
 
 export const NIKOFLOW_DEPTHS = ["tactical", "standard", "deep"] as const;
 export type NikoflowDepth = (typeof NIKOFLOW_DEPTHS)[number];
@@ -75,6 +76,9 @@ export const NIKOFLOW_PHASES: Record<NikoflowDepth, string[]> = {
 export interface NikoflowState {
   /** Whether the loop is currently active */
   active: boolean;
+  /** Immutable per-activation id. Scopes worktree paths/branches so two runs
+   *  (or a cancel+restart) can never share or adopt each other's TSK-001. */
+  run_id?: string;
   /** Current iteration number */
   iteration: number;
   /** When the loop started */
@@ -119,6 +123,9 @@ export interface NikoflowState {
   execute_stall_ticket?: string;
   /** Consecutive execute Stops on the same ticket with no reviewer verdict. */
   execute_stall?: number;
+  /** Consecutive Stops where a gate tag matched phase+payload but carried a
+   *  wrong request-id (model invented its own id instead of copying). */
+  rid_mismatch?: number;
 }
 
 /** Verify gate: reviewer score at/above this passes. */
@@ -449,7 +456,21 @@ export function clearGateRequest(
   delete state.request_id;
   delete state.awaiting_gate;
   delete state.gate_request_minted_at;
+  delete state.rid_mismatch;
   return writeNikoflowState(directory, state, sessionId);
+}
+
+/** Count a Stop where the gate tag matched phase+payload but its request-id was
+ *  wrong. Returns the running count so the caller can escalate the diagnostic. */
+export function bumpNikoflowRidMismatch(
+  directory: string,
+  sessionId?: string,
+): number {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return 0;
+  state.rid_mismatch = (state.rid_mismatch ?? 0) + 1;
+  writeNikoflowState(directory, state, sessionId);
+  return state.rid_mismatch;
 }
 
 /** Increment the failed-verify-pass counter and return the new value. */
@@ -626,6 +647,7 @@ export function createNikoflowLoopHook(directory: string): NikoflowLoopHook {
 
     const state: NikoflowState = {
       active: true,
+      run_id: randomUUID().slice(0, 8),
       iteration: 1,
       started_at: now,
       last_checked_at: now,
@@ -648,6 +670,9 @@ export function createNikoflowLoopHook(directory: string): NikoflowLoopHook {
     if (!state || state.session_id !== sessionId) {
       return false;
     }
+    // Drop the ticket DAG too — a later flow in the same session must never
+    // adopt this run's tickets (stale-restart hazard, audit F-09).
+    clearTickets(directory, sessionId);
     return clearNikoflowState(directory, sessionId);
   };
 

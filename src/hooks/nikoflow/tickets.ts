@@ -83,7 +83,8 @@ export function normalizeTicketsFile(raw: unknown): NikoflowTicketsFile | null {
   for (const t of obj.tickets) {
     if (!t || typeof t !== "object") continue;
     const rec = t as Record<string, unknown>;
-    if (typeof rec.id !== "string" || !rec.id) continue;
+    // Same id grammar as lintTicketsRaw — normalize output must stay lint-clean.
+    if (typeof rec.id !== "string" || !TICKET_ID_PATTERN.test(rec.id)) continue;
     if (typeof rec.title !== "string") continue;
 
     const status =
@@ -120,6 +121,10 @@ export function normalizeTicketsFile(raw: unknown): NikoflowTicketsFile | null {
  * as a bare string, a mistyped status, a non-string acceptance entry). The
  * tickets gate surfaces these instead of quietly dropping data.
  */
+/** Strict ticket id grammar. Also what keeps worktree path/branch names
+ *  (derived from the id) collision-free without a separate sanitize check. */
+export const TICKET_ID_PATTERN = /^TSK-\d{1,5}$/;
+
 export function lintTicketsRaw(raw: unknown): string[] {
   const warnings: string[] = [];
   if (!raw || typeof raw !== "object") {
@@ -129,6 +134,9 @@ export function lintTicketsRaw(raw: unknown): string[] {
   if (!Array.isArray(obj.tickets)) {
     return ["tickets.json has no 'tickets' array"];
   }
+  if ("version" in obj && obj.version !== 1) {
+    warnings.push(`unsupported tickets.json version ${JSON.stringify(obj.version)} (expected 1)`);
+  }
   obj.tickets.forEach((t, i) => {
     const label = `ticket #${i + 1}`;
     if (!t || typeof t !== "object") {
@@ -137,13 +145,34 @@ export function lintTicketsRaw(raw: unknown): string[] {
     }
     const rec = t as Record<string, unknown>;
     const id = typeof rec.id === "string" ? rec.id : label;
-    if (typeof rec.id !== "string" || !rec.id) warnings.push(`${label}: missing string id`);
+    if (typeof rec.id !== "string" || !rec.id) {
+      warnings.push(`${label}: missing string id`);
+    } else if (!TICKET_ID_PATTERN.test(rec.id)) {
+      warnings.push(`${label}: id ${JSON.stringify(rec.id)} must match TSK-NNN`);
+    }
     if (typeof rec.title !== "string") warnings.push(`${id}: missing string title`);
     if ("blocked_by" in rec && !Array.isArray(rec.blocked_by)) {
       warnings.push(`${id}: blocked_by must be an array of ids, not ${typeof rec.blocked_by}`);
     }
     if ("acceptance" in rec && !Array.isArray(rec.acceptance)) {
       warnings.push(`${id}: acceptance must be an array`);
+    }
+    // Non-string/empty ARRAY ELEMENTS would be silently dropped by
+    // normalization — a malformed dependency like blocked_by: [42] must fail
+    // the gate loudly, not lint clean and vanish before DAG validation.
+    if (Array.isArray(rec.blocked_by)) {
+      rec.blocked_by.forEach((d, j) => {
+        if (typeof d !== "string" || !d) {
+          warnings.push(`${id}: blocked_by[${j}] must be a non-empty ticket id, got ${JSON.stringify(d)}`);
+        }
+      });
+    }
+    if (Array.isArray(rec.acceptance)) {
+      rec.acceptance.forEach((a, j) => {
+        if (typeof a !== "string" || !a) {
+          warnings.push(`${id}: acceptance[${j}] must be a non-empty string, got ${JSON.stringify(a)}`);
+        }
+      });
     }
     if (
       "status" in rec &&
