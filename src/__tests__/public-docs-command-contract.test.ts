@@ -31,7 +31,13 @@ function listUserFacingDocs(): string[] {
     'skills/AGENTS.md',
     ...listMarkdownFiles('docs'),
     ...listMarkdownFiles('seminar'),
-  ].filter((relativePath) => existsSync(join(process.cwd(), relativePath)));
+  ].filter(
+    (relativePath) =>
+      existsSync(join(process.cwd(), relativePath)) &&
+      // DEV-DIARY.md is an auto-generated session diary (hook-appended git
+      // facts quoting historical commit texts), not user-facing guidance.
+      !relativePath.endsWith('DEV-DIARY.md'),
+  );
 }
 
 function containsRemovedCommandName(markdown: string, commandName: string): boolean {

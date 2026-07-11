@@ -394,7 +394,7 @@ These keywords invoke a skill and create a state file.
 | Keyword | Skill | Description |
 |---------|-------|-------------|
 | `cancelomc`, `stopomc` | cancel | Cancels all active modes |
-| `ralph` | ralph | Persistent execution until verification completes |
+| `ralph fix the failing tests` | ralph | Persistent execution until verification completes (explicit invocation required — a bare mention no longer triggers) |
 | `autopilot`, `auto pilot`, `auto-pilot`, `fullsend`, `full auto` | autopilot | Fully autonomous execution |
 | `ultrawork`, `ulw` | ultrawork | Maximum parallel execution |
 | `ccg`, `claude-codex-gemini` | ccg | Claude-Codex-Gemini tri-model orchestration (use `antigravity` workers when using the Antigravity CLI) |

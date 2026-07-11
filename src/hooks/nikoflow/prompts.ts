@@ -53,7 +53,7 @@ const CANCEL_HINT =
 const AUTONOMY_MODE_PROTOCOL =
   "Autonomy mode: establish exactly one mode once, in Grilling/depth if it is not already explicit: " +
   "approval-gated (ask before each phase/step) or autonomous (run the full safe cycle without per-step approvals). " +
-  "Default to autonomous when the user clearly asks for no handoffs/full cycle or the task is already scoped. " +
+  "Default to autonomous when the user clearly asks for no handoffs (full cycle) or the task is already scoped. " +
   "Even in autonomous mode, stop for destructive, credential-gated, external-production, or materially branching actions.";
 
 const MONEY_CRITICAL_PREFLIGHT =

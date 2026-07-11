@@ -191,7 +191,7 @@ None - pure markdown files.
 
 | Category | Skills | Trigger Keywords |
 |----------|--------|------------------|
-| Execution | autopilot, autoresearch, nikoflow, ralph, self-improve, team, ultragoal, ultraqa, ultrawork, verify | "autopilot", "auto pilot", "auto-pilot", "fullsend", "full auto", "ultrawork", "ulw", "ralph" |
+| Execution | autopilot, autoresearch, nikoflow, ralph, self-improve, team, ultragoal, ultraqa, ultrawork, verify | "autopilot", "auto pilot", "auto-pilot", "fullsend", "full auto", "ultrawork", "ulw", "ralph fix the failing tests" |
 | Cleanup | ai-slop-cleaner | "deslop", "anti-slop", cleanup/refactor + slop smells |
 | Planning | omc-plan, ralplan, deep-interview | "plan this", "deep interview", "deep-interview" |
 | Exploration | debug, deep-dive, deepinit, external-context, sciomc, trace, wiki | "deepinit", "research", "deep dive", "deep-dive", "trace and interview", "investigate deeply", "wiki", "wiki this", "wiki add", "wiki lint", "wiki query" |
@@ -209,7 +209,7 @@ Some skills activate automatically based on context:
 |-------|----------------------|
 | autopilot | "autopilot", "auto pilot", "auto-pilot", "fullsend", "full auto" |
 | ultrawork | "ultrawork", "ulw" |
-| ralph | "ralph" |
+| ralph | "ralph fix the failing tests" |
 | deep-interview | "deep-interview", "deep interview" |
 | deep-dive | "deep dive", "deep-dive", "trace and interview", "investigate deeply" |
 | wiki | "wiki", "wiki this", "wiki add", "wiki lint", "wiki query" |

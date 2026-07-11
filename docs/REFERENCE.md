@@ -975,7 +975,7 @@ Use these trigger phrases in natural language prompts to activate enhanced modes
 | `ultrawork`, `ulw`                                                             | Activates parallel agent orchestration                                                        |
 | `autopilot`, `auto pilot`, `auto-pilot`, `fullsend`, `full auto`               | Full autonomous execution                                                                     |
 | `deslop`, `anti-slop`, cleanup/refactor + slop smells                          | Anti-slop cleanup workflow (`ai-slop-cleaner`)                                                |
-| `ralph`                                                                        | Persistence until verified complete                                                           |
+| `ralph fix the failing tests`                                                  | Persistence until verified complete                                                           |
 | `ccg`, `claude-codex-gemini`                                                   | Claude-Codex-Gemini orchestration (use `antigravity` when using the Antigravity CLI)         |
 | `ralplan`                                                                      | Iterative planning consensus with structured deliberation (`--deliberate` for high-risk mode) |
 | `deep-interview`, `deep interview`                                             | Deep Socratic interview with mathematical clarity gating                                      |
