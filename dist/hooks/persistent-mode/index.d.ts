@@ -84,6 +84,18 @@ export declare function shouldSendIdleNotification(stateDir: string, sessionId?:
  * Record that the session-idle notification was sent at the current timestamp.
  */
 export declare function recordIdleNotificationSent(stateDir: string, sessionId?: string, repoState?: IdleNotificationRepoState | null): void;
+/** One tail read: the decoded content plus whether the window truncated the file. */
+type TranscriptTailRaw = {
+    content: string;
+    truncated: boolean;
+};
+/**
+ * Read the tail of a potentially large transcript file.
+ * Architect approval/rejection markers appear near the end of the conversation,
+ * so reading only the last N bytes avoids loading megabyte-sized transcripts.
+ */
+export declare function readTranscriptTailRaw(transcriptPath: string, maxBytes: number): TranscriptTailRaw;
+export declare function readTranscriptTailLines(transcriptPath: string, maxBytes?: number): string[];
 /**
  * Execute phase: drive tickets one at a time (red→green→review→done). Each ticket
  * is gated by a reviewer-authored ticket-scoped tag; when all are done, advance
@@ -109,4 +121,5 @@ export declare function createHookOutput(result: PersistentModeResult): {
     continue: boolean;
     message?: string;
 };
+export {};
 //# sourceMappingURL=index.d.ts.map

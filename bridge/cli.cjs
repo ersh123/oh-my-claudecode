@@ -21264,6 +21264,8 @@ __export(persistent_mode_exports, {
   handleNikoflowVerify: () => handleNikoflowVerify,
   hasPendingOwnedAsyncWork: () => hasPendingOwnedAsyncWork,
   readLastToolError: () => readLastToolError,
+  readTranscriptTailLines: () => readTranscriptTailLines,
+  readTranscriptTailRaw: () => readTranscriptTailRaw,
   recordIdleNotificationSent: () => recordIdleNotificationSent,
   resetTodoContinuationAttempts: () => resetTodoContinuationAttempts,
   shouldSendIdleNotification: () => shouldSendIdleNotification,
@@ -21591,30 +21593,43 @@ function recordIdleNotificationSent(stateDir, sessionId, repoState) {
   } catch {
   }
 }
-function readTranscriptTail(transcriptPath, maxBytes = TRANSCRIPT_TAIL_BYTES) {
-  const size = (0, import_fs59.statSync)(transcriptPath).size;
+function readTranscriptTailRaw(transcriptPath, maxBytes) {
+  const stat2 = (0, import_fs59.statSync)(transcriptPath);
+  const key = `${transcriptPath}\0${maxBytes}`;
+  const sig = `${stat2.size}:${stat2.mtimeMs}`;
+  const cached2 = transcriptTailMemo.get(key);
+  if (cached2 && cached2.sig === sig) {
+    return { content: cached2.content, truncated: cached2.truncated };
+  }
+  const size = stat2.size;
+  let result;
   if (size <= maxBytes) {
-    return (0, import_fs59.readFileSync)(transcriptPath, "utf-8");
+    result = { content: (0, import_fs59.readFileSync)(transcriptPath, "utf-8"), truncated: false };
+  } else {
+    const fd = (0, import_fs59.openSync)(transcriptPath, "r");
+    try {
+      const offset = size - maxBytes;
+      const buf = Buffer.allocUnsafe(maxBytes);
+      const bytesRead = (0, import_fs59.readSync)(fd, buf, 0, maxBytes, offset);
+      result = { content: buf.subarray(0, bytesRead).toString("utf-8"), truncated: true };
+    } finally {
+      (0, import_fs59.closeSync)(fd);
+    }
   }
-  const fd = (0, import_fs59.openSync)(transcriptPath, "r");
-  try {
-    const offset = size - maxBytes;
-    const buf = Buffer.allocUnsafe(maxBytes);
-    const bytesRead = (0, import_fs59.readSync)(fd, buf, 0, maxBytes, offset);
-    return buf.subarray(0, bytesRead).toString("utf-8");
-  } finally {
-    (0, import_fs59.closeSync)(fd);
+  if (transcriptTailMemo.size > 8) {
+    transcriptTailMemo.clear();
   }
+  transcriptTailMemo.set(key, { sig, ...result });
+  return result;
+}
+function readTranscriptTail(transcriptPath, maxBytes = TRANSCRIPT_TAIL_BYTES) {
+  return readTranscriptTailRaw(transcriptPath, maxBytes).content;
 }
 function readTranscriptTailLines(transcriptPath, maxBytes = TRANSCRIPT_TAIL_BYTES) {
-  const content = readTranscriptTail(transcriptPath, maxBytes);
-  const lines = content.split("\n");
-  try {
-    if ((0, import_fs59.statSync)(transcriptPath).size > maxBytes && lines.length > 0) {
-      lines.shift();
-    }
-  } catch {
-    return lines;
+  const raw = readTranscriptTailRaw(transcriptPath, maxBytes);
+  const lines = raw.content.split("\n");
+  if (raw.truncated && lines.length > 0) {
+    lines.shift();
   }
   return lines;
 }
@@ -23219,7 +23234,7 @@ function createHookOutput(result) {
     message: result.message || void 0
   };
 }
-var import_fs59, import_child_process19, import_path69, CANCEL_SIGNAL_TTL_MS2, STALE_STATE_THRESHOLD_MS, PENDING_ASYNC_STATE_STALE_MS, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_MAX, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_TTL_MS, TERMINAL_WORKFLOW_SLOT_MODES, TERMINAL_WORKFLOW_PHASES, todoContinuationAttempts, TRANSCRIPT_TAIL_BYTES, NIKOFLOW_REVIEWER_TAIL_BYTES, CRITICAL_CONTEXT_STOP_PERCENT, RALPLAN_TERMINAL_PHASES, REVIEWER_TASK_TOOL_NAMES, REVIEWER_COMMAND_TOOL_NAMES, NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES, AWAITING_CONFIRMATION_TTL_MS, NIKOFLOW_ADVANCING_GATES, NIKOFLOW_RESUME_TAIL_BYTES, THINKING_ONLY_STREAK_BREAKER, THINKING_ONLY_STREAK_MAX, THINKING_ONLY_STREAK_TTL_MS, THINKING_ONLY_STREAK_BAILOUT_MESSAGE, TEAM_PIPELINE_STOP_BLOCKER_MAX, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS, RALPLAN_STOP_BLOCKER_MAX, RALPLAN_STOP_BLOCKER_TTL_MS, RALPLAN_ACTIVE_AGENT_RECENCY_WINDOW_MS;
+var import_fs59, import_child_process19, import_path69, CANCEL_SIGNAL_TTL_MS2, STALE_STATE_THRESHOLD_MS, PENDING_ASYNC_STATE_STALE_MS, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_MAX, OVERSIZE_TOOL_RESULT_REDIRECT_STOP_TTL_MS, TERMINAL_WORKFLOW_SLOT_MODES, TERMINAL_WORKFLOW_PHASES, todoContinuationAttempts, TRANSCRIPT_TAIL_BYTES, NIKOFLOW_REVIEWER_TAIL_BYTES, CRITICAL_CONTEXT_STOP_PERCENT, RALPLAN_TERMINAL_PHASES, transcriptTailMemo, REVIEWER_TASK_TOOL_NAMES, REVIEWER_COMMAND_TOOL_NAMES, NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES, AWAITING_CONFIRMATION_TTL_MS, NIKOFLOW_ADVANCING_GATES, NIKOFLOW_RESUME_TAIL_BYTES, THINKING_ONLY_STREAK_BREAKER, THINKING_ONLY_STREAK_MAX, THINKING_ONLY_STREAK_TTL_MS, THINKING_ONLY_STREAK_BAILOUT_MESSAGE, TEAM_PIPELINE_STOP_BLOCKER_MAX, TEAM_PIPELINE_STOP_BLOCKER_TTL_MS, RALPLAN_STOP_BLOCKER_MAX, RALPLAN_STOP_BLOCKER_TTL_MS, RALPLAN_ACTIVE_AGENT_RECENCY_WINDOW_MS;
 var init_persistent_mode = __esm({
   "src/hooks/persistent-mode/index.ts"() {
     "use strict";
@@ -23282,6 +23297,7 @@ var init_persistent_mode = __esm({
       "approval-required",
       "approval_required"
     ]);
+    transcriptTailMemo = /* @__PURE__ */ new Map();
     REVIEWER_TASK_TOOL_NAMES = /* @__PURE__ */ new Set(["Task", "proxy_Task", "Agent"]);
     REVIEWER_COMMAND_TOOL_NAMES = /* @__PURE__ */ new Set(["Bash", "proxy_Bash"]);
     NIKOFLOW_REVIEWER_SUBAGENT_BASE_NAMES = /* @__PURE__ */ new Set([

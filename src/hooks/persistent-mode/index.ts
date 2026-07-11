@@ -689,39 +689,65 @@ const RALPLAN_TERMINAL_PHASES = new Set([
   'approval_required',
 ]);
 
+/** One tail read: the decoded content plus whether the window truncated the file. */
+type TranscriptTailRaw = { content: string; truncated: boolean };
+
+/**
+ * Per-(path, window) memo for tail reads: a single Stop reads the same 32KB
+ * tail several times (context estimate, gate text, reviewer scans). Keyed by
+ * size+mtime from the one statSync this function performs, so a transcript
+ * that grew between calls is re-read, never served stale (perf F2).
+ */
+const transcriptTailMemo = new Map<string, { sig: string } & TranscriptTailRaw>();
+
 /**
  * Read the tail of a potentially large transcript file.
  * Architect approval/rejection markers appear near the end of the conversation,
  * so reading only the last N bytes avoids loading megabyte-sized transcripts.
  */
-function readTranscriptTail(transcriptPath: string, maxBytes: number = TRANSCRIPT_TAIL_BYTES): string {
-  const size = statSync(transcriptPath).size;
+export function readTranscriptTailRaw(transcriptPath: string, maxBytes: number): TranscriptTailRaw {
+  const stat = statSync(transcriptPath);
+  const key = `${transcriptPath}\0${maxBytes}`;
+  const sig = `${stat.size}:${stat.mtimeMs}`;
+  const cached = transcriptTailMemo.get(key);
+  if (cached && cached.sig === sig) {
+    return { content: cached.content, truncated: cached.truncated };
+  }
+
+  const size = stat.size;
+  let result: TranscriptTailRaw;
   if (size <= maxBytes) {
-    return readFileSync(transcriptPath, 'utf-8');
+    result = { content: readFileSync(transcriptPath, 'utf-8'), truncated: false };
+  } else {
+    const fd = openSync(transcriptPath, 'r');
+    try {
+      const offset = size - maxBytes;
+      const buf = Buffer.allocUnsafe(maxBytes);
+      const bytesRead = readSync(fd, buf, 0, maxBytes, offset);
+      result = { content: buf.subarray(0, bytesRead).toString('utf-8'), truncated: true };
+    } finally {
+      closeSync(fd);
+    }
   }
-  const fd = openSync(transcriptPath, 'r');
-  try {
-    const offset = size - maxBytes;
-    const buf = Buffer.allocUnsafe(maxBytes);
-    const bytesRead = readSync(fd, buf, 0, maxBytes, offset);
-    return buf.subarray(0, bytesRead).toString('utf-8');
-  } finally {
-    closeSync(fd);
+
+  if (transcriptTailMemo.size > 8) {
+    transcriptTailMemo.clear();
   }
+  transcriptTailMemo.set(key, { sig, ...result });
+  return result;
 }
 
-function readTranscriptTailLines(transcriptPath: string, maxBytes: number = TRANSCRIPT_TAIL_BYTES): string[] {
-  const content = readTranscriptTail(transcriptPath, maxBytes);
-  const lines = content.split('\n');
+function readTranscriptTail(transcriptPath: string, maxBytes: number = TRANSCRIPT_TAIL_BYTES): string {
+  return readTranscriptTailRaw(transcriptPath, maxBytes).content;
+}
 
-  try {
-    if (statSync(transcriptPath).size > maxBytes && lines.length > 0) {
-      lines.shift();
-    }
-  } catch {
-    return lines;
+export function readTranscriptTailLines(transcriptPath: string, maxBytes: number = TRANSCRIPT_TAIL_BYTES): string[] {
+  const raw = readTranscriptTailRaw(transcriptPath, maxBytes);
+  const lines = raw.content.split('\n');
+  // A truncated window almost certainly cut the first line mid-JSON — drop it.
+  if (raw.truncated && lines.length > 0) {
+    lines.shift();
   }
-
   return lines;
 }
 
