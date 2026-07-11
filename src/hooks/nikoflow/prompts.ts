@@ -122,7 +122,10 @@ const PHASE_BODIES: Record<string, string> = {
   interview:
     `Phase 🔥 GRILLING. Interrogate the task one question at a time: why, why this way, ` +
     `what alternatives, what risks. If a question can be answered by reading the code, read ` +
-    `instead of asking. ${AUTONOMY_MODE_PROTOCOL} In approval-gated mode, or when there is ` +
+    `instead of asking. Before shared understanding is recorded, write an acceptance contract: ` +
+    `3-5 observable pass/fail criteria, one primary signal (user-visible behavior or runtime output) ` +
+    `and the secondary signals (tests/typecheck/lint/build) — no edits before it exists. ` +
+    `${AUTONOMY_MODE_PROTOCOL} In approval-gated mode, or when there is ` +
     `a destructive/external-production/materially branching risk, do not write implementation until ` +
     `the user confirms shared understanding. In autonomous mode, write the shared understanding, ` +
     `state assumptions/evidence, emit the gate, and proceed. GATE — emit after user confirmation ` +
@@ -230,6 +233,9 @@ export function getExecuteTicketPrompt(
     `2. Spawn ${execSpawn} whose working directory is "${wtRel}". It does RED→GREEN for this ONE ` +
     `vertical slice (a failing test at a pre-agreed seam → the minimum code to pass) INSIDE that ` +
     `worktree and returns a summary + the diff. Do NOT edit files in the main tree yourself.${pbtLine}\n` +
+    `Change-surface: if the slice touches a contract/schema/route/query, check producers, consumers, ` +
+    `and serializers on both sides; a one-file fix for a cross-layer bug is suspicious — fix the owning ` +
+    `layer, not a child-side patch.\n` +
     `Record machine-checkable TDD evidence in this ticket's evidence.tdd in tickets.json: after the ` +
     `executor's failing run, red {command, exit_code (non-zero), expected_failure (why it fails ` +
     `pre-change), head_sha, recorded_at ISO}; after the passing run, green {command, exit_code 0, ` +
@@ -297,6 +303,9 @@ export function getVerifyPrompt(
     `  ${okTag}   (score ≥ 9.5 on green validation), or\n` +
     `  ${noFindingsTag}   (no actionable findings remain).\n` +
     requestIdLine(requestId) +
+    `Completion report: alongside the verdict, state primary signal status (met / not met / partial) ` +
+    `and secondary signal status (exact checks run and results). The task is NOT done if the visible ` +
+    `symptom is gone but the same mechanic stays inconsistent across directly coupled layers.\n` +
     `If the reviewer scores below 9.5 with actionable findings, fix them and a NEW reviewer runs ` +
     `next pass. The gate is accepted only from the reviewer subagent's output, never your own text.\n` +
     `${CANCEL_HINT}\n` +

@@ -33,8 +33,10 @@ Grilling and confirm with the user.
 
 <Phases>
 1. 🔥 Grilling — one question at a time; interrogate why, why this way, alternatives, risks, depth.
-   If a question can be answered by reading the code, read instead of asking. GATE: user confirms
-   shared understanding before any code.
+   If a question can be answered by reading the code, read instead of asking. Before shared
+   understanding is recorded, write an acceptance contract: 3-5 observable pass/fail criteria plus one
+   primary signal (user-visible behavior/runtime output) and the secondary signals (tests/build/lint) —
+   no edits before it exists. GATE: user confirms shared understanding before any code.
 2. 📋 ADR — record an architecture decision ONLY when it is hard-to-reverse AND surprising-without-context
    AND the result of a real trade-off (all three). Otherwise record a skip. 2+ options + rationale + consequences.
 3. 📄 PRD — "[Actor] can [capability]", no implementation detail. User Stories with Given/When/Then
@@ -52,9 +54,14 @@ Grilling and confirm with the user.
    off the branch until the reviewer/QA gate approves it — only then merge the worktree into the branch.
    Keeps the main context clean and unreviewed code off the branch. Per ticket, machine-checkable
    TDD evidence (`evidence.tdd`: red/green runs or a waiver) is recorded in tickets.json and gate-checked.
+   Change-surface: a slice touching a contract/schema/route/query must check producers, consumers, and
+   serializers on both sides; a one-file fix for a cross-layer bug is suspicious — fix the owning layer.
 6. ✅ Verification — spawn a fresh, context-isolated independent reviewer; iterate fix → re-review until
    local validation (tests/lint/build) is green AND the reviewer scores the changed surface ≥ 9.5/10 or
    reports no actionable findings. Never accept a passing score while validation is red.
+   Completion report: state primary signal status (met/not met/partial) and secondary signal status
+   (exact checks run and results). Not done if the symptom is gone but the same mechanic stays
+   inconsistent across directly coupled layers.
 </Phases>
 
 <Gates_and_tags>
