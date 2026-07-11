@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { detectNikoflowGate } from "../gates.js";
+import { detectNikoflowGate, detectNikoflowReviewerVerdict } from "../gates.js";
 import {
   createNikoflowLoopHook,
   readNikoflowState,
@@ -111,6 +111,55 @@ describe("nikoflow gate detection (TSK-003)", () => {
     const skip = `<nikoflow-gate phase="adr" request-id="${RID}">SKIPPED</nikoflow-gate>`;
     expect(detectNikoflowGate(rec, { phase: "adr", requestId: RID }).matched).toBe(true);
     expect(detectNikoflowGate(skip, { phase: "adr", requestId: RID }).matched).toBe(true);
+  });
+});
+
+describe("nikoflow reviewer verdict detection (QA-V1/V2)", () => {
+  const OK = `<nikoflow-verdict spec="pass" quality="approved">none</nikoflow-verdict>`;
+
+  it("accepts a canonical approving verdict block", () => {
+    expect(detectNikoflowReviewerVerdict(`review done\n${OK}`)).toBe(true);
+  });
+
+  it("rejects an inline-code example verdict (QA-V1)", () => {
+    expect(detectNikoflowReviewerVerdict("Example: `" + OK + "`")).toBe(false);
+  });
+
+  it("rejects a blockquoted example verdict (QA-V1)", () => {
+    expect(detectNikoflowReviewerVerdict(`> ${OK}`)).toBe(false);
+  });
+
+  it("rejects a dangling opening tag with no closing tag (QA-V2)", () => {
+    expect(
+      detectNikoflowReviewerVerdict(`<nikoflow-verdict spec="pass" quality="approved">`),
+    ).toBe(false);
+  });
+
+  it("rejects a self-closing verdict tag (QA-V2)", () => {
+    expect(
+      detectNikoflowReviewerVerdict(`<nikoflow-verdict spec="pass" quality="approved" />`),
+    ).toBe(false);
+  });
+
+  it("rejects contradictory duplicate attributes (QA-V2)", () => {
+    expect(
+      detectNikoflowReviewerVerdict(
+        `<nikoflow-verdict spec="pass" spec="fail" quality="approved">x</nikoflow-verdict>`,
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects failing verdicts", () => {
+    expect(
+      detectNikoflowReviewerVerdict(
+        `<nikoflow-verdict spec="fail" quality="approved">missing AC2</nikoflow-verdict>`,
+      ),
+    ).toBe(false);
+    expect(
+      detectNikoflowReviewerVerdict(
+        `<nikoflow-verdict spec="pass" quality="needs_fixes">nit at x.ts:1</nikoflow-verdict>`,
+      ),
+    ).toBe(false);
   });
 });
 

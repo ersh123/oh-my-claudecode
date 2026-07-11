@@ -151,15 +151,6 @@ export declare function isExplicitCancelCommand(context?: StopContext): boolean;
  * See: https://github.com/Yeachan-Heo/oh-my-claudecode/issues/213
  */
 export declare function isContextLimitStop(context?: StopContext): boolean;
-/**
- * Detect if stop was triggered by rate limiting (HTTP 429 / quota exhausted).
- * When the API is rate-limited, Claude Code stops the session.
- * Blocking these stops causes an infinite retry loop: the persistent-mode hook
- * injects a continuation prompt, Claude immediately hits the rate limit again,
- * stops again, and the cycle repeats indefinitely.
- *
- * Fix for: https://github.com/Yeachan-Heo/oh-my-claudecode/issues/777
- */
 export declare function isRateLimitStop(context?: StopContext): boolean;
 /**
  * Scheduled wake-up stops should not trigger persistent-mode re-enforcement.

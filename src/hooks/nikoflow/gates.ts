@@ -75,7 +75,9 @@ function extractAttribute(attributes: string, name: string): string | undefined 
 const STRIP_CONTINUATION = /<nikoflow-continuation\b[\s\S]*?<\/nikoflow-continuation>/gi;
 const STRIP_FENCE_BACKTICK = /```[\s\S]*?```/g;
 const STRIP_FENCE_TILDE = /~~~[\s\S]*?~~~/g;
-const STRIP_INLINE_TAG = /`<nikoflow-gate\b[\s\S]*?<\/nikoflow-gate>`/gi;
+const STRIP_INLINE_TAG = /`<nikoflow-(?:gate|verdict)\b[\s\S]*?<\/nikoflow-(?:gate|verdict)>`/gi;
+// Markdown blockquote lines are quoted/example text, not emissions (QA-V1).
+const STRIP_BLOCKQUOTE_LINE = /^[ \t]*>[^\n]*$/gm;
 
 /**
  * Remove text that legitimately CONTAINS example gate tags so they cannot be
@@ -87,7 +89,8 @@ function stripInjectedExamples(text: string): string {
     .replace(STRIP_CONTINUATION, " ")
     .replace(STRIP_FENCE_BACKTICK, " ")
     .replace(STRIP_FENCE_TILDE, " ")
-    .replace(STRIP_INLINE_TAG, " ");
+    .replace(STRIP_INLINE_TAG, " ")
+    .replace(STRIP_BLOCKQUOTE_LINE, " ");
 }
 
 /**
@@ -100,9 +103,16 @@ function stripInjectedExamples(text: string): string {
  */
 export function detectNikoflowReviewerVerdict(text: string): boolean {
   const sanitized = stripInjectedExamples(text);
-  const re = /<nikoflow-verdict(?![\w-])([^>]*)>/gi;
+  // Complete block only: a dangling opening tag or a self-closing tag is not a
+  // verdict (QA-V2) — the body is where findings live.
+  const re = /<nikoflow-verdict(?![\w-])([^>]*)>[\s\S]*?<\/nikoflow-verdict>/gi;
   for (const m of sanitized.matchAll(re)) {
     const attrs = m[1] ?? "";
+    if (attrs.trimEnd().endsWith("/")) continue; // self-closing
+    // Exactly one spec= and one quality=: a contradictory duplicate
+    // (spec="pass" spec="fail") must reject, not first-attribute-win (QA-V2).
+    if ((attrs.match(/(?<![\w-])spec=/gi) ?? []).length !== 1) continue;
+    if ((attrs.match(/(?<![\w-])quality=/gi) ?? []).length !== 1) continue;
     const spec = extractAttribute(attrs, "spec")?.toLowerCase();
     const quality = extractAttribute(attrs, "quality")?.toLowerCase();
     if (spec === "pass" && quality === "approved") return true;

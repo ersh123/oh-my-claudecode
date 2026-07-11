@@ -948,7 +948,7 @@ function estimateContextPercent(transcriptPath) {
 function isUserAbort(data) {
   if (data.user_requested || data.userRequested) return true;
 
-  const reason = (data.stop_reason || data.stopReason || "").toLowerCase();
+  const reason = normalizeStopReason(data.stop_reason ?? data.stopReason);
   // Exact-match patterns: short generic words that cause false positives with .includes()
   const exactPatterns = ["aborted", "abort", "cancel", "interrupt"];
   // Substring patterns: compound words safe for .includes() matching
@@ -985,12 +985,10 @@ const AUTHENTICATION_ERROR_PATTERNS = [
 ];
 
 function isAuthenticationError(data) {
-  const reason = (data.stop_reason || data.stopReason || "").toLowerCase();
-  const endTurnReason = (
-    data.end_turn_reason ||
-    data.endTurnReason ||
-    ""
-  ).toLowerCase();
+  // Same external-JSON trust boundary as isRateLimitStop (QA-R4): a non-string
+  // reason must not throw here — the global catch would swallow the block.
+  const reason = normalizeStopReason(data.stop_reason ?? data.stopReason);
+  const endTurnReason = normalizeStopReason(data.end_turn_reason ?? data.endTurnReason);
 
   return AUTHENTICATION_ERROR_PATTERNS.some(
     (pattern) => reason.includes(pattern) || endTurnReason.includes(pattern),
@@ -1007,15 +1005,22 @@ const RATE_LIMIT_STOP_PATTERNS = [
   "quota_exceeded", "quota_limit", "quota_exhausted",
   "request_limit", "api_limit",
   "overloaded", "capacity",
+  // Provider quota codes: Google gRPC / OpenAI billing (QA-R3)
+  "resource_exhausted", "insufficient_quota",
 ];
 
+// External JSON boundary: tolerate numeric codes (429) and non-string junk
+// instead of throwing on .toLowerCase (QA-R4); normalize separators so
+// "rate-limit"/"rate limit" match the snake_case patterns (QA-R2).
+function normalizeStopReason(value) {
+  if (typeof value === "string") return value.toLowerCase().replace(/[\s-]+/g, "_");
+  if (typeof value === "number") return String(value);
+  return "";
+}
+
 function isRateLimitStop(data) {
-  const reason = (data.stop_reason || data.stopReason || "").toLowerCase();
-  const endTurnReason = (
-    data.end_turn_reason ||
-    data.endTurnReason ||
-    ""
-  ).toLowerCase();
+  const reason = normalizeStopReason(data.stop_reason ?? data.stopReason);
+  const endTurnReason = normalizeStopReason(data.end_turn_reason ?? data.endTurnReason);
 
   return RATE_LIMIT_STOP_PATTERNS.some(
     (pattern) => reason.includes(pattern) || endTurnReason.includes(pattern),

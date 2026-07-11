@@ -955,6 +955,15 @@ function hasExplicitNikoflowInvocationContext(text, position, keywordLength, key
     return true;
   }
 
+  // Negated mention is not an invocation: "Do not run nikoflow", "не используй
+  // никофлоу". Checked BEFORE the activation-verb window, which would otherwise
+  // see the verb and activate (QA-A1).
+  const negStart = Math.max(0, position - INFORMATIONAL_CONTEXT_WINDOW);
+  const negWindow = text.slice(negStart, position);
+  if (/(?:\b(?:do\s+not|don['’]t|never|should\s+not|shouldn['’]t|must\s+not|without)\b|(?:^|\s)(?:не|нельзя)\s)[^\n]{0,40}$/iu.test(negWindow)) {
+    return false;
+  }
+
   // English activation verb near the keyword ("run nikoflow on this repo").
   const start = Math.max(0, position - INFORMATIONAL_CONTEXT_WINDOW);
   const end = Math.min(text.length, position + keywordLength + INFORMATIONAL_CONTEXT_WINDOW);
@@ -967,6 +976,14 @@ function hasExplicitNikoflowInvocationContext(text, position, keywordLength, key
   // "включи режим никофлоу"). Deliberately adjacent-only: "сделай аудит никофлоу"
   // has a noun between verb and keyword and must NOT activate.
   if (/(?:запусти(?:ть)?|включи(?:ть)?|активируй|используй|юзай|давай|погнали)\s+(?:режим\s+)?$/iu.test(prefix)) {
+    return true;
+  }
+
+  // Control flags directly after the keyword are an invocation: `nikoflow
+  // --auto`, `nikoflow --depth deep fix auth` (QA-A2). Only recognized
+  // flag-shaped tokens count — prose after the name still needs an imperative.
+  const afterFlags = suffix.replace(/^(?:\s+--[\w-]+(?:[=\s]+(?:tactical|standard|deep|[\w.+-]+))?)+/i, "");
+  if (afterFlags !== suffix && (afterFlags.trim() === "" || /^\s/.test(afterFlags))) {
     return true;
   }
 

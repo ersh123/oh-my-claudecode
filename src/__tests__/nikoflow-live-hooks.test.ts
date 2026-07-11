@@ -25,10 +25,17 @@ const NODE = process.execPath;
 let runCounter = 0;
 
 function runHook(scriptPath: string, payload: Record<string, unknown>): string {
+  // Strip external kill-switches, not just override: a parent shell running
+  // with DISABLE_OMC=1 (e.g. a codex/QA session) otherwise makes every live
+  // activation test silently inert (QA-T1).
+  const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'test', OMC_SKIP_HOOKS: '' };
+  delete env.DISABLE_OMC;
+  delete env.DISABLE_OMX;
+  delete env.OMX_SKIP_HOOKS;
   return execFileSync(NODE, [scriptPath], {
     input: JSON.stringify(payload),
     encoding: 'utf-8',
-    env: { ...process.env, NODE_ENV: 'test', OMC_SKIP_HOOKS: '' },
+    env,
     timeout: 20000,
   }).trim();
 }
@@ -64,6 +71,10 @@ describe('nikoflow live activation guard (keyword-detector.mjs)', () => {
     'review src/hooks/nikoflow/loop.ts and explain the state machine',
     'compare nikoflow vs superpowers and gsd-core',
     'inspect nikoflow-state.json without starting the mode',
+    // Negated intent must not activate (QA-A1).
+    'Do not run nikoflow on this repo.',
+    'We should not use nikoflow here.',
+    'Не используй никофлоу, это только термин в отчёте.',
   ];
 
   const POSITIVES = [
@@ -72,6 +83,10 @@ describe('nikoflow live activation guard (keyword-detector.mjs)', () => {
     'nikoflow fix the parser crash',
     'запусти никофлоу почини сборку',
     'никофлоу: исправь баг в авторизации',
+    // Control flags directly after the name are an invocation (QA-A2).
+    'nikoflow --auto',
+    'nikoflow --auto fix auth',
+    'nikoflow --depth deep --auto',
   ];
 
   for (const prompt of NEGATIVES) {
@@ -164,11 +179,25 @@ describe('nikoflow live Stop wiring (persistent-mode.mjs)', () => {
     const { cwd, sessionId, statePath } = activate('Run nikoflow on this repository.');
     try {
       expect(existsSync(statePath)).toBe(true);
-      for (const stopReason of ['rate_limit', 'too_many_requests', 'overloaded_error']) {
+      for (const stopReason of [
+        'rate_limit',
+        'too_many_requests',
+        'overloaded_error',
+        // Separator variants and provider quota codes (QA-R2/R3).
+        'rate-limit',
+        'rate limit exceeded',
+        'RESOURCE_EXHAUSTED',
+        'insufficient_quota',
+        // Non-string junk from the JSON boundary must not crash (QA-R4).
+        429,
+      ]) {
         const out = JSON.parse(runStop(cwd, sessionId, { stop_reason: stopReason }));
-        expect(out.decision, `stop_reason=${stopReason} must pass through`).toBeUndefined();
+        expect(out.decision, `stop_reason=${JSON.stringify(stopReason)} must pass through`).toBeUndefined();
         expect(out.continue).toBe(true);
       }
+      // Non-rate-limit junk types must not crash AND must still reach the block.
+      const blocked = JSON.parse(runStop(cwd, sessionId, { stop_reason: { code: 500 } }));
+      expect(blocked.decision).toBe('block');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

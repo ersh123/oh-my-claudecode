@@ -387,11 +387,21 @@ export function isContextLimitStop(context?: StopContext): boolean {
  *
  * Fix for: https://github.com/Yeachan-Heo/oh-my-claudecode/issues/777
  */
+/** Stop-reason fields arrive from an external JSON boundary: tolerate numeric
+ *  codes (429) and non-string junk instead of throwing on .toLowerCase (QA-R4),
+ *  and normalize separators so "rate-limit"/"rate limit" match the snake_case
+ *  pattern list (QA-R2). */
+function normalizeStopReason(value: unknown): string {
+  if (typeof value === 'string') return value.toLowerCase().replace(/[\s-]+/g, '_');
+  if (typeof value === 'number') return String(value);
+  return '';
+}
+
 export function isRateLimitStop(context?: StopContext): boolean {
   if (!context) return false;
 
-  const reason = (context.stop_reason ?? context.stopReason ?? '').toLowerCase();
-  const endTurnReason = (context.end_turn_reason ?? context.endTurnReason ?? '').toLowerCase();
+  const reason = normalizeStopReason(context.stop_reason ?? context.stopReason);
+  const endTurnReason = normalizeStopReason(context.end_turn_reason ?? context.endTurnReason);
 
   const rateLimitPatterns = [
     'rate_limit', 'rate_limited', 'ratelimit',
@@ -401,6 +411,8 @@ export function isRateLimitStop(context?: StopContext): boolean {
     // Anthropic API returns 'overloaded_error' (529) for server overload;
     // 'capacity' covers provider-level capacity-exceeded responses
     'overloaded', 'capacity',
+    // Provider quota codes: Google gRPC / OpenAI billing (QA-R3)
+    'resource_exhausted', 'insufficient_quota',
   ];
 
   return rateLimitPatterns.some(p => reason.includes(p) || endTurnReason.includes(p));

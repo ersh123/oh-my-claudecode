@@ -14764,10 +14764,15 @@ function isContextLimitStop(context) {
     (value) => contextPatterns.some((pattern) => value.includes(pattern))
   );
 }
+function normalizeStopReason(value) {
+  if (typeof value === "string") return value.toLowerCase().replace(/[\s-]+/g, "_");
+  if (typeof value === "number") return String(value);
+  return "";
+}
 function isRateLimitStop(context) {
   if (!context) return false;
-  const reason = (context.stop_reason ?? context.stopReason ?? "").toLowerCase();
-  const endTurnReason = (context.end_turn_reason ?? context.endTurnReason ?? "").toLowerCase();
+  const reason = normalizeStopReason(context.stop_reason ?? context.stopReason);
+  const endTurnReason = normalizeStopReason(context.end_turn_reason ?? context.endTurnReason);
   const rateLimitPatterns = [
     "rate_limit",
     "rate_limited",
@@ -14782,7 +14787,10 @@ function isRateLimitStop(context) {
     // Anthropic API returns 'overloaded_error' (529) for server overload;
     // 'capacity' covers provider-level capacity-exceeded responses
     "overloaded",
-    "capacity"
+    "capacity",
+    // Provider quota codes: Google gRPC / OpenAI billing (QA-R3)
+    "resource_exhausted",
+    "insufficient_quota"
   ];
   return rateLimitPatterns.some((p) => reason.includes(p) || endTurnReason.includes(p));
 }
@@ -20558,13 +20566,16 @@ function extractAttribute(attributes, name) {
   return re.exec(attributes)?.[2];
 }
 function stripInjectedExamples(text) {
-  return text.replace(STRIP_CONTINUATION, " ").replace(STRIP_FENCE_BACKTICK, " ").replace(STRIP_FENCE_TILDE, " ").replace(STRIP_INLINE_TAG, " ");
+  return text.replace(STRIP_CONTINUATION, " ").replace(STRIP_FENCE_BACKTICK, " ").replace(STRIP_FENCE_TILDE, " ").replace(STRIP_INLINE_TAG, " ").replace(STRIP_BLOCKQUOTE_LINE, " ");
 }
 function detectNikoflowReviewerVerdict(text) {
   const sanitized = stripInjectedExamples(text);
-  const re = /<nikoflow-verdict(?![\w-])([^>]*)>/gi;
+  const re = /<nikoflow-verdict(?![\w-])([^>]*)>[\s\S]*?<\/nikoflow-verdict>/gi;
   for (const m of sanitized.matchAll(re)) {
     const attrs = m[1] ?? "";
+    if (attrs.trimEnd().endsWith("/")) continue;
+    if ((attrs.match(/(?<![\w-])spec=/gi) ?? []).length !== 1) continue;
+    if ((attrs.match(/(?<![\w-])quality=/gi) ?? []).length !== 1) continue;
     const spec = extractAttribute(attrs, "spec")?.toLowerCase();
     const quality = extractAttribute(attrs, "quality")?.toLowerCase();
     if (spec === "pass" && quality === "approved") return true;
@@ -20612,7 +20623,7 @@ function detectNikoflowGate(text, opts) {
   }
   return { matched: false };
 }
-var NIKOFLOW_GATE_PAYLOADS, HUMAN_GATE_PHASES, ATTR_REGEXES, STRIP_CONTINUATION, STRIP_FENCE_BACKTICK, STRIP_FENCE_TILDE, STRIP_INLINE_TAG;
+var NIKOFLOW_GATE_PAYLOADS, HUMAN_GATE_PHASES, ATTR_REGEXES, STRIP_CONTINUATION, STRIP_FENCE_BACKTICK, STRIP_FENCE_TILDE, STRIP_INLINE_TAG, STRIP_BLOCKQUOTE_LINE;
 var init_gates = __esm({
   "src/hooks/nikoflow/gates.ts"() {
     "use strict";
@@ -20646,7 +20657,8 @@ var init_gates = __esm({
     STRIP_CONTINUATION = /<nikoflow-continuation\b[\s\S]*?<\/nikoflow-continuation>/gi;
     STRIP_FENCE_BACKTICK = /```[\s\S]*?```/g;
     STRIP_FENCE_TILDE = /~~~[\s\S]*?~~~/g;
-    STRIP_INLINE_TAG = /`<nikoflow-gate\b[\s\S]*?<\/nikoflow-gate>`/gi;
+    STRIP_INLINE_TAG = /`<nikoflow-(?:gate|verdict)\b[\s\S]*?<\/nikoflow-(?:gate|verdict)>`/gi;
+    STRIP_BLOCKQUOTE_LINE = /^[ \t]*>[^\n]*$/gm;
   }
 });
 
@@ -21539,10 +21551,11 @@ function gitIsAncestorOfHead(directory, sha) {
   }
 }
 function nikoflowHardAbort(workingDir, sessionId, current, ticketId, stall) {
-  deactivateNikoflowLoop(workingDir, sessionId);
+  const deactivated = deactivateNikoflowLoop(workingDir, sessionId);
+  const stateNote = deactivated ? `The loop has deactivated itself so the session is not wedged.` : `DEACTIVATION FAILED (state not writable) \u2014 the loop may keep blocking; run /oh-my-claudecode:cancel --force or fix .omc/state permissions.`;
   return {
     shouldBlock: true,
-    message: `<nikoflow-blocked>NIKOFLOW ABORTED: ticket ${ticketId} made no progress after ${stall} Stops (iteration ${current.iteration}). The loop has deactivated itself so the session is not wedged. State and tickets are preserved for post-mortem \u2014 report the blocker to the user; run /oh-my-claudecode:cancel to clean up, or restart nikoflow after resolving it.</nikoflow-blocked>`,
+    message: `<nikoflow-blocked>NIKOFLOW ABORTED: ${ticketId} made no progress after ${stall} Stops (iteration ${current.iteration}). ${stateNote} State and tickets are preserved for post-mortem \u2014 report the blocker to the user; run /oh-my-claudecode:cancel to clean up, or restart nikoflow after resolving it.</nikoflow-blocked>`,
     mode: "nikoflow"
   };
 }
@@ -21561,23 +21574,30 @@ function nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt) {
   return nikoflowExecuteError(current, "ticket deadlock after completing a ticket \u2014 check blocked_by.");
 }
 function handleNikoflowExecute(workingDir, sessionId, current, transcriptPath) {
+  const preflightError = (error2) => {
+    const stall2 = bumpExecuteStall(workingDir, "__preflight__", sessionId);
+    if (stall2 >= NIKOFLOW_EXECUTE_ABORT_STALL) {
+      return nikoflowHardAbort(workingDir, sessionId, current, "execute preflight", stall2);
+    }
+    return nikoflowExecuteError(current, error2);
+  };
   const lint = lintTicketsFile(workingDir, sessionId);
   if (lint.length > 0) {
-    return nikoflowExecuteError(current, `tickets.json problem(s): ${lint.join("; ")}`);
+    return preflightError(`tickets.json problem(s): ${lint.join("; ")}`);
   }
   const tickets = readTickets(workingDir, sessionId);
   if (!tickets) {
-    return nikoflowExecuteError(current, "tickets.json could not be read.");
+    return preflightError("tickets.json could not be read.");
   }
   const dag = validateTicketDag(tickets);
   if (!dag.ok) {
-    return nikoflowExecuteError(current, `invalid ticket DAG: ${dag.errors.join("; ")}`);
+    return preflightError(`invalid ticket DAG: ${dag.errors.join("; ")}`);
   }
   if (allTicketsDone(tickets)) {
     return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
   }
   if (isTicketDeadlock(tickets)) {
-    return nikoflowExecuteError(current, "ticket deadlock: no ticket is startable yet not all are done \u2014 a blocker chain or cycle was introduced. Fix blocked_by.");
+    return preflightError("ticket deadlock: no ticket is startable yet not all are done \u2014 a blocker chain or cycle was introduced. Fix blocked_by.");
   }
   const pbt = pbtObligation(workingDir, current.pbt_enabled ?? false);
   const ticket = getNextTicket(tickets);
@@ -85751,6 +85771,11 @@ function hasExplicitNikoflowInvocationContext(text, position, keywordLength, key
   if (/^\s*[:：]\s*\S/.test(suffix)) {
     return true;
   }
+  const negStart = Math.max(0, position - INFORMATIONAL_CONTEXT_WINDOW2);
+  const negWindow = text.slice(negStart, position);
+  if (/(?:\b(?:do\s+not|don['’]t|never|should\s+not|shouldn['’]t|must\s+not|without)\b|(?:^|\s)(?:не|нельзя)\s)[^\n]{0,40}$/iu.test(negWindow)) {
+    return false;
+  }
   const start = Math.max(0, position - INFORMATIONAL_CONTEXT_WINDOW2);
   const end = Math.min(text.length, position + keywordLength + INFORMATIONAL_CONTEXT_WINDOW2);
   const context = text.slice(start, end);
@@ -85758,6 +85783,10 @@ function hasExplicitNikoflowInvocationContext(text, position, keywordLength, key
     return true;
   }
   if (/(?:запусти(?:ть)?|включи(?:ть)?|активируй|используй|юзай|давай|погнали)\s+(?:режим\s+)?$/iu.test(prefix)) {
+    return true;
+  }
+  const afterFlags = suffix.replace(/^(?:\s+--[\w-]+(?:[=\s]+(?:tactical|standard|deep|[\w.+-]+))?)+/i, "");
+  if (afterFlags !== suffix && (afterFlags.trim() === "" || /^\s/.test(afterFlags))) {
     return true;
   }
   return /^['"]?\s+(?:this\b|and\s+)?(?:fix|debug|investigate|resolve|handle|patch|address|implement|build|refactor|run|start|enable|activate|invoke|trigger|launch)\b|^['"]?\s+(?:почини|исправь|реализуй|запили|добавь|внеси|построй)/iu.test(suffix);

@@ -1239,12 +1239,18 @@ function nikoflowHardAbort(
   ticketId: string,
   stall: number,
 ): PersistentModeResult {
-  deactivateNikoflowLoop(workingDir, sessionId);
+  // Deactivation is a state WRITE and can fail (read-only dir, disk). Never
+  // claim a terminal state that was not persisted (QA-M3).
+  const deactivated = deactivateNikoflowLoop(workingDir, sessionId);
+  const stateNote = deactivated
+    ? `The loop has deactivated itself so the session is not wedged.`
+    : `DEACTIVATION FAILED (state not writable) — the loop may keep blocking; ` +
+      `run /oh-my-claudecode:cancel --force or fix .omc/state permissions.`;
   return {
     shouldBlock: true,
     message:
-      `<nikoflow-blocked>NIKOFLOW ABORTED: ticket ${ticketId} made no progress after ${stall} Stops ` +
-      `(iteration ${current.iteration}). The loop has deactivated itself so the session is not wedged. ` +
+      `<nikoflow-blocked>NIKOFLOW ABORTED: ${ticketId} made no progress after ${stall} Stops ` +
+      `(iteration ${current.iteration}). ${stateNote} ` +
       `State and tickets are preserved for post-mortem — report the blocker to the user; ` +
       `run /oh-my-claudecode:cancel to clean up, or restart nikoflow after resolving it.</nikoflow-blocked>`,
     mode: 'nikoflow',
@@ -1286,24 +1292,36 @@ export function handleNikoflowExecute(
   current: NikoflowState,
   transcriptPath?: string,
 ): PersistentModeResult {
+  // Preflight problems (broken/missing tickets file, bad DAG, deadlock) loop
+  // on every Stop without reaching any per-ticket counter — bound them with a
+  // pseudo-ticket stall so a permanently broken artifact hard-aborts instead
+  // of blocking forever (QA-M2).
+  const preflightError = (error: string): PersistentModeResult => {
+    const stall = bumpExecuteStall(workingDir, '__preflight__', sessionId);
+    if (stall >= NIKOFLOW_EXECUTE_ABORT_STALL) {
+      return nikoflowHardAbort(workingDir, sessionId, current, 'execute preflight', stall);
+    }
+    return nikoflowExecuteError(current, error);
+  };
+
   // Lint first so "missing" vs "invalid JSON" vs shape problems are distinguished.
   const lint = lintTicketsFile(workingDir, sessionId);
   if (lint.length > 0) {
-    return nikoflowExecuteError(current, `tickets.json problem(s): ${lint.join('; ')}`);
+    return preflightError(`tickets.json problem(s): ${lint.join('; ')}`);
   }
   const tickets = readTickets(workingDir, sessionId);
   if (!tickets) {
-    return nikoflowExecuteError(current, 'tickets.json could not be read.');
+    return preflightError('tickets.json could not be read.');
   }
   const dag = validateTicketDag(tickets);
   if (!dag.ok) {
-    return nikoflowExecuteError(current, `invalid ticket DAG: ${dag.errors.join('; ')}`);
+    return preflightError(`invalid ticket DAG: ${dag.errors.join('; ')}`);
   }
   if (allTicketsDone(tickets)) {
     return nikoflowAdvanceFromExecute(workingDir, sessionId, current);
   }
   if (isTicketDeadlock(tickets)) {
-    return nikoflowExecuteError(current, 'ticket deadlock: no ticket is startable yet not all are done — a blocker chain or cycle was introduced. Fix blocked_by.');
+    return preflightError('ticket deadlock: no ticket is startable yet not all are done — a blocker chain or cycle was introduced. Fix blocked_by.');
   }
 
   const pbt = pbtObligation(workingDir, current.pbt_enabled ?? false);
