@@ -1651,6 +1651,19 @@ function handleNikoflowExecuteCtx(
     return nikoflowProceedAfterTicketDone(ctx, pbt);
   }
 
+  // A reviewer TICKET_DONE exists but with the WRONG request-id — same failure
+  // class as the verify dogfood miss: name it instead of re-prompting silently.
+  let execRidNote = '';
+  if (requestId && transcriptPath && existsSync(transcriptPath)) {
+    const anyRid = nikoflowReviewerAuthoredGate(transcriptPath, gate, undefined, ['TICKET_DONE']);
+    if (anyRid.matched) {
+      execRidNote =
+        `\n<nikoflow-blocked>request-id mismatch: a reviewer TICKET_DONE for ${ticket.id} was found ` +
+        `but carries the WRONG request-id. Re-run the reviewer passing this id to copy EXACTLY: ` +
+        `${requestId}. Do NOT cancel — the ticket gate has not passed.</nikoflow-blocked>`;
+    }
+  }
+
   // No reviewer verdict for this ticket yet. Bound it: if a ticket never gets a
   // reviewer-authored TICKET_DONE for many Stops, surface it instead of looping
   // forever (Fable QA R1 — the per-ticket gate otherwise has no cap).
@@ -1668,7 +1681,7 @@ function handleNikoflowExecuteCtx(
   }
 
   return appendNikoflowTaskBoardLine(
-    { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId, pbt), mode: 'nikoflow' },
+    { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId, pbt) + execRidNote, mode: 'nikoflow' },
     workingDir, sessionId, current,
   );
 }
@@ -1724,6 +1737,7 @@ function handleNikoflowVerifyCtx(
       : { shouldBlock: true, message: getVerifyPrompt(current, undefined, passSoFar + 1), mode: 'nikoflow' };
   }
 
+  let ridNote = '';
   if (transcriptPath && existsSync(transcriptPath)) {
     const match: GateMatch = nikoflowReviewerAuthoredGate(
       transcriptPath,
@@ -1762,6 +1776,22 @@ function handleNikoflowVerifyCtx(
       const freshRid = ctx.state.request_id;
       return { shouldBlock: true, message: getVerifyPrompt(current, freshRid, passes + 1), mode: 'nikoflow' };
     }
+    // A reviewer verify tag exists but with the WRONG request-id: dogfood
+    // 2026-07-11 — the reviewer invented "tactical-sumTo-fix", the silent
+    // non-match re-prompted generically, and the model gave up and cancelled
+    // with an unverified "done" claim. Name the exact problem and id.
+    const anyRid = nikoflowReviewerAuthoredGate(
+      transcriptPath,
+      'verify',
+      undefined,
+      ['VERIFIED', 'NO_ACTIONABLE_FINDINGS'],
+    );
+    if (anyRid.matched) {
+      ridNote =
+        `\n<nikoflow-blocked>request-id mismatch: a reviewer verify tag was found but carries the ` +
+        `WRONG request-id. Re-run the reviewer passing this id to copy EXACTLY: ${requestId}. ` +
+        `Do NOT cancel — the verify gate has not passed.</nikoflow-blocked>`;
+    }
   }
 
   // No reviewer verdict yet. Bound the loop: if a parseable verdict never
@@ -1774,7 +1804,7 @@ function handleNikoflowVerifyCtx(
   if (noVerdict >= NIKOFLOW_VERIFY_MAX_NO_VERDICT) {
     return nikoflowVerifyEscalation(current, passSoFar);
   }
-  return { shouldBlock: true, message: getVerifyPrompt(current, requestId, passSoFar + 1), mode: 'nikoflow' };
+  return { shouldBlock: true, message: getVerifyPrompt(current, requestId, passSoFar + 1) + ridNote, mode: 'nikoflow' };
 }
 
 export async function checkNikoflowLoop(

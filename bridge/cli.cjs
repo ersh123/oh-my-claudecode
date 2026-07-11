@@ -20843,7 +20843,7 @@ var init_prompts2 = __esm({
     init_loop2();
     init_worktree();
     init_tickets();
-    CANCEL_HINT = "When the whole task is FULLY complete and the Verification gate has passed, run `/oh-my-claudecode:cancel` to exit. If cancel fails, retry with `/oh-my-claudecode:cancel --force`.";
+    CANCEL_HINT = "Run `/oh-my-claudecode:cancel` to exit ONLY after the hook itself prints the phase=\"complete\" banner \u2014 cancelling earlier abandons unpassed gates and any 'done' claim would be unverified. If this prompt repeats after your reviewer ran, its tag did not correlate (check the request-id) \u2014 fix that instead of cancelling. If cancel fails, retry with `/oh-my-claudecode:cancel --force`.";
     AUTONOMY_MODE_PROTOCOL = "Autonomy mode: establish exactly one mode once, in Grilling/depth if it is not already explicit: approval-gated (ask before each phase/step) or autonomous (run the full safe cycle without per-step approvals). Default to autonomous when the user clearly asks for no handoffs (full cycle) or the task is already scoped. Even in autonomous mode, stop for destructive, credential-gated, external-production, or materially branching actions.";
     MONEY_CRITICAL_PREFLIGHT = "Money/prod deploy preflight: before any execute/deploy action that can affect production, ad spend, accounts, credentials, or proxy-dependent scraping, verify and report release base vs prod, prod divergence, money guards, proxy/env, rollback path, and stop condition. Unknown/red item => STOP and report blockers; never continue on assumptions.";
     PHASE_BODIES = {
@@ -22274,6 +22274,14 @@ The ticket completes only after the merge lands on HEAD.`
     }
     return nikoflowProceedAfterTicketDone(ctx, pbt);
   }
+  let execRidNote = "";
+  if (requestId && transcriptPath && (0, import_fs59.existsSync)(transcriptPath)) {
+    const anyRid = nikoflowReviewerAuthoredGate(transcriptPath, gate, void 0, ["TICKET_DONE"]);
+    if (anyRid.matched) {
+      execRidNote = `
+<nikoflow-blocked>request-id mismatch: a reviewer TICKET_DONE for ${ticket.id} was found but carries the WRONG request-id. Re-run the reviewer passing this id to copy EXACTLY: ${requestId}. Do NOT cancel \u2014 the ticket gate has not passed.</nikoflow-blocked>`;
+    }
+  }
   const stall = bumpExecuteStallIn(ctx.state, ticket.id);
   ctx.dirty = true;
   if (stall >= NIKOFLOW_EXECUTE_ABORT_STALL) {
@@ -22286,7 +22294,7 @@ The ticket completes only after the merge lands on HEAD.`
     );
   }
   return appendNikoflowTaskBoardLine(
-    { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId, pbt), mode: "nikoflow" },
+    { shouldBlock: true, message: getExecuteTicketPrompt(ticket, current, requestId, pbt) + execRidNote, mode: "nikoflow" },
     workingDir,
     sessionId,
     current
@@ -22316,6 +22324,7 @@ function handleNikoflowVerifyCtx(ctx, transcriptPath) {
   if (!requestId) {
     return atCap ? nikoflowVerifyEscalation(current, passSoFar) : { shouldBlock: true, message: getVerifyPrompt(current, void 0, passSoFar + 1), mode: "nikoflow" };
   }
+  let ridNote = "";
   if (transcriptPath && (0, import_fs59.existsSync)(transcriptPath)) {
     const match = nikoflowReviewerAuthoredGate(
       transcriptPath,
@@ -22345,6 +22354,16 @@ function handleNikoflowVerifyCtx(ctx, transcriptPath) {
       const freshRid = ctx.state.request_id;
       return { shouldBlock: true, message: getVerifyPrompt(current, freshRid, passes + 1), mode: "nikoflow" };
     }
+    const anyRid = nikoflowReviewerAuthoredGate(
+      transcriptPath,
+      "verify",
+      void 0,
+      ["VERIFIED", "NO_ACTIONABLE_FINDINGS"]
+    );
+    if (anyRid.matched) {
+      ridNote = `
+<nikoflow-blocked>request-id mismatch: a reviewer verify tag was found but carries the WRONG request-id. Re-run the reviewer passing this id to copy EXACTLY: ${requestId}. Do NOT cancel \u2014 the verify gate has not passed.</nikoflow-blocked>`;
+    }
   }
   if (atCap) {
     return nikoflowVerifyEscalation(current, passSoFar);
@@ -22353,7 +22372,7 @@ function handleNikoflowVerifyCtx(ctx, transcriptPath) {
   if (noVerdict >= NIKOFLOW_VERIFY_MAX_NO_VERDICT) {
     return nikoflowVerifyEscalation(current, passSoFar);
   }
-  return { shouldBlock: true, message: getVerifyPrompt(current, requestId, passSoFar + 1), mode: "nikoflow" };
+  return { shouldBlock: true, message: getVerifyPrompt(current, requestId, passSoFar + 1) + ridNote, mode: "nikoflow" };
 }
 async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcriptPath) {
   const workingDir = resolveToWorktreeRoot(directory);

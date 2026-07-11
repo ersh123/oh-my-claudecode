@@ -137,7 +137,7 @@ Codex-backed Task agent (your Codex subscription). Example:
 </Role_Model_Routing>
 
 <Completion>
-When the task is FULLY complete and the Verification gate has passed, run
+When the hook itself has printed the phase="complete" banner (never before — an early cancel abandons unpassed gates and makes any "done" claim unverified), run
 `/oh-my-claudecode:cancel` to cleanly exit and clean up state. If cancel fails, retry with
 `/oh-my-claudecode:cancel --force`. Before (or right after) cancelling, mark all mirrored
 TSK-* tasks completed so no pending mirror outlives the flow.

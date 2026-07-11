@@ -45,6 +45,23 @@ describe("nikoflow verify convergence (TSK-006)", () => {
 
   const run = () => handleNikoflowVerify(dir, sid, readNikoflowState(dir, sid)!, transcript);
 
+  it("names a request-id mismatch when the reviewer invented its own id (dogfood 2026-07-11)", () => {
+    run(); // mint verify rid
+    const rid = readNikoflowState(dir, sid)!.request_id!;
+    writeEntries(transcript, reviewerResult(
+      "tu-wrong",
+      `<nikoflow-gate phase="verify" score="10.0" request-id="tactical-sumTo-fix">VERIFIED</nikoflow-gate>`,
+    ));
+    const r = run();
+    // Gate must NOT pass — but the block must name the mismatch and the exact id
+    // instead of re-prompting generically (the silent version made a live model
+    // give up and cancel with an unverified "done" claim).
+    expect(isNikoflowComplete(readNikoflowState(dir, sid)!)).toBe(false);
+    expect(r.message).toContain("request-id mismatch");
+    expect(r.message).toContain(rid);
+    expect(r.message).toContain("Do NOT cancel");
+  });
+
   it("completes when a reviewer scores >= 9.5", () => {
     run();
     const rid = readNikoflowState(dir, sid)!.request_id!;

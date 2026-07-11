@@ -48,9 +48,11 @@ export function renderPanel(panel: string[]): string {
 }
 
 const CANCEL_HINT =
-  "When the whole task is FULLY complete and the Verification gate has passed, " +
-  "run `/oh-my-claudecode:cancel` to exit. If cancel fails, retry with " +
-  "`/oh-my-claudecode:cancel --force`.";
+  "Run `/oh-my-claudecode:cancel` to exit ONLY after the hook itself prints the " +
+  "phase=\"complete\" banner — cancelling earlier abandons unpassed gates and any " +
+  "'done' claim would be unverified. If this prompt repeats after your reviewer ran, " +
+  "its tag did not correlate (check the request-id) — fix that instead of cancelling. " +
+  "If cancel fails, retry with `/oh-my-claudecode:cancel --force`.";
 
 const AUTONOMY_MODE_PROTOCOL =
   "Autonomy mode: establish exactly one mode once, in Grilling/depth if it is not already explicit: " +
