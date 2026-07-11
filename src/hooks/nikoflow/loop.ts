@@ -144,6 +144,9 @@ export interface NikoflowState {
    *  bypass: tickets.json is model-writable, this entry is only ever written
    *  from the Stop-hook approval path. Absent field = legacy state. */
   review_marks?: Record<string, string>;
+  /** Set while the flow is paused (active=false but resumable): an urgent task
+   *  was interleaved; "nikoflow resume" reactivates from the same artifacts. */
+  paused_at?: string;
 }
 
 /** Verify gate: reviewer score at/above this passes. */
@@ -178,6 +181,62 @@ export const NIKOFLOW_EXECUTE_ABORT_STALL = NIKOFLOW_EXECUTE_MAX_STALL * 2;
 /** Pure core of deactivateNikoflowLoop. */
 export function deactivateIn(state: NikoflowState): void {
   state.active = false;
+}
+
+/**
+ * Pause: an urgent task interleaves the flow (session-mining anti-pattern #3 —
+ * "залезь на прод срочно" mid-refactor). active=false frees the Stop hook;
+ * paused_at marks the state resumable — artifacts (state/tickets/worktrees)
+ * stay intact, so nothing is lost.
+ */
+export function pauseNikoflowLoop(directory: string, sessionId?: string): boolean {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return false;
+  state.active = false;
+  state.paused_at = new Date().toISOString();
+  return writeNikoflowState(directory, state, sessionId);
+}
+
+/** Resume a paused flow: reactivate + refresh liveness so the stale timer does
+ *  not kill a flow parked over lunch/overnight. Gate correlation is kept — the
+ *  same request-id is still the one the current gate expects. */
+export function resumeNikoflowLoop(directory: string, sessionId?: string): boolean {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || state.active || !state.paused_at) return false;
+  state.active = true;
+  delete state.paused_at;
+  state.last_checked_at = new Date().toISOString();
+  return writeNikoflowState(directory, state, sessionId);
+}
+
+/**
+ * Reopen Ticketization after a mid-execute requirements change (anti-pattern
+ * #1: "ещё добавь…", "сократи до…"). Done tickets and their evidence are KEPT —
+ * only the phase pointer moves back to the tickets gate, where the edited
+ * breakdown must pass lint/DAG/coverage and be re-approved before execute
+ * resumes. Tactical tier has no tickets phase → returns false.
+ */
+export function reopenNikoflowTicketizationIn(state: NikoflowState): boolean {
+  if (!state.active || !state.depth) return false;
+  const idx = state.phases.indexOf("tickets");
+  if (idx === -1) return false;
+  state.phase_index = idx;
+  state.request_id = randomUUID();
+  state.awaiting_gate = "tickets";
+  state.gate_request_minted_at = new Date().toISOString();
+  delete state.execute_stall;
+  delete state.execute_stall_ticket;
+  return true;
+}
+
+export function reopenNikoflowTicketization(
+  directory: string,
+  sessionId?: string,
+): boolean {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state) return false;
+  if (!reopenNikoflowTicketizationIn(state)) return false;
+  return writeNikoflowState(directory, state, sessionId);
 }
 
 /** Deactivate the loop in place (state survives for post-mortem; the next Stop

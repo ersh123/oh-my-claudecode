@@ -20112,6 +20112,39 @@ var init_tickets = __esm({
 function deactivateIn(state) {
   state.active = false;
 }
+function pauseNikoflowLoop(directory, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return false;
+  state.active = false;
+  state.paused_at = (/* @__PURE__ */ new Date()).toISOString();
+  return writeNikoflowState(directory, state, sessionId);
+}
+function resumeNikoflowLoop(directory, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || state.active || !state.paused_at) return false;
+  state.active = true;
+  delete state.paused_at;
+  state.last_checked_at = (/* @__PURE__ */ new Date()).toISOString();
+  return writeNikoflowState(directory, state, sessionId);
+}
+function reopenNikoflowTicketizationIn(state) {
+  if (!state.active || !state.depth) return false;
+  const idx = state.phases.indexOf("tickets");
+  if (idx === -1) return false;
+  state.phase_index = idx;
+  state.request_id = (0, import_crypto11.randomUUID)();
+  state.awaiting_gate = "tickets";
+  state.gate_request_minted_at = (/* @__PURE__ */ new Date()).toISOString();
+  delete state.execute_stall;
+  delete state.execute_stall_ticket;
+  return true;
+}
+function reopenNikoflowTicketization(directory, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state) return false;
+  if (!reopenNikoflowTicketizationIn(state)) return false;
+  return writeNikoflowState(directory, state, sessionId);
+}
 function deactivateNikoflowLoop(directory, sessionId) {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return false;
@@ -20666,6 +20699,10 @@ function renderPanel(panel) {
   );
   return parts.join(" and ");
 }
+function localPreviewLine(state) {
+  if (state.autonomy_mode === "autonomous") return "";
+  return "Local-preview checkpoint (approval-gated): before ANY step that reaches production, a client account, or a live feed, show the result locally (diff, dry-run output, local URL or screenshot) and wait for the user's go \u2014 do not push to prod straight from a green test.\n";
+}
 function injectRequestId(body, requestId) {
   if (!requestId) return body;
   return body.replace(
@@ -20734,11 +20771,11 @@ BASE RULE \u2014 DELEGATE + ISOLATE: you (this thread) ORCHESTRATE only; you do 
 1. Create the ticket worktree once:
    ${createCmd}
 ${MONEY_CRITICAL_PREFLIGHT}
-2. Spawn ${execSpawn} whose working directory is "${wtRel}". It does RED\u2192GREEN for this ONE vertical slice (a failing test at a pre-agreed seam \u2192 the minimum code to pass) INSIDE that worktree and returns a summary + the diff. Do NOT edit files in the main tree yourself.${pbtLine}
+` + localPreviewLine(state) + `2. Spawn ${execSpawn} whose working directory is "${wtRel}". It does RED\u2192GREEN for this ONE vertical slice (a failing test at a pre-agreed seam \u2192 the minimum code to pass) INSIDE that worktree and returns a summary + the diff. Do NOT edit files in the main tree yourself.${pbtLine}
 Change-surface: if the slice touches a contract/schema/route/query, check producers, consumers, and serializers on both sides; a one-file fix for a cross-layer bug is suspicious \u2014 fix the owning layer, not a child-side patch.
 Record machine-checkable TDD evidence in this ticket's evidence.tdd in tickets.json: after the executor's failing run, red {command, exit_code (non-zero), expected_failure (why it fails pre-change), head_sha, recorded_at ISO}; after the passing run, green {command, exit_code 0, head_sha, recorded_at} \u2014 red recorded before green. A ticket with no runtime surface records tdd: {waived: {reason}} instead. TICKET_DONE is not accepted without it.
 ` + (ticket.self_verify ? `Self-verify: ${ticket.self_verify}
-` : "") + `3. When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} \u2014 a FRESH reviewer that has NOT seen your reasoning \u2014 to review the worktree DIFF against the acceptance criteria and repo standards.${reviewerPbt} Tell it to REJECT if the change leaked outside the worktree (\`git -C "${dir}" status --porcelain\` shows ticket edits in the main tree). Cross-check evidence.tdd against the diff: the red command must exercise a test present in the diff and its expected_failure must be plausible for the pre-change code; reject (spec="fail") fabricated-looking evidence or a waiver on a ticket whose diff touches runtime code. Pass it this request-id; it emits, in ITS OWN final output, TWO things ONLY if it approves on green validation \u2014 first its structured verdict (spec compliance and code quality are SEPARATE judgments; findings with file:line inside the block; use spec="fail" or quality="needs_fixes" to reject):
+` : "") + `3. When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} \u2014 a FRESH reviewer that has NOT seen your reasoning \u2014 to review the worktree DIFF against the acceptance criteria and repo standards.${reviewerPbt} Tell it to REJECT if the change leaked outside the worktree (\`git -C "${dir}" status --porcelain\` shows ticket edits in the main tree). Cross-check evidence.tdd against the diff: the red command must exercise a test present in the diff and its expected_failure must be plausible for the pre-change code; reject (spec="fail") fabricated-looking evidence or a waiver on a ticket whose diff touches runtime code. Secret-scan the diff: reject (spec="fail") if it adds credentials, tokens, API keys, or credential-bearing URLs \u2014 clients paste live secrets into chats; they must never land in a commit. Pass it this request-id; it emits, in ITS OWN final output, TWO things ONLY if it approves on green validation \u2014 first its structured verdict (spec compliance and code quality are SEPARATE judgments; findings with file:line inside the block; use spec="fail" or quality="needs_fixes" to reject):
 <nikoflow-verdict spec="pass" quality="approved">findings / none</nikoflow-verdict>
 then the ticket gate on its own line (the gate does NOT count without the approving verdict):
 ${gateTag}
@@ -20762,7 +20799,7 @@ function getVerifyPrompt(state, requestId, pass) {
   return `<nikoflow-continuation phase="verify" iteration="${state.iteration}" pass="${pass}">
 \u2705 VERIFICATION (loop-review, pass ${pass}). First run local validation for the changed surface (tests, typecheck, lint, build) and make it GREEN \u2014 the gate must never pass while validation is red.
 ${MONEY_CRITICAL_PREFLIGHT}
-Then spawn ${renderReviewerSpawn(state.roles?.verifier ?? "fable")} that has NOT seen your reasoning. Give it this request-id and the diff scope. The reviewer inspects the change for correctness, regressions, security, and missing high-value tests, and returns a score from 1\u201310. It must emit \u2014 in ITS OWN final output, replacing N.N with its actual score \u2014 exactly one of:
+` + localPreviewLine(state) + `Then spawn ${renderReviewerSpawn(state.roles?.verifier ?? "fable")} that has NOT seen your reasoning. Give it this request-id and the diff scope. The reviewer inspects the change for correctness, regressions, security, leaked secrets in the diff (credentials/tokens/keys pasted into chat must never reach a commit \u2014 an automatic fail), and missing high-value tests, and returns a score from 1\u201310. It must emit \u2014 in ITS OWN final output, replacing N.N with its actual score \u2014 exactly one of:
   ${okTag}   (score \u2265 9.5 on green validation), or
   ${noFindingsTag}   (no actionable findings remain).
 ` + requestIdLine(requestId) + `Completion report: alongside the verdict, state primary signal status (met / not met / partial) and secondary signal status (exact checks run and results). The task is NOT done if the visible symptom is gone but the same mechanic stays inconsistent across directly coupled layers.
@@ -21255,6 +21292,7 @@ __export(nikoflow_exports, {
   mintGateRequest: () => mintGateRequest,
   mintGateRequestIn: () => mintGateRequestIn,
   normalizeTicketsFile: () => normalizeTicketsFile,
+  pauseNikoflowLoop: () => pauseNikoflowLoop,
   pbtObligation: () => pbtObligation,
   readNikoflowState: () => readNikoflowState,
   readNikoflowUserTurnAt: () => readNikoflowUserTurnAt,
@@ -21269,12 +21307,15 @@ __export(nikoflow_exports, {
   renderNikoflowResumeHeader: () => renderNikoflowResumeHeader,
   renderPanel: () => renderPanel,
   renderReviewerSpawn: () => renderReviewerSpawn,
+  reopenNikoflowTicketization: () => reopenNikoflowTicketization,
+  reopenNikoflowTicketizationIn: () => reopenNikoflowTicketizationIn,
   requiresNikoflowHumanGate: () => requiresNikoflowHumanGate,
   resetExecuteStall: () => resetExecuteStall,
   resetExecuteStallIn: () => resetExecuteStallIn,
   resetVerifyNoVerdict: () => resetVerifyNoVerdict,
   resetVerifyNoVerdictIn: () => resetVerifyNoVerdictIn,
   resolveRoles: () => resolveRoles,
+  resumeNikoflowLoop: () => resumeNikoflowLoop,
   rotateGateRequest: () => rotateGateRequest,
   rotateGateRequestIn: () => rotateGateRequestIn,
   setAutonomyModeIn: () => setAutonomyModeIn,

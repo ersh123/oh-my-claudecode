@@ -27,7 +27,7 @@ import { writeFileSync, readFileSync, mkdirSync, existsSync, unlinkSync } from '
 import { randomUUID } from 'crypto';
 import { join, dirname } from 'path';
 import { homedir, tmpdir } from 'os';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { getClaudeConfigDir } from './lib/config-dir.mjs';
 import { atomicWriteFileSync } from './lib/atomic-write.mjs';
 import { readStdin } from './lib/stdin.mjs';
@@ -1711,6 +1711,47 @@ async function main() {
     // Ralph keywords
     if (hasActionableRalphKeyword(cleanPrompt, /\b(ralph)\b|(랄프)(?!로렌)|(ラルフ)(?!・?ローレン)/i)) {
       matches.push({ name: 'ralph', args: '' });
+    }
+
+    // Nikoflow flow-control commands (explicit two-word forms only — the mode
+    // name must sit next to the verb). Handled BEFORE the activation trigger:
+    // pause frees the Stop hook for an interleaved urgent task, resume
+    // reactivates from the same artifacts, re-ticket reopens Ticketization
+    // after a mid-execute requirements change (session-mining anti-patterns).
+    {
+      const NF_NAME = '(?:\\b(?:nikoflow|nflow)\\b|никофлоу)';
+      const ctl =
+        (new RegExp(`${NF_NAME}[\\s:,-]{1,4}(?:pause|пауза|приостанови)|(?:pause|приостанови|поставь\\s+на\\s+паузу)[\\s:,-]{1,4}${NF_NAME}`, 'iu').test(cleanPrompt) && 'pause') ||
+        (new RegExp(`${NF_NAME}[\\s:,-]{1,4}(?:resume|продолжи|возобнови)|(?:resume|продолжи|возобнови)[\\s:,-]{1,4}${NF_NAME}`, 'iu').test(cleanPrompt) && 'resume') ||
+        (new RegExp(`${NF_NAME}[\\s:,-]{1,4}(?:re-?ticket|перетикет|пересобери(?:\\s+тикеты)?)|(?:re-?ticket|перетикет|пересобери\\s+тикеты)[\\s:,-]{1,4}${NF_NAME}`, 'iu').test(cleanPrompt) && 'reticket') ||
+        null;
+      if (ctl) {
+        let note = '';
+        try {
+          const loopUrl = pathToFileURL(join(_omcRoot, 'dist', 'hooks', 'nikoflow', 'loop.js')).href;
+          const engine = await import(loopUrl);
+          if (ctl === 'pause') {
+            note = engine.pauseNikoflowLoop(directory, sessionId)
+              ? '[NIKOFLOW PAUSED] Flow parked (state/tickets/worktrees intact). Handle the interleaved task; say "nikoflow resume" to continue from the same gate.'
+              : '[NIKOFLOW] Nothing to pause — no active flow in this session.';
+          } else if (ctl === 'resume') {
+            note = engine.resumeNikoflowLoop(directory, sessionId)
+              ? '[NIKOFLOW RESUMED] Continuing from the parked gate — the previous request-id is still the one to use.'
+              : '[NIKOFLOW] Nothing to resume — no paused flow in this session.';
+          } else {
+            note = engine.reopenNikoflowTicketization(directory, sessionId)
+              ? '[NIKOFLOW RE-TICKET] Requirements changed: back at the Tickets gate. Edit tickets.json for the NEW requirements (done tickets and their evidence stay), then get the breakdown re-approved.'
+              : '[NIKOFLOW] Re-ticket unavailable — no active flow with a tickets phase (tactical tier has none).';
+          }
+        } catch (e) {
+          note = `[NIKOFLOW] flow-control failed: ${e?.message || e}`;
+        }
+        console.log(JSON.stringify({
+          continue: true,
+          hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: note },
+        }));
+        return;
+      }
     }
 
     // Nikoflow keywords (Niko Flow v2.1 phase-gated methodology mode).

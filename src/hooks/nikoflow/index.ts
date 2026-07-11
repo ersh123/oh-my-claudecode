@@ -59,6 +59,12 @@ export {
   bumpExecuteStall,
   resetExecuteStall,
 
+  // Flow control (session-mining anti-patterns: pause/stack, re-grill)
+  pauseNikoflowLoop,
+  resumeNikoflowLoop,
+  reopenNikoflowTicketization,
+  reopenNikoflowTicketizationIn,
+
   // Pure in-memory mutator cores (perf F1 — ctx threading in persistent-mode)
   incrementIterationIn,
   setDepthIn,

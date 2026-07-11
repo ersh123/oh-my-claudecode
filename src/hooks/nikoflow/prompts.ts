@@ -65,6 +65,16 @@ const MONEY_CRITICAL_PREFLIGHT =
   "credentials, or proxy-dependent scraping, verify and report release base vs prod, prod divergence, money guards, " +
   "proxy/env, rollback path, and stop condition. Unknown/red item => STOP and report blockers; never continue on assumptions.";
 
+/** Approval-gated flows: the owner reviews things locally before they touch prod. */
+function localPreviewLine(state: NikoflowState): string {
+  if (state.autonomy_mode === "autonomous") return "";
+  return (
+    "Local-preview checkpoint (approval-gated): before ANY step that reaches production, a client " +
+    "account, or a live feed, show the result locally (diff, dry-run output, local URL or screenshot) " +
+    "and wait for the user's go — do not push to prod straight from a green test.\n"
+  );
+}
+
 /**
  * Inject the correlation request-id into every <nikoflow-gate ...> tag in a
  * prompt body so the model echoes an id the Stop hook will accept. Without a
@@ -234,6 +244,7 @@ export function getExecuteTicketPrompt(
     `quarantined there until QA approves it — nothing lands on the branch unreviewed.\n` +
     `1. Create the ticket worktree once:\n   ${createCmd}\n` +
     `${MONEY_CRITICAL_PREFLIGHT}\n` +
+    localPreviewLine(state) +
     `2. Spawn ${execSpawn} whose working directory is "${wtRel}". It does RED→GREEN for this ONE ` +
     `vertical slice (a failing test at a pre-agreed seam → the minimum code to pass) INSIDE that ` +
     `worktree and returns a summary + the diff. Do NOT edit files in the main tree yourself.${pbtLine}\n` +
@@ -253,6 +264,8 @@ export function getExecuteTicketPrompt(
     `Cross-check evidence.tdd against the diff: the red command must exercise a test present in the ` +
     `diff and its expected_failure must be plausible for the pre-change code; reject (spec="fail") ` +
     `fabricated-looking evidence or a waiver on a ticket whose diff touches runtime code. ` +
+    `Secret-scan the diff: reject (spec="fail") if it adds credentials, tokens, API keys, or ` +
+    `credential-bearing URLs — clients paste live secrets into chats; they must never land in a commit. ` +
     `Pass it this request-id; it emits, in ITS OWN final output, TWO things ONLY if it approves on ` +
     `green validation — first its structured verdict (spec compliance and code quality are SEPARATE ` +
     `judgments; findings with file:line inside the block; use spec="fail" or quality="needs_fixes" ` +
@@ -300,9 +313,11 @@ export function getVerifyPrompt(
     `surface (tests, typecheck, lint, build) and make it GREEN — the gate must never pass while ` +
     `validation is red.\n` +
     `${MONEY_CRITICAL_PREFLIGHT}\n` +
+    localPreviewLine(state) +
     `Then spawn ${renderReviewerSpawn(state.roles?.verifier ?? "fable")} that has NOT seen your ` +
     `reasoning. Give it this request-id and the diff scope. The reviewer inspects the change for ` +
-    `correctness, regressions, security, and missing high-value tests, and returns a score from ` +
+    `correctness, regressions, security, leaked secrets in the diff (credentials/tokens/keys pasted ` +
+    `into chat must never reach a commit — an automatic fail), and missing high-value tests, and returns a score from ` +
     `1–10. It must emit — in ITS OWN final output, replacing N.N with its actual score — exactly one of:\n` +
     `  ${okTag}   (score ≥ 9.5 on green validation), or\n` +
     `  ${noFindingsTag}   (no actionable findings remain).\n` +

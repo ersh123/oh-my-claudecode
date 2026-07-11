@@ -9,7 +9,7 @@
  *  - rate-limit Stops were blocked by the live wrapper (429 retry loop).
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -178,6 +178,71 @@ describe('nikoflow live activation never writes Stop-hook-owned resume fields', 
       const live = readState(statePath) as unknown as Record<string, unknown>;
       expect('base_sha' in live).toBe(false);
       expect('last_verify' in live).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('nikoflow flow control: pause / resume / re-ticket (session-mining anti-patterns)', () => {
+  it('pause parks the flow, resume reactivates it from the same gate', () => {
+    const { cwd, sessionId, statePath } = activate('Run nikoflow on this repository.');
+    try {
+      expect(readState(statePath).active).toBe(true);
+
+      runHook(KEYWORD_SCRIPT, { hook_event_name: 'UserPromptSubmit', cwd, session_id: sessionId, prompt: 'nikoflow pause — срочная задача' });
+      const paused = readState(statePath);
+      expect(paused.active).toBe(false);
+      expect(typeof paused.paused_at).toBe('string');
+      // Paused flow must NOT block Stop.
+      const stop = JSON.parse(runHook(PERSISTENT_SCRIPT, { hook_event_name: 'Stop', cwd, session_id: sessionId }));
+      expect(stop.decision).toBeUndefined();
+
+      runHook(KEYWORD_SCRIPT, { hook_event_name: 'UserPromptSubmit', cwd, session_id: sessionId, prompt: 'nikoflow resume' });
+      const resumed = readState(statePath);
+      expect(resumed.active).toBe(true);
+      expect(resumed.paused_at).toBeUndefined();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('пауза/продолжи никофлоу work in Russian word order too', () => {
+    const { cwd, sessionId, statePath } = activate('Run nikoflow on this repository.');
+    try {
+      runHook(KEYWORD_SCRIPT, { hook_event_name: 'UserPromptSubmit', cwd, session_id: sessionId, prompt: 'поставь на паузу никофлоу' });
+      expect(readState(statePath).active).toBe(false);
+      runHook(KEYWORD_SCRIPT, { hook_event_name: 'UserPromptSubmit', cwd, session_id: sessionId, prompt: 'продолжи никофлоу' });
+      expect(readState(statePath).active).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('re-ticket moves an executing standard flow back to the tickets gate, keeping tickets', () => {
+    const { cwd, sessionId, statePath } = activate('nikoflow:standard --auto implement the feature');
+    try {
+      // Fast-forward the state to execute (index 4 in standard phases).
+      const st = readState(statePath);
+      st.phase_index = 4;
+      writeFileSync(statePath, JSON.stringify(st, null, 2));
+
+      runHook(KEYWORD_SCRIPT, { hook_event_name: 'UserPromptSubmit', cwd, session_id: sessionId, prompt: 'nikoflow re-ticket: требования поменялись' });
+      const after = readState(statePath);
+      expect(after.phases[after.phase_index]).toBe('tickets');
+      expect(after.awaiting_gate).toBe('tickets');
+      expect(after.request_id).not.toBe(st.request_id);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('a mere MENTION of pausing does not park someone else’s flow', () => {
+    const { cwd, sessionId, statePath } = activate('Run nikoflow on this repository.');
+    try {
+      runHook(KEYWORD_SCRIPT, { hook_event_name: 'UserPromptSubmit', cwd, session_id: sessionId, prompt: 'объясни, зачем никофлоу вообще нужна пауза в жизни' });
+      // "никофлоу … пауза" separated by >4 chars — control must NOT fire.
+      expect(readState(statePath).active).toBe(true);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
