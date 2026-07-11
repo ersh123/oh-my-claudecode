@@ -61,6 +61,14 @@ Prefer skills that encode decision-making heuristics, constraints, pitfalls, and
 - If the workflow still has unresolved branching decisions, note them before drafting.
 - Keep `omc-learned` as the storage directory name for compatibility; do not present it as the public invocation name.
 
+## Authoring craft (predictability checklist)
+The root virtue of a skill is predictability — same invocation, same behavior. Before finalizing a draft:
+- **Invocation load**: model-invoked costs context load (its description sits in EVERY turn's window) — justified only when the model can usefully fire it mid-task on its own. Otherwise `disable-model-invocation: true` and let the human (or a router skill) pay the cognitive load. Reuse alone is NOT a reason to be model-invoked.
+- **Leading word**: anchor the skill on a pretrained concept repeated as a bare token (seam, red, tracer bullet) — it accrues a distributed definition for near-zero tokens; an invented term recruits no priors and costs paragraphs.
+- **Information hierarchy**: inline only what every execution path needs; push branch-specific detail below the fold or behind a co-located pointer file — and word the POINTER for reliable pickup, not the destination.
+- **Completion criterion**: checkable (done/not-done) AND exhaustive ("every rule applied", not "apply rules") — the main lever against premature completion.
+- **Failure-mode tests**: no-op (remove the skill — does behavior change?), negation (a "don't do X" drags X into context — steer with the positive instead), sprawl (multiple jobs → split by invocation), sediment (periodically try DELETING an instruction — newer models need less), duplication (single source + pointer).
+
 ## Output
 - Proposed skill name
 - Target location
