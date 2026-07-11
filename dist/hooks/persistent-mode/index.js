@@ -20,7 +20,7 @@ import { readUltraworkState, writeUltraworkState, incrementReinforcement, deacti
 import { resolveToWorktreeRoot, resolveSessionStatePath, resolveStatePath, getOmcRoot } from '../../lib/worktree-paths.js';
 import { readModeState, writeModeState } from '../../lib/mode-state-io.js';
 import { readRalphState, writeRalphState, incrementRalphIteration, clearRalphState, findPrdPath, getPrdCompletionStatus, getRalphContext, getStory, markStoryIncomplete, markStoryArchitectVerified, readVerificationState, startVerification, recordArchitectFeedback, getArchitectVerificationPrompt, getArchitectRejectionContinuationPrompt, detectArchitectApproval, detectArchitectRejection, clearVerificationState, } from '../ralph/index.js';
-import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, setNikoflowAutonomyMode, recordNikoflowCoverageIds, advanceNikoflowPhase, requiresNikoflowHumanGate, mintGateRequest, rotateGateRequest, clearGateRequest, bumpNikoflowRidMismatch, userRepliedAfterMint, isNikoflowUserTurnFresh, detectNikoflowGate, detectNikoflowReviewerVerdict, readTickets, validateTicketDag, validateTicketCoverage, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, getVerifyPrompt, ticketWorktreeBranch, ticketWorktreeMergeCmd, pbtObligation, recordVerifyPass, bumpVerifyNoVerdict, resetVerifyNoVerdict, bumpExecuteStall, resetExecuteStall, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, NIKOFLOW_EXECUTE_ABORT_STALL, deactivateNikoflowLoop, } from '../nikoflow/index.js';
+import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, setNikoflowAutonomyMode, recordNikoflowCoverageIds, advanceNikoflowPhase, requiresNikoflowHumanGate, mintGateRequest, rotateGateRequest, clearGateRequest, bumpNikoflowRidMismatch, userRepliedAfterMint, isNikoflowUserTurnFresh, detectNikoflowGate, detectNikoflowReviewerVerdict, readTickets, validateTicketDag, validateTicketCoverage, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, lintTddEvidence, getExecuteTicketPrompt, getVerifyPrompt, ticketWorktreeBranch, ticketWorktreeMergeCmd, pbtObligation, recordVerifyPass, bumpVerifyNoVerdict, resetVerifyNoVerdict, bumpExecuteStall, resetExecuteStall, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, NIKOFLOW_EXECUTE_ABORT_STALL, deactivateNikoflowLoop, } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
 import { isAutopilotActive } from '../autopilot/index.js';
@@ -1067,6 +1067,25 @@ export function handleNikoflowExecute(workingDir, sessionId, current, transcript
         transcriptPath &&
         existsSync(transcriptPath) &&
         nikoflowReviewerAuthoredGate(transcriptPath, gate, requestId, ['TICKET_DONE'], true).matched) {
+        // TDD-evidence precondition (RED-proof discipline). Model-written → this is
+        // anti-sloppiness, not anti-forgery: shape/ordering only, the hook never runs
+        // commands; fabrication is the reviewer's cross-check. Keep the request-id
+        // (no clearGateRequest / rotation) so the reviewer's in-transcript approval
+        // re-matches once evidence is recorded — the evidence author and the gate
+        // satisfier are the same model, rotation would add a reviewer re-run with
+        // zero integrity gain. Anti-self-approval is untouched: the reviewer
+        // tool_result provenance + verdict checks above already ran.
+        const tddErrors = lintTddEvidence(ticket.evidence?.tdd);
+        if (tddErrors.length > 0) {
+            const stall = bumpExecuteStall(workingDir, ticket.id, sessionId);
+            if (stall >= NIKOFLOW_EXECUTE_ABORT_STALL) {
+                return nikoflowHardAbort(workingDir, sessionId, current, ticket.id, stall);
+            }
+            return nikoflowExecuteError(current, `ticket ${ticket.id} is reviewer-approved but evidence.tdd is missing/invalid: ` +
+                `${tddErrors.join('; ')}. Record {red:{command,exit_code!=0,expected_failure,head_sha,recorded_at},` +
+                `green:{command,exit_code:0,head_sha,recorded_at}} in tickets.json (or waived:{reason} for a ` +
+                `no-runtime-surface ticket), then Stop — the reviewer verdict stays valid.`);
+        }
         // Reviewer approved. Record what was approved and require the merge to
         // land before "done" — the hook only ever VERIFIES git state, it does not
         // run the merge itself.

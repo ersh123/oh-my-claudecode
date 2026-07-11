@@ -49,6 +49,23 @@ const reviewerResult = (toolUseId: string, text: string) => taskResult(toolUseId
 // same reviewer output carries this block.
 const APPROVED_VERDICT = `<nikoflow-verdict spec="pass" quality="approved">none</nikoflow-verdict>`;
 
+// Valid machine-checkable TDD evidence — required at gate-accept time.
+const VALID_TDD = {
+  red: {
+    command: "npx vitest run x.test.ts",
+    exit_code: 1,
+    expected_failure: "feature not implemented yet",
+    head_sha: "abc1234",
+    recorded_at: "2026-07-10T10:00:00Z",
+  },
+  green: {
+    command: "npx vitest run x.test.ts",
+    exit_code: 0,
+    head_sha: "abc1234",
+    recorded_at: "2026-07-10T10:05:00Z",
+  },
+};
+
 describe("nikoflow execute orchestration (TSK-005)", () => {
   let dir: string;
   const sid = "sess-exec-orch";
@@ -70,6 +87,14 @@ describe("nikoflow execute orchestration (TSK-005)", () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   const run = () => handleNikoflowExecute(dir, sid, readNikoflowState(dir, sid)!, transcript);
+
+  // Record valid evidence.tdd on a ticket (the model's job in the real flow).
+  const recordTdd = (ticketId: string, tdd: unknown = VALID_TDD) => {
+    const file = readTickets(dir, sid)!;
+    const t = file.tickets.find((x) => x.id === ticketId)!;
+    t.evidence = { ...(t.evidence ?? {}), tdd };
+    writeTickets(dir, file, sid);
+  };
 
   it("does NOT accept a TICKET_DONE from a non-reviewer tool_result (e.g. Bash cat)", () => {
     run(); // mint execute:TSK-001 rid
@@ -111,6 +136,7 @@ describe("nikoflow execute orchestration (TSK-005)", () => {
 
   it("accepts a TICKET_DONE authored inside a reviewer subagent's tool_result and moves to the next ticket", () => {
     run(); // mint rid for TSK-001
+    recordTdd("TSK-001");
     const rid = readNikoflowState(dir, sid)!.request_id!;
     writeEntries(transcript, reviewerResult(
       "tu-1",
@@ -122,8 +148,9 @@ describe("nikoflow execute orchestration (TSK-005)", () => {
     expect(r.message).toContain("TSK-002");
   });
 
-  it("does NOT accept a TICKET_DONE without an approving structured verdict", () => {
+  it("does NOT accept a TICKET_DONE without an approving structured verdict (even with valid evidence.tdd)", () => {
     run(); // mint rid for TSK-001
+    recordTdd("TSK-001"); // valid evidence must not substitute for the verdict
     const rid = readNikoflowState(dir, sid)!.request_id!;
     writeEntries(transcript, reviewerResult(
       "tu-nv",
@@ -148,9 +175,11 @@ describe("nikoflow execute orchestration (TSK-005)", () => {
   it("advances to the verify phase once every ticket is reviewer-approved", () => {
     // TSK-001 done via reviewer.
     run();
+    recordTdd("TSK-001");
     let rid = readNikoflowState(dir, sid)!.request_id!;
     writeEntries(transcript, reviewerResult("tu-1", `${APPROVED_VERDICT}\n<nikoflow-gate phase="execute:TSK-001" request-id="${rid}">TICKET_DONE</nikoflow-gate>`));
     run(); // marks TSK-001 done, emits TSK-002 prompt, mints TSK-002 rid
+    recordTdd("TSK-002");
     rid = readNikoflowState(dir, sid)!.request_id!;
     writeEntries(transcript, reviewerResult("tu-2", `${APPROVED_VERDICT}\n<nikoflow-gate phase="execute:TSK-002" request-id="${rid}">TICKET_DONE</nikoflow-gate>`));
     const r = run();

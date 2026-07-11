@@ -47,6 +47,23 @@ export interface NikoflowTicket {
   evidence?: Record<string, unknown>;
 }
 
+/** One recorded test run. Model-written: shape-checked, never executed. */
+export interface TddRunEvidence {
+  command: string;          // non-empty
+  exit_code: number;        // integer; red != 0, green === 0
+  head_sha: string;         // /^[0-9a-f]{7,40}$/i — forensic, not ordered
+  recorded_at: string;      // ISO; ordering source of truth
+}
+export interface TddRedEvidence extends TddRunEvidence {
+  expected_failure: string; // non-empty one-liner: why it fails pre-change
+}
+export interface TddEvidence {
+  red?: TddRedEvidence;
+  green?: TddRunEvidence;
+  /** Docs-only / no-runtime-surface escape hatch. */
+  waived?: { reason: string };
+}
+
 export interface NikoflowTicketsFile {
   version: 1;
   tickets: NikoflowTicket[];
@@ -203,6 +220,92 @@ export function lintTicketsRaw(raw: unknown): string[] {
     }
   });
   return warnings;
+}
+
+/** Same sha grammar gitRevParse accepts (persistent-mode/index.ts gitRevParse). */
+export const TDD_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
+
+function lintTddRun(
+  run: Record<string, unknown>,
+  label: "red" | "green",
+  errors: string[],
+): void {
+  if (typeof run.command !== "string" || !run.command.trim()) {
+    errors.push(`${label}.command must be a non-empty string`);
+  }
+  if (typeof run.exit_code !== "number" || !Number.isInteger(run.exit_code)) {
+    errors.push(`${label}.exit_code must be an integer`);
+  } else if (label === "red" && run.exit_code === 0) {
+    errors.push("red run exited 0 — a passing test is not RED proof");
+  } else if (label === "green" && run.exit_code !== 0) {
+    errors.push(`green.exit_code must be 0, got ${run.exit_code}`);
+  }
+  if (typeof run.head_sha !== "string" || !TDD_SHA_PATTERN.test(run.head_sha)) {
+    errors.push(`${label}.head_sha must be a 7-40 char hex sha, got ${JSON.stringify(run.head_sha)}`);
+  }
+  if (
+    typeof run.recorded_at !== "string" ||
+    !Number.isFinite(new Date(run.recorded_at).getTime())
+  ) {
+    errors.push(`${label}.recorded_at must be a parseable ISO timestamp`);
+  }
+}
+
+/** Lint the COMPLETE per-ticket TDD obligation at reviewer-gate time.
+ *  Empty array = satisfiable. Pure: no fs, no git, no command execution —
+ *  anti-sloppiness, not anti-forgery (evidence is model-written; fabrication
+ *  is the reviewer's cross-check against the diff). Unknown extra fields are
+ *  tolerated (evidence rides through tickets.json as an opaque object). */
+export function lintTddEvidence(raw: unknown): string[] {
+  if (!raw || typeof raw !== "object") {
+    return ["evidence.tdd is missing — record red/green runs or waive with a reason"];
+  }
+  const obj = raw as Record<string, unknown>;
+  const errors: string[] = [];
+
+  if ("waived" in obj && obj.waived !== undefined) {
+    const w = obj.waived;
+    if (
+      w &&
+      typeof w === "object" &&
+      typeof (w as Record<string, unknown>).reason === "string" &&
+      ((w as Record<string, unknown>).reason as string).trim()
+    ) {
+      // Valid waiver satisfies the whole obligation — red/green ignored.
+      return [];
+    }
+    errors.push("waived.reason must be a non-empty string");
+  }
+
+  const red = obj.red;
+  if (!red || typeof red !== "object") {
+    errors.push("red run is missing — record the failing run before the change");
+  } else {
+    lintTddRun(red as Record<string, unknown>, "red", errors);
+    const rf = (red as Record<string, unknown>).expected_failure;
+    if (typeof rf !== "string" || !rf.trim()) {
+      errors.push("red.expected_failure must be a non-empty one-liner (why it fails pre-change)");
+    }
+  }
+
+  const green = obj.green;
+  if (!green || typeof green !== "object") {
+    errors.push("green run is missing — record the passing run after the change");
+  } else {
+    lintTddRun(green as Record<string, unknown>, "green", errors);
+  }
+
+  // Ordering by recorded_at (NOT sha ancestry: both runs normally share an
+  // uncommitted HEAD in the worktree flow, ancestry is meaningless there).
+  if (red && typeof red === "object" && green && typeof green === "object") {
+    const rt = new Date(String((red as Record<string, unknown>).recorded_at)).getTime();
+    const gt = new Date(String((green as Record<string, unknown>).recorded_at)).getTime();
+    if (Number.isFinite(rt) && Number.isFinite(gt) && rt > gt) {
+      errors.push("red must be recorded before green");
+    }
+  }
+
+  return errors;
 }
 
 /** Read + lint the raw tickets file (before normalization). */

@@ -111,6 +111,16 @@ describe("nikoflow execute loop (TSK-005)", () => {
       expect(p).toContain('phase="execute:TSK-003"');
       expect(p).toContain('request-id="rid-1"');
     });
+    it("instructs recording evidence.tdd (with waiver) and the reviewer cross-check", () => {
+      const p = getExecuteTicketPrompt(
+        { id: "TSK-003", title: "parse", acceptance: ["a"] },
+        state,
+        "rid-1",
+      );
+      expect(p).toContain("evidence.tdd");
+      expect(p).toContain("waived");
+      expect(p).toContain("Cross-check evidence.tdd against the diff");
+    });
     it("renders the framework-specific PBT line when the obligation is ready", () => {
       const p = getExecuteTicketPrompt(
         { id: "TSK-003", title: "parse", acceptance: ["a"] },

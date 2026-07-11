@@ -230,11 +230,19 @@ export function getExecuteTicketPrompt(
     `2. Spawn ${execSpawn} whose working directory is "${wtRel}". It does RED→GREEN for this ONE ` +
     `vertical slice (a failing test at a pre-agreed seam → the minimum code to pass) INSIDE that ` +
     `worktree and returns a summary + the diff. Do NOT edit files in the main tree yourself.${pbtLine}\n` +
+    `Record machine-checkable TDD evidence in this ticket's evidence.tdd in tickets.json: after the ` +
+    `executor's failing run, red {command, exit_code (non-zero), expected_failure (why it fails ` +
+    `pre-change), head_sha, recorded_at ISO}; after the passing run, green {command, exit_code 0, ` +
+    `head_sha, recorded_at} — red recorded before green. A ticket with no runtime surface records ` +
+    `tdd: {waived: {reason}} instead. TICKET_DONE is not accepted without it.\n` +
     (ticket.self_verify ? `Self-verify: ${ticket.self_verify}\n` : "") +
     `3. When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} — a ` +
     `FRESH reviewer that has NOT seen your reasoning — to review the worktree DIFF against the ` +
     `acceptance criteria and repo standards.${reviewerPbt} Tell it to REJECT if the change leaked ` +
     `outside the worktree (\`git -C "${dir}" status --porcelain\` shows ticket edits in the main tree). ` +
+    `Cross-check evidence.tdd against the diff: the red command must exercise a test present in the ` +
+    `diff and its expected_failure must be plausible for the pre-change code; reject (spec="fail") ` +
+    `fabricated-looking evidence or a waiver on a ticket whose diff touches runtime code. ` +
     `Pass it this request-id; it emits, in ITS OWN final output, TWO things ONLY if it approves on ` +
     `green validation — first its structured verdict (spec compliance and code quality are SEPARATE ` +
     `judgments; findings with file:line inside the block; use spec="fail" or quality="needs_fixes" ` +

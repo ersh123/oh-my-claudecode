@@ -19871,6 +19871,62 @@ function lintTicketsRaw(raw) {
   });
   return warnings;
 }
+function lintTddRun(run, label, errors) {
+  if (typeof run.command !== "string" || !run.command.trim()) {
+    errors.push(`${label}.command must be a non-empty string`);
+  }
+  if (typeof run.exit_code !== "number" || !Number.isInteger(run.exit_code)) {
+    errors.push(`${label}.exit_code must be an integer`);
+  } else if (label === "red" && run.exit_code === 0) {
+    errors.push("red run exited 0 \u2014 a passing test is not RED proof");
+  } else if (label === "green" && run.exit_code !== 0) {
+    errors.push(`green.exit_code must be 0, got ${run.exit_code}`);
+  }
+  if (typeof run.head_sha !== "string" || !TDD_SHA_PATTERN.test(run.head_sha)) {
+    errors.push(`${label}.head_sha must be a 7-40 char hex sha, got ${JSON.stringify(run.head_sha)}`);
+  }
+  if (typeof run.recorded_at !== "string" || !Number.isFinite(new Date(run.recorded_at).getTime())) {
+    errors.push(`${label}.recorded_at must be a parseable ISO timestamp`);
+  }
+}
+function lintTddEvidence(raw) {
+  if (!raw || typeof raw !== "object") {
+    return ["evidence.tdd is missing \u2014 record red/green runs or waive with a reason"];
+  }
+  const obj = raw;
+  const errors = [];
+  if ("waived" in obj && obj.waived !== void 0) {
+    const w = obj.waived;
+    if (w && typeof w === "object" && typeof w.reason === "string" && w.reason.trim()) {
+      return [];
+    }
+    errors.push("waived.reason must be a non-empty string");
+  }
+  const red2 = obj.red;
+  if (!red2 || typeof red2 !== "object") {
+    errors.push("red run is missing \u2014 record the failing run before the change");
+  } else {
+    lintTddRun(red2, "red", errors);
+    const rf = red2.expected_failure;
+    if (typeof rf !== "string" || !rf.trim()) {
+      errors.push("red.expected_failure must be a non-empty one-liner (why it fails pre-change)");
+    }
+  }
+  const green2 = obj.green;
+  if (!green2 || typeof green2 !== "object") {
+    errors.push("green run is missing \u2014 record the passing run after the change");
+  } else {
+    lintTddRun(green2, "green", errors);
+  }
+  if (red2 && typeof red2 === "object" && green2 && typeof green2 === "object") {
+    const rt = new Date(String(red2.recorded_at)).getTime();
+    const gt = new Date(String(green2.recorded_at)).getTime();
+    if (Number.isFinite(rt) && Number.isFinite(gt) && rt > gt) {
+      errors.push("red must be recorded before green");
+    }
+  }
+  return errors;
+}
 function lintTicketsFile(directory, sessionId) {
   const path22 = ticketsPath(directory, sessionId);
   if (!(0, import_fs55.existsSync)(path22)) return ["tickets.json not found"];
@@ -20031,7 +20087,7 @@ function markTicketStatus(directory, ticketId, status, sessionId, evidence) {
 function isTicketDeadlock(file) {
   return !allTicketsDone(file) && getNextTicket(file) === null;
 }
-var import_fs55, import_path64, TICKET_STATUSES, TICKETS_STATE_KEY, TICKET_ID_PATTERN;
+var import_fs55, import_path64, TICKET_STATUSES, TICKETS_STATE_KEY, TICKET_ID_PATTERN, TDD_SHA_PATTERN;
 var init_tickets = __esm({
   "src/hooks/nikoflow/tickets.ts"() {
     "use strict";
@@ -20048,6 +20104,7 @@ var init_tickets = __esm({
     ];
     TICKETS_STATE_KEY = "nikoflow-tickets";
     TICKET_ID_PATTERN = /^TSK-\d{1,5}$/;
+    TDD_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
   }
 });
 
@@ -20605,8 +20662,9 @@ BASE RULE \u2014 DELEGATE + ISOLATE: you (this thread) ORCHESTRATE only; you do 
    ${createCmd}
 ${MONEY_CRITICAL_PREFLIGHT}
 2. Spawn ${execSpawn} whose working directory is "${wtRel}". It does RED\u2192GREEN for this ONE vertical slice (a failing test at a pre-agreed seam \u2192 the minimum code to pass) INSIDE that worktree and returns a summary + the diff. Do NOT edit files in the main tree yourself.${pbtLine}
+Record machine-checkable TDD evidence in this ticket's evidence.tdd in tickets.json: after the executor's failing run, red {command, exit_code (non-zero), expected_failure (why it fails pre-change), head_sha, recorded_at ISO}; after the passing run, green {command, exit_code 0, head_sha, recorded_at} \u2014 red recorded before green. A ticket with no runtime surface records tdd: {waived: {reason}} instead. TICKET_DONE is not accepted without it.
 ` + (ticket.self_verify ? `Self-verify: ${ticket.self_verify}
-` : "") + `3. When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} \u2014 a FRESH reviewer that has NOT seen your reasoning \u2014 to review the worktree DIFF against the acceptance criteria and repo standards.${reviewerPbt} Tell it to REJECT if the change leaked outside the worktree (\`git -C "${dir}" status --porcelain\` shows ticket edits in the main tree). Pass it this request-id; it emits, in ITS OWN final output, TWO things ONLY if it approves on green validation \u2014 first its structured verdict (spec compliance and code quality are SEPARATE judgments; findings with file:line inside the block; use spec="fail" or quality="needs_fixes" to reject):
+` : "") + `3. When the slice is green, spawn ${renderReviewerSpawn(state.roles?.reviewer ?? "fable")} \u2014 a FRESH reviewer that has NOT seen your reasoning \u2014 to review the worktree DIFF against the acceptance criteria and repo standards.${reviewerPbt} Tell it to REJECT if the change leaked outside the worktree (\`git -C "${dir}" status --porcelain\` shows ticket edits in the main tree). Cross-check evidence.tdd against the diff: the red command must exercise a test present in the diff and its expected_failure must be plausible for the pre-change code; reject (spec="fail") fabricated-looking evidence or a waiver on a ticket whose diff touches runtime code. Pass it this request-id; it emits, in ITS OWN final output, TWO things ONLY if it approves on green validation \u2014 first its structured verdict (spec compliance and code quality are SEPARATE judgments; findings with file:line inside the block; use spec="fail" or quality="needs_fixes" to reject):
 <nikoflow-verdict spec="pass" quality="approved">findings / none</nikoflow-verdict>
 then the ticket gate on its own line (the gate does NOT count without the approving verdict):
 ${gateTag}
@@ -20890,6 +20948,7 @@ __export(nikoflow_exports, {
   NIKOFLOW_VERIFY_MAX_NO_VERDICT: () => NIKOFLOW_VERIFY_MAX_NO_VERDICT,
   NIKOFLOW_VERIFY_MAX_PASSES: () => NIKOFLOW_VERIFY_MAX_PASSES,
   NIKOFLOW_VERIFY_SCORE_THRESHOLD: () => NIKOFLOW_VERIFY_SCORE_THRESHOLD,
+  TDD_SHA_PATTERN: () => TDD_SHA_PATTERN,
   advanceNikoflowPhase: () => advanceNikoflowPhase,
   allTicketsDone: () => allTicketsDone,
   bumpExecuteStall: () => bumpExecuteStall,
@@ -20917,6 +20976,7 @@ __export(nikoflow_exports, {
   isNikoflowComplete: () => isNikoflowComplete,
   isNikoflowUserTurnFresh: () => isNikoflowUserTurnFresh,
   isTicketDeadlock: () => isTicketDeadlock,
+  lintTddEvidence: () => lintTddEvidence,
   lintTicketsFile: () => lintTicketsFile,
   lintTicketsRaw: () => lintTicketsRaw,
   markTicketStatus: () => markTicketStatus,
@@ -21768,6 +21828,17 @@ Do not start other work until the merge lands.`
   const requestId = mintGateRequest(workingDir, gate, sessionId) ?? void 0;
   if (requestId && // fail closed: no correlation id → don't accept any tag
   transcriptPath && (0, import_fs58.existsSync)(transcriptPath) && nikoflowReviewerAuthoredGate(transcriptPath, gate, requestId, ["TICKET_DONE"], true).matched) {
+    const tddErrors = lintTddEvidence(ticket.evidence?.tdd);
+    if (tddErrors.length > 0) {
+      const stall2 = bumpExecuteStall(workingDir, ticket.id, sessionId);
+      if (stall2 >= NIKOFLOW_EXECUTE_ABORT_STALL) {
+        return nikoflowHardAbort(workingDir, sessionId, current, ticket.id, stall2);
+      }
+      return nikoflowExecuteError(
+        current,
+        `ticket ${ticket.id} is reviewer-approved but evidence.tdd is missing/invalid: ${tddErrors.join("; ")}. Record {red:{command,exit_code!=0,expected_failure,head_sha,recorded_at},green:{command,exit_code:0,head_sha,recorded_at}} in tickets.json (or waived:{reason} for a no-runtime-surface ticket), then Stop \u2014 the reviewer verdict stays valid.`
+      );
+    }
     const branchSha = gitRevParse(
       workingDir,
       `refs/heads/${ticketWorktreeBranch(ticket.id, current.run_id)}`

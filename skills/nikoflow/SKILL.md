@@ -50,7 +50,8 @@ Grilling and confirm with the user.
    code is written by an executor subagent (on the executor model, e.g. sonnet or gpt-5.5) inside a
    DEDICATED worktree (`.omc/worktrees/<ticket>`); keep edits inside that worktree so the diff is held
    off the branch until the reviewer/QA gate approves it — only then merge the worktree into the branch.
-   Keeps the main context clean and unreviewed code off the branch.
+   Keeps the main context clean and unreviewed code off the branch. Per ticket, machine-checkable
+   TDD evidence (`evidence.tdd`: red/green runs or a waiver) is recorded in tickets.json and gate-checked.
 6. ✅ Verification — spawn a fresh, context-isolated independent reviewer; iterate fix → re-review until
    local validation (tests/lint/build) is green AND the reviewer scores the changed surface ≥ 9.5/10 or
    reports no actionable findings. Never accept a passing score while validation is red.
@@ -71,6 +72,11 @@ the `request-id` that the phase prompt gives you. Emit each tag on its own line.
   Spec compliance and code quality are separate judgments; `spec="fail"` or `quality="needs_fixes"` rejects.
   After reviewer approval the ticket is `review`, NOT done — it completes only once the approved worktree
   commit is merged onto the branch (the Stop hook verifies ancestry with read-only git).
+  TICKET_DONE is additionally accepted only when the ticket's `evidence.tdd` is complete:
+  `red {command, exit_code≠0, expected_failure, head_sha, recorded_at}` recorded before
+  `green {command, exit_code=0, head_sha, recorded_at}`, or `waived {reason}` for docs-only tickets.
+  Shape/ordering is hook-checked; honesty is reviewer-checked (evidence is model-recorded —
+  anti-sloppiness, not anti-forgery).
 - Verify: the reviewer emits `<nikoflow-gate phase="verify" score="9.6" request-id="…">VERIFIED</nikoflow-gate>` (a real numeric `score` in 1–10, ≥ 9.5 to pass) or `<nikoflow-gate phase="verify" request-id="…">NO_ACTIONABLE_FINDINGS</nikoflow-gate>`. A VERIFIED without a valid numeric score is treated as a failed pass.
 
 Anti-self-approval — the gates are enforced, not honour-system:
@@ -90,7 +96,14 @@ is accepted:
 { "version": 1, "tickets": [
   { "id": "TSK-001", "story_id": "ST-001", "decision_ids": [], "title": "…",
     "acceptance": ["…"], "blocked_by": [], "self_verify": "…",
-    "pbt_required": false, "status": "todo" }
+    "pbt_required": false, "status": "todo",
+    "evidence": { "tdd": {
+      "red":   { "command": "npx vitest run x.test.ts", "exit_code": 1,
+                 "expected_failure": "parser lacks empty-input branch",
+                 "head_sha": "abc1234", "recorded_at": "2026-07-10T10:00:00Z" },
+      "green": { "command": "npx vitest run x.test.ts", "exit_code": 0,
+                 "head_sha": "abc1234", "recorded_at": "2026-07-10T10:05:00Z" }
+    } } }
 ] }
 ```
 Verify convergence caps at 6 failed reviewer passes, then escalates to the user (a genuine
