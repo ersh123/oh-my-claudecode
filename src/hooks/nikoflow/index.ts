@@ -53,6 +53,7 @@ export {
 
   // Livelock guards (R1)
   bumpVerifyNoVerdict,
+  deactivateNikoflowLoop,
   resetVerifyNoVerdict,
   bumpExecuteStall,
   resetExecuteStall,
@@ -65,6 +66,7 @@ export {
   NIKOFLOW_VERIFY_MAX_PASSES,
   NIKOFLOW_VERIFY_MAX_NO_VERDICT,
   NIKOFLOW_EXECUTE_MAX_STALL,
+  NIKOFLOW_EXECUTE_ABORT_STALL,
 
   // Types
   type NikoflowDepth,

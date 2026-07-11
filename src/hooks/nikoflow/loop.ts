@@ -136,6 +136,22 @@ export const NIKOFLOW_VERIFY_MAX_PASSES = 6;
 export const NIKOFLOW_VERIFY_MAX_NO_VERDICT = 8;
 /** Execute: after this many Stops on one ticket with no reviewer verdict, surface it (R1). */
 export const NIKOFLOW_EXECUTE_MAX_STALL = 15;
+/** Execute: at double the stall cap the loop HARD-ABORTS (deactivates) — an
+ *  unattended autonomous run must never wedge forever on a ticket that cannot
+ *  progress (review F1: the cap alone only escalated the message text). */
+export const NIKOFLOW_EXECUTE_ABORT_STALL = NIKOFLOW_EXECUTE_MAX_STALL * 2;
+
+/** Deactivate the loop in place (state survives for post-mortem; the next Stop
+ *  passes through). Used by the hard-abort guard, not by user cancel. */
+export function deactivateNikoflowLoop(
+  directory: string,
+  sessionId?: string,
+): boolean {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return false;
+  state.active = false;
+  return writeNikoflowState(directory, state, sessionId);
+}
 
 export interface NikoflowLoopOptions {
   depth?: NikoflowDepth;

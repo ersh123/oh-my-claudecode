@@ -88,6 +88,8 @@ import {
   NIKOFLOW_VERIFY_MAX_PASSES,
   NIKOFLOW_VERIFY_MAX_NO_VERDICT,
   NIKOFLOW_EXECUTE_MAX_STALL,
+  NIKOFLOW_EXECUTE_ABORT_STALL,
+  deactivateNikoflowLoop,
   type NikoflowState,
   type GateMatch,
   type PbtObligation,
@@ -1224,6 +1226,31 @@ function gitIsAncestorOfHead(directory: string, sha: string): boolean {
   }
 }
 
+/**
+ * Hard abort: an unattended (esp. autonomous) run must never wedge forever on
+ * a ticket that cannot progress. At double the stall cap the loop deactivates
+ * itself — this Stop is blocked once with a final explanation; the next Stop
+ * passes through because the state is inactive (review F1).
+ */
+function nikoflowHardAbort(
+  workingDir: string,
+  sessionId: string | undefined,
+  current: NikoflowState,
+  ticketId: string,
+  stall: number,
+): PersistentModeResult {
+  deactivateNikoflowLoop(workingDir, sessionId);
+  return {
+    shouldBlock: true,
+    message:
+      `<nikoflow-blocked>NIKOFLOW ABORTED: ticket ${ticketId} made no progress after ${stall} Stops ` +
+      `(iteration ${current.iteration}). The loop has deactivated itself so the session is not wedged. ` +
+      `State and tickets are preserved for post-mortem — report the blocker to the user; ` +
+      `run /oh-my-claudecode:cancel to clean up, or restart nikoflow after resolving it.</nikoflow-blocked>`,
+    mode: 'nikoflow',
+  };
+}
+
 /** Advance past a completed ticket: next ticket prompt, or verify/complete. */
 function nikoflowProceedAfterTicketDone(
   workingDir: string,
@@ -1301,10 +1328,14 @@ export function handleNikoflowExecute(
     // Approved but not merged yet. Re-emit the merge instruction, bounded by
     // the same stall cap as the review loop.
     const stall = bumpExecuteStall(workingDir, ticket.id, sessionId);
+    if (stall >= NIKOFLOW_EXECUTE_ABORT_STALL) {
+      return nikoflowHardAbort(workingDir, sessionId, current, ticket.id, stall);
+    }
     if (stall >= NIKOFLOW_EXECUTE_MAX_STALL) {
       return nikoflowExecuteError(
         current,
-        `ticket ${ticket.id} was reviewer-approved but its merge has not landed after ${stall} attempts. ` +
+        `ticket ${ticket.id} was reviewer-approved but its merge has not landed after ${stall} attempts ` +
+          `(commit may have landed as a squash/rebase, which ancestry detection cannot see). ` +
           `Resolve the merge or ask the user how to proceed.`,
       );
     }
@@ -1338,6 +1369,9 @@ export function handleNikoflowExecute(
         return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
       }
       clearGateRequest(workingDir, sessionId);
+      // Fresh stall budget for the merge phase — the review-wait bumps above
+      // must not eat into it (review F2).
+      resetExecuteStall(workingDir, sessionId);
       return nikoflowExecuteError(
         current,
         `ticket ${ticket.id} is reviewer-APPROVED (worktree commit ${branchSha.slice(0, 10)}). ` +
@@ -1362,6 +1396,9 @@ export function handleNikoflowExecute(
   // reviewer-authored TICKET_DONE for many Stops, surface it instead of looping
   // forever (Fable QA R1 — the per-ticket gate otherwise has no cap).
   const stall = bumpExecuteStall(workingDir, ticket.id, sessionId);
+  if (stall >= NIKOFLOW_EXECUTE_ABORT_STALL) {
+    return nikoflowHardAbort(workingDir, sessionId, current, ticket.id, stall);
+  }
   if (stall >= NIKOFLOW_EXECUTE_MAX_STALL) {
     return nikoflowExecuteError(
       current,

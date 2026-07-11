@@ -951,9 +951,6 @@ function hasExplicitNikoflowInvocationContext(text, position, keywordLength, key
   }
 
   // Depth/colon invocation form: `nikoflow:deep <task>` / `nikoflow: fix X`.
-  if (/^\s*[:：]\s*(?:tactical|standard|deep)\b/i.test(suffix)) {
-    return true;
-  }
   if (/^\s*[:：]\s*\S/.test(suffix)) {
     return true;
   }

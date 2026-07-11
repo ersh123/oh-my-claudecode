@@ -19992,6 +19992,12 @@ var init_tickets = __esm({
 });
 
 // src/hooks/nikoflow/loop.ts
+function deactivateNikoflowLoop(directory, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return false;
+  state.active = false;
+  return writeNikoflowState(directory, state, sessionId);
+}
 function readNikoflowState(directory, sessionId) {
   const state = readModeState(MODE, directory, sessionId);
   if (state && sessionId && state.session_id && state.session_id !== sessionId) {
@@ -20302,7 +20308,7 @@ function createNikoflowLoopHook(directory) {
   };
   return { startLoop, cancelLoop, getState };
 }
-var import_crypto11, import_fs56, NIKOFLOW_DEPTHS, NIKOFLOW_AUTONOMY_MODES, NIKOFLOW_NATIVE_MODELS, NIKOFLOW_CODEX_SPECS, NIKOFLOW_MODEL_FALLBACK, NIKOFLOW_DEFAULT_ROLES, NIKOFLOW_PHASES, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, MODE, USER_TURN_KEY;
+var import_crypto11, import_fs56, NIKOFLOW_DEPTHS, NIKOFLOW_AUTONOMY_MODES, NIKOFLOW_NATIVE_MODELS, NIKOFLOW_CODEX_SPECS, NIKOFLOW_MODEL_FALLBACK, NIKOFLOW_DEFAULT_ROLES, NIKOFLOW_PHASES, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, NIKOFLOW_EXECUTE_ABORT_STALL, MODE, USER_TURN_KEY;
 var init_loop2 = __esm({
   "src/hooks/nikoflow/loop.ts"() {
     "use strict";
@@ -20333,6 +20339,7 @@ var init_loop2 = __esm({
     NIKOFLOW_VERIFY_MAX_PASSES = 6;
     NIKOFLOW_VERIFY_MAX_NO_VERDICT = 8;
     NIKOFLOW_EXECUTE_MAX_STALL = 15;
+    NIKOFLOW_EXECUTE_ABORT_STALL = NIKOFLOW_EXECUTE_MAX_STALL * 2;
     MODE = "nikoflow";
     USER_TURN_KEY = "nikoflow-userturn";
   }
@@ -20733,6 +20740,7 @@ __export(nikoflow_exports, {
   NIKOFLOW_CODEX_SPECS: () => NIKOFLOW_CODEX_SPECS,
   NIKOFLOW_DEFAULT_ROLES: () => NIKOFLOW_DEFAULT_ROLES,
   NIKOFLOW_DEPTHS: () => NIKOFLOW_DEPTHS,
+  NIKOFLOW_EXECUTE_ABORT_STALL: () => NIKOFLOW_EXECUTE_ABORT_STALL,
   NIKOFLOW_EXECUTE_MAX_STALL: () => NIKOFLOW_EXECUTE_MAX_STALL,
   NIKOFLOW_GATE_PAYLOADS: () => NIKOFLOW_GATE_PAYLOADS,
   NIKOFLOW_MODEL_FALLBACK: () => NIKOFLOW_MODEL_FALLBACK,
@@ -20750,6 +20758,7 @@ __export(nikoflow_exports, {
   clearNikoflowState: () => clearNikoflowState,
   clearTickets: () => clearTickets,
   createNikoflowLoopHook: () => createNikoflowLoopHook,
+  deactivateNikoflowLoop: () => deactivateNikoflowLoop,
   detectAutonomyModeFlag: () => detectAutonomyModeFlag,
   detectDepthFlag: () => detectDepthFlag,
   detectNikoflowGate: () => detectNikoflowGate,
@@ -21529,6 +21538,14 @@ function gitIsAncestorOfHead(directory, sha) {
     return false;
   }
 }
+function nikoflowHardAbort(workingDir, sessionId, current, ticketId, stall) {
+  deactivateNikoflowLoop(workingDir, sessionId);
+  return {
+    shouldBlock: true,
+    message: `<nikoflow-blocked>NIKOFLOW ABORTED: ticket ${ticketId} made no progress after ${stall} Stops (iteration ${current.iteration}). The loop has deactivated itself so the session is not wedged. State and tickets are preserved for post-mortem \u2014 report the blocker to the user; run /oh-my-claudecode:cancel to clean up, or restart nikoflow after resolving it.</nikoflow-blocked>`,
+    mode: "nikoflow"
+  };
+}
 function nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt) {
   clearGateRequest(workingDir, sessionId);
   resetExecuteStall(workingDir, sessionId);
@@ -21574,10 +21591,13 @@ function handleNikoflowExecute(workingDir, sessionId, current, transcriptPath) {
       return nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt);
     }
     const stall2 = bumpExecuteStall(workingDir, ticket.id, sessionId);
+    if (stall2 >= NIKOFLOW_EXECUTE_ABORT_STALL) {
+      return nikoflowHardAbort(workingDir, sessionId, current, ticket.id, stall2);
+    }
     if (stall2 >= NIKOFLOW_EXECUTE_MAX_STALL) {
       return nikoflowExecuteError(
         current,
-        `ticket ${ticket.id} was reviewer-approved but its merge has not landed after ${stall2} attempts. Resolve the merge or ask the user how to proceed.`
+        `ticket ${ticket.id} was reviewer-approved but its merge has not landed after ${stall2} attempts (commit may have landed as a squash/rebase, which ancestry detection cannot see). Resolve the merge or ask the user how to proceed.`
       );
     }
     return nikoflowExecuteError(
@@ -21599,6 +21619,7 @@ Do not start other work until the merge lands.`
         return nikoflowExecuteError(current, `failed to persist ${ticket.id} status; check .omc/state is writable.`);
       }
       clearGateRequest(workingDir, sessionId);
+      resetExecuteStall(workingDir, sessionId);
       return nikoflowExecuteError(
         current,
         `ticket ${ticket.id} is reviewer-APPROVED (worktree commit ${branchSha.slice(0, 10)}). Now merge the approved worktree into the branch:
@@ -21613,6 +21634,9 @@ The ticket completes only after the merge lands on HEAD.`
     return nikoflowProceedAfterTicketDone(workingDir, sessionId, current, pbt);
   }
   const stall = bumpExecuteStall(workingDir, ticket.id, sessionId);
+  if (stall >= NIKOFLOW_EXECUTE_ABORT_STALL) {
+    return nikoflowHardAbort(workingDir, sessionId, current, ticket.id, stall);
+  }
   if (stall >= NIKOFLOW_EXECUTE_MAX_STALL) {
     return nikoflowExecuteError(
       current,

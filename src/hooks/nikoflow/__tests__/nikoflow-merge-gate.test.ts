@@ -118,6 +118,27 @@ describe("nikoflow review→merged→done gate (real git)", () => {
     expect(res.message).not.toContain("NOT MERGED");
   });
 
+  it("hard-aborts (deactivates) instead of wedging forever once stall reaches the abort cap", () => {
+    const sha = makeWorktreeCommit();
+    const file = readTickets(dir, SID)!;
+    file.tickets[0].evidence = { reviewed_sha: sha };
+    writeTickets(dir, file, SID);
+    // Simulate a run that already burned the abort budget on this ticket.
+    const st = baseState(dir);
+    st.execute_stall = 29;
+    st.execute_stall_ticket = "TSK-001";
+    writeNikoflowState(dir, st, SID);
+
+    const res = handleNikoflowExecute(dir, SID, st);
+    expect(res.shouldBlock).toBe(true);
+    expect(res.message).toContain("NIKOFLOW ABORTED");
+    // The loop must be inactive so the NEXT Stop passes through.
+    const after = JSON.parse(
+      execFileSync("cat", [join(dir, ".omc", "state", "sessions", SID, "nikoflow-state.json")], { encoding: "utf-8" }),
+    ) as { active: boolean };
+    expect(after.active).toBe(false);
+  });
+
   it("legacy review state without reviewed_sha completes (fail-open, no false lock)", () => {
     const res = handleNikoflowExecute(dir, SID, baseState(dir));
     expect(readTickets(dir, SID)!.tickets[0].status).toBe("done");
