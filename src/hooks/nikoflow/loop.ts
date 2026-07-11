@@ -106,6 +106,10 @@ export interface NikoflowState {
   pbt_enabled?: boolean;
   /** Per-role model routing (executor/architect/reviewer/verifier/panel). */
   roles?: NikoflowRoles;
+  /** PRD story ids recorded when the prd gate passed (undefined = legacy/untracked). */
+  prd_story_ids?: string[];
+  /** ADR decision ids recorded when the adr gate passed ([] = ADR skipped/none trackable). */
+  adr_decision_ids?: string[];
 
   // --- Gate correlation (TSK-003) ---
   /** Correlation id the current gate's confirmation tag must carry. */
@@ -380,6 +384,23 @@ export function setNikoflowAutonomyMode(
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return false;
   state.autonomy_mode = autonomyMode;
+  return writeNikoflowState(directory, state, sessionId);
+}
+
+/**
+ * Persist the coverage id lists captured from a passing PRD/ADR gate tag.
+ * RMW of nikoflow-state.json — safe: called only from the Stop-hook gate-pass
+ * path (single writer; does not touch the UserPromptSubmit sidecar).
+ */
+export function recordNikoflowCoverageIds(
+  directory: string,
+  ids: { stories?: string[]; decisions?: string[] },
+  sessionId?: string,
+): boolean {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return false;
+  if (ids.stories !== undefined) state.prd_story_ids = ids.stories;
+  if (ids.decisions !== undefined) state.adr_decision_ids = ids.decisions;
   return writeNikoflowState(directory, state, sessionId);
 }
 

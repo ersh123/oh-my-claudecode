@@ -7,6 +7,7 @@ import {
   createNikoflowLoopHook,
   readNikoflowState,
   recordNikoflowUserPrompt,
+  writeTickets,
 } from "../index.js";
 import { checkNikoflowLoop } from "../../persistent-mode/index.js";
 
@@ -118,5 +119,109 @@ describe("checkNikoflowLoop human-gate enforcement (anti-self-approval)", () => 
   it("stays inactive-safe: no state → returns null (does not block)", async () => {
     const r = await checkNikoflowLoop("other-session", dir, false, transcript);
     expect(r).toBeNull();
+  });
+});
+
+describe("checkNikoflowLoop PRD/ADR coverage gate", () => {
+  let dir: string;
+  const sid = "sess-coverage";
+  let transcript: string;
+
+  const adrRecorded = (rid: string, ids?: string) =>
+    `<nikoflow-gate phase="adr"${ids !== undefined ? ` decision-ids="${ids}"` : ""} request-id="${rid}">RECORDED</nikoflow-gate>`;
+  const adrSkipped = (rid: string) =>
+    `<nikoflow-gate phase="adr" skip="trivial" request-id="${rid}">SKIPPED</nikoflow-gate>`;
+  const prdGate = (rid: string, stories?: string) =>
+    `<nikoflow-gate phase="prd"${stories !== undefined ? ` stories="${stories}"` : ""} request-id="${rid}">SEAMS_CONFIRMED</nikoflow-gate>`;
+  const ticketsGate = (rid: string) =>
+    `<nikoflow-gate phase="tickets" request-id="${rid}">APPROVED</nikoflow-gate>`;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "nikoflow-cov-"));
+    execSync("git init -q", { cwd: dir });
+    transcript = join(dir, "t.jsonl");
+    writeFileSync(transcript, "");
+    // Autonomous standard tier: interview/prd/tickets gates need no user turn,
+    // so the test can drive the phases with correlated tags alone.
+    createNikoflowLoopHook(dir).startLoop(sid, "nikoflow:standard build feature --auto");
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  const run = () => checkNikoflowLoop(sid, dir, false, transcript);
+  const rid = () => readNikoflowState(dir, sid)!.request_id!;
+  const emit = async (tag: string) => {
+    writeFileSync(
+      transcript,
+      JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: tag }] } }) + "\n",
+    );
+    return run();
+  };
+  const passInterview = async () => {
+    await run(); // mint interview rid
+    await emit(`<nikoflow-gate phase="interview" request-id="${rid()}">CONFIRMED</nikoflow-gate>`);
+    expect(readNikoflowState(dir, sid)!.phases[readNikoflowState(dir, sid)!.phase_index]).toBe("adr");
+  };
+  const writeCovTickets = (tickets: Array<Record<string, unknown>>) => {
+    writeTickets(dir, { version: 1, tickets } as never, sid);
+  };
+
+  it("prd gate with stories persists prd_story_ids; adr RECORDED persists decision ids", async () => {
+    await passInterview();
+    await emit(adrRecorded(rid(), "ADR-0001"));
+    expect(readNikoflowState(dir, sid)!.adr_decision_ids).toEqual(["ADR-0001"]);
+    await emit(prdGate(rid(), "ST-001,ST-002"));
+    const s = readNikoflowState(dir, sid)!;
+    expect(s.prd_story_ids).toEqual(["ST-001", "ST-002"]);
+    expect(s.phases[s.phase_index]).toBe("tickets");
+  });
+
+  it("adr SKIPPED persists [] (nothing trackable, unknown ids still block later)", async () => {
+    await passInterview();
+    await emit(adrSkipped(rid()));
+    expect(readNikoflowState(dir, sid)!.adr_decision_ids).toEqual([]);
+  });
+
+  it("tickets gate blocks on a coverage gap AND rotates the request-id", async () => {
+    await passInterview();
+    await emit(adrSkipped(rid()));
+    await emit(prdGate(rid(), "ST-001,ST-002"));
+    // ST-002 has no covering ticket → gap.
+    writeCovTickets([
+      { id: "TSK-001", story_id: "ST-001", title: "a", acceptance: ["a"], blocked_by: [], status: "todo" },
+    ]);
+    const ticketsRid = rid();
+    const r = await emit(ticketsGate(ticketsRid));
+    expect(r?.message).toContain("ticket coverage gap");
+    expect(r?.message).toContain("PRD story ST-002 has no covering ticket");
+    const s = readNikoflowState(dir, sid)!;
+    expect(s.phases[s.phase_index]).toBe("tickets"); // did not advance
+    expect(s.request_id).not.toBe(ticketsRid); // approval rotated — gap fix needs re-approval
+  });
+
+  it("full coverage advances the tickets gate to execute", async () => {
+    await passInterview();
+    await emit(adrRecorded(rid(), "ADR-0001"));
+    await emit(prdGate(rid(), "ST-001"));
+    writeCovTickets([
+      { id: "TSK-001", story_id: "ST-001", decision_ids: ["ADR-0001"], title: "a", acceptance: ["a"], blocked_by: [], status: "todo" },
+    ]);
+    await emit(ticketsGate(rid()));
+    const s = readNikoflowState(dir, sid)!;
+    expect(s.phases[s.phase_index]).toBe("execute");
+  });
+
+  it("legacy flow without coverage attrs advances the tickets gate as before", async () => {
+    await passInterview();
+    await emit(adrRecorded(rid())); // no decision-ids attr → untracked
+    await emit(prdGate(rid())); // no stories attr → untracked
+    const s0 = readNikoflowState(dir, sid)!;
+    expect(s0.prd_story_ids).toBeUndefined();
+    expect(s0.adr_decision_ids).toBeUndefined();
+    writeCovTickets([
+      { id: "TSK-001", title: "a", acceptance: ["a"], blocked_by: [], status: "todo" },
+    ]);
+    await emit(ticketsGate(rid()));
+    const s = readNikoflowState(dir, sid)!;
+    expect(s.phases[s.phase_index]).toBe("execute");
   });
 });

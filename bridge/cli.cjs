@@ -19794,6 +19794,7 @@ function normalizeTicketsFile(raw) {
     tickets.push({
       id: rec.id,
       ...typeof rec.story_id === "string" ? { story_id: rec.story_id } : {},
+      ...Array.isArray(rec.decision_ids) ? { decision_ids: asStringArray(rec.decision_ids) } : {},
       title: rec.title,
       acceptance: asStringArray(rec.acceptance),
       blocked_by: asStringArray(rec.blocked_by),
@@ -19831,6 +19832,19 @@ function lintTicketsRaw(raw) {
       warnings.push(`${label}: id ${JSON.stringify(rec.id)} must match TSK-NNN`);
     }
     if (typeof rec.title !== "string") warnings.push(`${id}: missing string title`);
+    if ("story_id" in rec && typeof rec.story_id !== "string") {
+      warnings.push(`${id}: story_id must be a string, not ${typeof rec.story_id}`);
+    }
+    if ("decision_ids" in rec && !Array.isArray(rec.decision_ids)) {
+      warnings.push(`${id}: decision_ids must be an array of ids, not ${typeof rec.decision_ids}`);
+    }
+    if (Array.isArray(rec.decision_ids)) {
+      rec.decision_ids.forEach((d, j) => {
+        if (typeof d !== "string" || !d) {
+          warnings.push(`${id}: decision_ids[${j}] must be a non-empty decision id, got ${JSON.stringify(d)}`);
+        }
+      });
+    }
     if ("blocked_by" in rec && !Array.isArray(rec.blocked_by)) {
       warnings.push(`${id}: blocked_by must be an array of ids, not ${typeof rec.blocked_by}`);
     }
@@ -19950,6 +19964,44 @@ function validateTicketDag(file) {
     errors.push(`dependency cycle: ${loop}`);
   }
   return { ok: errors.length === 0, errors };
+}
+function validateTicketCoverage(file, cov) {
+  const errors = [];
+  if (cov.story_ids !== void 0) {
+    const claimed = /* @__PURE__ */ new Map();
+    for (const t of file.tickets) {
+      if (t.story_id) {
+        claimed.set(t.story_id, [...claimed.get(t.story_id) ?? [], t.id]);
+      }
+    }
+    const recorded = new Set(cov.story_ids);
+    for (const sid of recorded) {
+      if (!claimed.has(sid)) errors.push(`PRD story ${sid} has no covering ticket`);
+    }
+    for (const [sid, tids] of claimed) {
+      if (!recorded.has(sid)) {
+        errors.push(`${tids.join(", ")} references unknown story id ${sid} (not recorded at the PRD gate)`);
+      }
+    }
+  }
+  if (cov.decision_ids !== void 0) {
+    const claimed = /* @__PURE__ */ new Map();
+    for (const t of file.tickets) {
+      for (const did of t.decision_ids ?? []) {
+        claimed.set(did, [...claimed.get(did) ?? [], t.id]);
+      }
+    }
+    const recorded = new Set(cov.decision_ids);
+    for (const did of recorded) {
+      if (!claimed.has(did)) errors.push(`ADR decision ${did} has no covering ticket`);
+    }
+    for (const [did, tids] of claimed) {
+      if (!recorded.has(did)) {
+        errors.push(`${tids.join(", ")} references unknown decision id ${did} (not recorded at the ADR gate)`);
+      }
+    }
+  }
+  return errors;
 }
 function getNextTicket(file) {
   const byId = new Map(file.tickets.map((t) => [t.id, t]));
@@ -20122,6 +20174,13 @@ function setNikoflowAutonomyMode(directory, autonomyMode, sessionId) {
   const state = readNikoflowState(directory, sessionId);
   if (!state || !state.active) return false;
   state.autonomy_mode = autonomyMode;
+  return writeNikoflowState(directory, state, sessionId);
+}
+function recordNikoflowCoverageIds(directory, ids, sessionId) {
+  const state = readNikoflowState(directory, sessionId);
+  if (!state || !state.active) return false;
+  if (ids.stories !== void 0) state.prd_story_ids = ids.stories;
+  if (ids.decisions !== void 0) state.adr_decision_ids = ids.decisions;
   return writeNikoflowState(directory, state, sessionId);
 }
 function requiresNikoflowHumanGate(state, gate) {
@@ -20603,12 +20662,12 @@ var init_prompts2 = __esm({
     PHASE_BODIES = {
       interview: `Phase \u{1F525} GRILLING. Interrogate the task one question at a time: why, why this way, what alternatives, what risks. If a question can be answered by reading the code, read instead of asking. ${AUTONOMY_MODE_PROTOCOL} In approval-gated mode, or when there is a destructive/external-production/materially branching risk, do not write implementation until the user confirms shared understanding. In autonomous mode, write the shared understanding, state assumptions/evidence, emit the gate, and proceed. GATE \u2014 emit after user confirmation or autonomous shared-understanding is recorded:
 <nikoflow-gate phase="interview" mode="approval-gated|autonomous">CONFIRMED</nikoflow-gate>`,
-      adr: `Phase \u{1F4CB} ADR. Record an architecture decision ONLY if it is hard-to-reverse AND surprising-without-context AND the result of a real trade-off (all three). Give 2+ options, rationale, consequences; write it to docs/adr/NNNN-slug.md. Otherwise record a skip with a reason. GATE \u2014 emit one of:
-<nikoflow-gate phase="adr" decision="docs/adr/NNNN-slug.md">RECORDED</nikoflow-gate>
+      adr: `Phase \u{1F4CB} ADR. Record an architecture decision ONLY if it is hard-to-reverse AND surprising-without-context AND the result of a real trade-off (all three). Give 2+ options, rationale, consequences; write it to docs/adr/NNNN-slug.md. Otherwise record a skip with a reason. Trackable decision ids listed in decision-ids must each be carried by \u22651 ticket later. GATE \u2014 emit one of:
+<nikoflow-gate phase="adr" decision="docs/adr/NNNN-slug.md" decision-ids="ADR-NNNN">RECORDED</nikoflow-gate>
 <nikoflow-gate phase="adr" skip="reason">SKIPPED</nikoflow-gate>`,
-      prd: `Phase \u{1F4C4} PRD. Write "[Actor] can [capability]" with User Stories carrying Given/When/Then acceptance criteria \u2014 no implementation detail. Sketch the test seams (prefer the highest, fewest seams). For money/prod/proxy work, include the preflight evidence as acceptance criteria. Confirm seams with the user only when approval-gated mode or material ambiguity requires it; otherwise record the seams and continue. GATE \u2014 emit after seams are confirmed or recorded:
-<nikoflow-gate phase="prd">SEAMS_CONFIRMED</nikoflow-gate>`,
-      tickets: `Phase \u{1F3AB} TICKETIZATION. Split the PRD into atomic vertical-slice tickets (TSK-001\u2026) that each cut through all layers and are demoable on their own, with acceptance criteria + blocked-by dependencies + a self-verification step. Add an explicit preflight ticket before any money/prod/proxy-impacting deploy or external side effect. Present the breakdown and iterate until the user approves it in approval-gated mode; in autonomous mode, write the artifact, validate the DAG, and continue unless risk is red. GATE \u2014 emit after approval or autonomous validation:
+      prd: `Phase \u{1F4C4} PRD. Write "[Actor] can [capability]" with User Stories carrying Given/When/Then acceptance criteria \u2014 no implementation detail. Sketch the test seams (prefer the highest, fewest seams). For money/prod/proxy work, include the preflight evidence as acceptance criteria. Confirm seams with the user only when approval-gated mode or material ambiguity requires it; otherwise record the seams and continue. Give each User Story a stable id (ST-001\u2026) and list every id in the gate tag's stories attribute \u2014 the Tickets gate enforces that each is covered. GATE \u2014 emit after seams are confirmed or recorded:
+<nikoflow-gate phase="prd" stories="ST-001,ST-002">SEAMS_CONFIRMED</nikoflow-gate>`,
+      tickets: `Phase \u{1F3AB} TICKETIZATION. Split the PRD into atomic vertical-slice tickets (TSK-001\u2026) that each cut through all layers and are demoable on their own, with acceptance criteria + blocked-by dependencies + a self-verification step. Add an explicit preflight ticket before any money/prod/proxy-impacting deploy or external side effect. Tag each ticket with the story_id it implements and decision_ids for any ADR decisions it lands \u2014 the gate blocks uncovered or unknown ids. Present the breakdown and iterate until the user approves it in approval-gated mode; in autonomous mode, write the artifact, validate the DAG, and continue unless risk is red. GATE \u2014 emit after approval or autonomous validation:
 <nikoflow-gate phase="tickets">APPROVED</nikoflow-gate>`,
       execute: `Phase \u{1F534}\u{1F7E2}\u267B\uFE0F EXECUTE (TDD). Work tickets in dependency order, one vertical slice at a time. The loop drives you ticket-by-ticket with a per-ticket prompt and an independent reviewer gate; the phase advances automatically once every ticket is reviewer-approved and done. ${MONEY_CRITICAL_PREFLIGHT}`,
       verify: `Phase \u2705 VERIFICATION. Spawn a fresh, context-isolated independent reviewer; iterate fix \u2192 re-review until local validation (tests/lint/build) is green AND the reviewer scores the changed surface \u2265 9.5/10 or reports no actionable findings. Never accept a passing score while validation is red. For money/prod/proxy work, the reviewer must reject missing or red preflight evidence. GATE \u2014 emit after the reviewer passes on green validation:
@@ -20618,6 +20677,9 @@ var init_prompts2 = __esm({
 });
 
 // src/hooks/nikoflow/gates.ts
+function splitIdList(value) {
+  return [...new Set(value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean))];
+}
 function extractAttribute(attributes, name) {
   const re = ATTR_REGEXES[name] ?? new RegExp(`(?<![\\w-])${name}=(["'])(.*?)\\1`, "i");
   return re.exec(attributes)?.[2];
@@ -20669,6 +20731,14 @@ function detectNikoflowGate(text, opts) {
         result.score = parsed;
       }
     }
+    if (opts.phase === "prd") {
+      const storiesAttr = extractAttribute(attributes, "stories");
+      if (storiesAttr !== void 0) result.stories = splitIdList(storiesAttr);
+    }
+    if (opts.phase === "adr") {
+      const decisionIdsAttr = extractAttribute(attributes, "decision-ids");
+      if (decisionIdsAttr !== void 0) result.decision_ids = splitIdList(decisionIdsAttr);
+    }
     if (opts.phase === "depth") {
       const depthAttr = extractAttribute(attributes, "depth")?.toLowerCase();
       if (!depthAttr || !NIKOFLOW_DEPTHS.includes(depthAttr)) {
@@ -20709,7 +20779,9 @@ var init_gates = __esm({
       depth: /(?<![\w-])depth=(["'])(.*?)\1/i,
       mode: /(?<![\w-])mode=(["'])(.*?)\1/i,
       spec: /(?<![\w-])spec=(["'])(.*?)\1/i,
-      quality: /(?<![\w-])quality=(["'])(.*?)\1/i
+      quality: /(?<![\w-])quality=(["'])(.*?)\1/i,
+      stories: /(?<![\w-])stories=(["'])(.*?)\1/i,
+      "decision-ids": /(?<![\w-])decision-ids=(["'])(.*?)\1/i
     };
     STRIP_CONTINUATION = /<nikoflow-continuation\b[\s\S]*?<\/nikoflow-continuation>/gi;
     STRIP_FENCE_BACKTICK = /```[\s\S]*?```/g;
@@ -20855,6 +20927,7 @@ __export(nikoflow_exports, {
   readNikoflowState: () => readNikoflowState,
   readNikoflowUserTurnAt: () => readNikoflowUserTurnAt,
   readTickets: () => readTickets,
+  recordNikoflowCoverageIds: () => recordNikoflowCoverageIds,
   recordNikoflowUserPrompt: () => recordNikoflowUserPrompt,
   recordVerifyPass: () => recordVerifyPass,
   renderPanel: () => renderPanel,
@@ -20874,6 +20947,7 @@ __export(nikoflow_exports, {
   ticketWorktreeRelPath: () => ticketWorktreeRelPath,
   ticketWorktreeRemoveCmd: () => ticketWorktreeRemoveCmd,
   userRepliedAfterMint: () => userRepliedAfterMint,
+  validateTicketCoverage: () => validateTicketCoverage,
   validateTicketDag: () => validateTicketDag,
   writeNikoflowState: () => writeNikoflowState,
   writeTickets: () => writeTickets
@@ -21470,7 +21544,7 @@ function checkArchitectRejectionInTranscript(sessionId) {
   }
   return { rejected: false, feedback: "" };
 }
-function nikoflowGatePrecondition(gate, workingDir, sessionId) {
+function nikoflowGatePrecondition(gate, workingDir, sessionId, state) {
   if (gate !== "tickets") return null;
   const lint = lintTicketsFile(workingDir, sessionId);
   if (lint.length > 0) {
@@ -21483,6 +21557,13 @@ function nikoflowGatePrecondition(gate, workingDir, sessionId) {
   const dag = validateTicketDag(tickets);
   if (!dag.ok) {
     return `tickets.json is invalid: ${dag.errors.join("; ")}. Fix the breakdown before approving.`;
+  }
+  const cov = validateTicketCoverage(tickets, {
+    story_ids: state.prd_story_ids,
+    decision_ids: state.adr_decision_ids
+  });
+  if (cov.length > 0) {
+    return `ticket coverage gap: ${cov.join("; ")}. Every recorded PRD story / ADR decision needs \u22651 ticket; fix ids before approving.`;
   }
   return null;
 }
@@ -21812,7 +21893,16 @@ async function checkNikoflowLoop(sessionId, directory, cancelInProgress, transcr
       if (match.autonomy_mode) {
         setNikoflowAutonomyMode(workingDir, match.autonomy_mode, sessionId);
       }
-      const preconditionError = nikoflowGatePrecondition(gate, workingDir, sessionId);
+      if (gate === "prd" && match.stories) {
+        recordNikoflowCoverageIds(workingDir, { stories: match.stories }, sessionId);
+      }
+      if (gate === "adr") {
+        const ids = match.payload === "SKIPPED" ? [] : match.decision_ids;
+        if (ids) {
+          recordNikoflowCoverageIds(workingDir, { decisions: ids }, sessionId);
+        }
+      }
+      const preconditionError = nikoflowGatePrecondition(gate, workingDir, sessionId, current);
       if (preconditionError) {
         const rotated = rotateGateRequest(workingDir, gate, sessionId) ?? requestId;
         const rotatedState = readNikoflowState(workingDir, sessionId) ?? current;

@@ -31,6 +31,8 @@ export interface NikoflowTicket {
   id: string;
   /** Optional originating PRD story id. */
   story_id?: string;
+  /** ADR decision ids (e.g. "ADR-0001") this ticket helps implement. */
+  decision_ids?: string[];
   title: string;
   /** Acceptance criteria (checkbox lines). */
   acceptance: string[];
@@ -96,6 +98,9 @@ export function normalizeTicketsFile(raw: unknown): NikoflowTicketsFile | null {
     tickets.push({
       id: rec.id,
       ...(typeof rec.story_id === "string" ? { story_id: rec.story_id } : {}),
+      ...(Array.isArray(rec.decision_ids)
+        ? { decision_ids: asStringArray(rec.decision_ids) }
+        : {}),
       title: rec.title,
       acceptance: asStringArray(rec.acceptance),
       blocked_by: asStringArray(rec.blocked_by),
@@ -151,6 +156,21 @@ export function lintTicketsRaw(raw: unknown): string[] {
       warnings.push(`${label}: id ${JSON.stringify(rec.id)} must match TSK-NNN`);
     }
     if (typeof rec.title !== "string") warnings.push(`${id}: missing string title`);
+    // Coverage ids feed the tickets-gate coverage check — a mistyped shape
+    // would be silently dropped by normalization and skip coverage unnoticed.
+    if ("story_id" in rec && typeof rec.story_id !== "string") {
+      warnings.push(`${id}: story_id must be a string, not ${typeof rec.story_id}`);
+    }
+    if ("decision_ids" in rec && !Array.isArray(rec.decision_ids)) {
+      warnings.push(`${id}: decision_ids must be an array of ids, not ${typeof rec.decision_ids}`);
+    }
+    if (Array.isArray(rec.decision_ids)) {
+      rec.decision_ids.forEach((d, j) => {
+        if (typeof d !== "string" || !d) {
+          warnings.push(`${id}: decision_ids[${j}] must be a non-empty decision id, got ${JSON.stringify(d)}`);
+        }
+      });
+    }
     if ("blocked_by" in rec && !Array.isArray(rec.blocked_by)) {
       warnings.push(`${id}: blocked_by must be an array of ids, not ${typeof rec.blocked_by}`);
     }
@@ -303,6 +323,64 @@ export function validateTicketDag(file: NikoflowTicketsFile): DagValidation {
   }
 
   return { ok: errors.length === 0, errors };
+}
+
+/** Coverage inputs recorded at the PRD/ADR gates. Undefined dimension = untracked (legacy) → skipped. */
+export interface NikoflowCoverage {
+  story_ids?: string[];
+  decision_ids?: string[];
+}
+
+/**
+ * PRD/ADR coverage: every recorded story/decision id must be claimed by ≥1
+ * ticket, and every id a ticket claims must have been recorded at its gate.
+ * A dimension left undefined (legacy state, tactical tier, attr omitted)
+ * contributes nothing — the gate behaves exactly as before. Ids are compared
+ * verbatim (they were user-confirmed as written).
+ */
+export function validateTicketCoverage(
+  file: NikoflowTicketsFile,
+  cov: NikoflowCoverage,
+): string[] {
+  const errors: string[] = [];
+
+  if (cov.story_ids !== undefined) {
+    const claimed = new Map<string, string[]>(); // story id → ticket ids
+    for (const t of file.tickets) {
+      if (t.story_id) {
+        claimed.set(t.story_id, [...(claimed.get(t.story_id) ?? []), t.id]);
+      }
+    }
+    const recorded = new Set(cov.story_ids);
+    for (const sid of recorded) {
+      if (!claimed.has(sid)) errors.push(`PRD story ${sid} has no covering ticket`);
+    }
+    for (const [sid, tids] of claimed) {
+      if (!recorded.has(sid)) {
+        errors.push(`${tids.join(", ")} references unknown story id ${sid} (not recorded at the PRD gate)`);
+      }
+    }
+  }
+
+  if (cov.decision_ids !== undefined) {
+    const claimed = new Map<string, string[]>(); // decision id → ticket ids
+    for (const t of file.tickets) {
+      for (const did of t.decision_ids ?? []) {
+        claimed.set(did, [...(claimed.get(did) ?? []), t.id]);
+      }
+    }
+    const recorded = new Set(cov.decision_ids);
+    for (const did of recorded) {
+      if (!claimed.has(did)) errors.push(`ADR decision ${did} has no covering ticket`);
+    }
+    for (const [did, tids] of claimed) {
+      if (!recorded.has(did)) {
+        errors.push(`${tids.join(", ")} references unknown decision id ${did} (not recorded at the ADR gate)`);
+      }
+    }
+  }
+
+  return errors;
 }
 
 /**

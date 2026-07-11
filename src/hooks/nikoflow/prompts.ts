@@ -132,21 +132,26 @@ const PHASE_BODIES: Record<string, string> = {
     `Phase 📋 ADR. Record an architecture decision ONLY if it is hard-to-reverse AND ` +
     `surprising-without-context AND the result of a real trade-off (all three). Give 2+ ` +
     `options, rationale, consequences; write it to docs/adr/NNNN-slug.md. Otherwise record a ` +
-    `skip with a reason. GATE — emit one of:\n` +
-    `<nikoflow-gate phase="adr" decision="docs/adr/NNNN-slug.md">RECORDED</nikoflow-gate>\n` +
+    `skip with a reason. Trackable decision ids listed in decision-ids must each be carried by ` +
+    `≥1 ticket later. GATE — emit one of:\n` +
+    `<nikoflow-gate phase="adr" decision="docs/adr/NNNN-slug.md" decision-ids="ADR-NNNN">RECORDED</nikoflow-gate>\n` +
     `<nikoflow-gate phase="adr" skip="reason">SKIPPED</nikoflow-gate>`,
   prd:
     `Phase 📄 PRD. Write "[Actor] can [capability]" with User Stories carrying Given/When/Then ` +
     `acceptance criteria — no implementation detail. Sketch the test seams (prefer the highest, ` +
     `fewest seams). For money/prod/proxy work, include the preflight evidence as acceptance criteria. ` +
     `Confirm seams with the user only when approval-gated mode or material ambiguity requires it; ` +
-    `otherwise record the seams and continue. GATE — emit after seams are confirmed or recorded:\n` +
-    `<nikoflow-gate phase="prd">SEAMS_CONFIRMED</nikoflow-gate>`,
+    `otherwise record the seams and continue. Give each User Story a stable id (ST-001…) and list ` +
+    `every id in the gate tag's stories attribute — the Tickets gate enforces that each is covered. ` +
+    `GATE — emit after seams are confirmed or recorded:\n` +
+    `<nikoflow-gate phase="prd" stories="ST-001,ST-002">SEAMS_CONFIRMED</nikoflow-gate>`,
   tickets:
     `Phase 🎫 TICKETIZATION. Split the PRD into atomic vertical-slice tickets (TSK-001…) that ` +
     `each cut through all layers and are demoable on their own, with acceptance criteria + ` +
     `blocked-by dependencies + a self-verification step. Add an explicit preflight ticket before any ` +
-    `money/prod/proxy-impacting deploy or external side effect. Present the breakdown and iterate until ` +
+    `money/prod/proxy-impacting deploy or external side effect. Tag each ticket with the story_id it ` +
+    `implements and decision_ids for any ADR decisions it lands — the gate blocks uncovered or unknown ids. ` +
+    `Present the breakdown and iterate until ` +
     `the user approves it in approval-gated mode; in autonomous mode, write the artifact, validate the DAG, ` +
     `and continue unless risk is red. GATE — emit after approval or autonomous validation:\n` +
     `<nikoflow-gate phase="tickets">APPROVED</nikoflow-gate>`,

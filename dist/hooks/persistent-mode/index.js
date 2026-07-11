@@ -20,7 +20,7 @@ import { readUltraworkState, writeUltraworkState, incrementReinforcement, deacti
 import { resolveToWorktreeRoot, resolveSessionStatePath, resolveStatePath, getOmcRoot } from '../../lib/worktree-paths.js';
 import { readModeState, writeModeState } from '../../lib/mode-state-io.js';
 import { readRalphState, writeRalphState, incrementRalphIteration, clearRalphState, findPrdPath, getPrdCompletionStatus, getRalphContext, getStory, markStoryIncomplete, markStoryArchitectVerified, readVerificationState, startVerification, recordArchitectFeedback, getArchitectVerificationPrompt, getArchitectRejectionContinuationPrompt, detectArchitectApproval, detectArchitectRejection, clearVerificationState, } from '../ralph/index.js';
-import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, setNikoflowAutonomyMode, advanceNikoflowPhase, requiresNikoflowHumanGate, mintGateRequest, rotateGateRequest, clearGateRequest, bumpNikoflowRidMismatch, userRepliedAfterMint, isNikoflowUserTurnFresh, detectNikoflowGate, detectNikoflowReviewerVerdict, readTickets, validateTicketDag, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, getVerifyPrompt, ticketWorktreeBranch, ticketWorktreeMergeCmd, pbtObligation, recordVerifyPass, bumpVerifyNoVerdict, resetVerifyNoVerdict, bumpExecuteStall, resetExecuteStall, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, NIKOFLOW_EXECUTE_ABORT_STALL, deactivateNikoflowLoop, } from '../nikoflow/index.js';
+import { readNikoflowState, incrementNikoflowIteration, getCurrentPhase, isNikoflowComplete, getDepthSelectionPrompt, getPhasePrompt, setNikoflowDepth, setNikoflowAutonomyMode, recordNikoflowCoverageIds, advanceNikoflowPhase, requiresNikoflowHumanGate, mintGateRequest, rotateGateRequest, clearGateRequest, bumpNikoflowRidMismatch, userRepliedAfterMint, isNikoflowUserTurnFresh, detectNikoflowGate, detectNikoflowReviewerVerdict, readTickets, validateTicketDag, validateTicketCoverage, lintTicketsFile, getNextTicket, allTicketsDone, isTicketDeadlock, markTicketStatus, getExecuteTicketPrompt, getVerifyPrompt, ticketWorktreeBranch, ticketWorktreeMergeCmd, pbtObligation, recordVerifyPass, bumpVerifyNoVerdict, resetVerifyNoVerdict, bumpExecuteStall, resetExecuteStall, NIKOFLOW_VERIFY_SCORE_THRESHOLD, NIKOFLOW_VERIFY_MAX_PASSES, NIKOFLOW_VERIFY_MAX_NO_VERDICT, NIKOFLOW_EXECUTE_MAX_STALL, NIKOFLOW_EXECUTE_ABORT_STALL, deactivateNikoflowLoop, } from '../nikoflow/index.js';
 import { checkIncompleteTodos, getNextPendingTodo, isUserAbort, isContextLimitStop, isRateLimitStop, isExplicitCancelCommand, isAuthenticationError, isScheduledWakeupStop, isOversizeToolResultRedirectStop } from '../todo-continuation/index.js';
 import { TODO_CONTINUATION_PROMPT } from '../../installer/hooks.js';
 import { isAutopilotActive } from '../autopilot/index.js';
@@ -755,7 +755,7 @@ const NIKOFLOW_ADVANCING_GATES = new Set(['depth', 'interview', 'adr', 'prd', 't
  * advance), or null when the gate may proceed. TSK-004: the tickets gate needs
  * a valid tickets.json (present, acyclic, no dangling deps) before "APPROVED".
  */
-function nikoflowGatePrecondition(gate, workingDir, sessionId) {
+function nikoflowGatePrecondition(gate, workingDir, sessionId, state) {
     if (gate !== 'tickets')
         return null;
     // Lint the RAW file first so shape errors (blocked_by as a string, bad status)
@@ -771,6 +771,16 @@ function nikoflowGatePrecondition(gate, workingDir, sessionId) {
     const dag = validateTicketDag(tickets);
     if (!dag.ok) {
         return `tickets.json is invalid: ${dag.errors.join('; ')}. Fix the breakdown before approving.`;
+    }
+    // PRD/ADR coverage: ids recorded at those gates must each be claimed by ≥1
+    // ticket, and tickets may not claim unrecorded ids. Undefined dimensions
+    // (legacy state / attr omitted) are skipped — backward compatible.
+    const cov = validateTicketCoverage(tickets, {
+        story_ids: state.prd_story_ids,
+        decision_ids: state.adr_decision_ids,
+    });
+    if (cov.length > 0) {
+        return `ticket coverage gap: ${cov.join('; ')}. Every recorded PRD story / ADR decision needs ≥1 ticket; fix ids before approving.`;
     }
     return null;
 }
@@ -1221,10 +1231,21 @@ export async function checkNikoflowLoop(sessionId, directory, cancelInProgress, 
             if (match.autonomy_mode) {
                 setNikoflowAutonomyMode(workingDir, match.autonomy_mode, sessionId);
             }
+            // Coverage ids ride the passing gate tag: PRD stories from `stories`,
+            // ADR decisions from `decision-ids` (SKIPPED → nothing trackable → []).
+            if (gate === 'prd' && match.stories) {
+                recordNikoflowCoverageIds(workingDir, { stories: match.stories }, sessionId);
+            }
+            if (gate === 'adr') {
+                const ids = match.payload === 'SKIPPED' ? [] : match.decision_ids;
+                if (ids) {
+                    recordNikoflowCoverageIds(workingDir, { decisions: ids }, sessionId);
+                }
+            }
             // Gate confirmed by the user, but some gates also need a valid artifact
             // (e.g. tickets.json). If missing/invalid, block with the error instead of
             // advancing, keeping the same request-id so the fixed artifact re-passes.
-            const preconditionError = nikoflowGatePrecondition(gate, workingDir, sessionId);
+            const preconditionError = nikoflowGatePrecondition(gate, workingDir, sessionId, current);
             if (preconditionError) {
                 // The user approved, but the required artifact is missing/invalid. Rotate
                 // the request-id so this approval cannot silently ratify a DIFFERENT

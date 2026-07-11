@@ -214,3 +214,49 @@ describe("nikoflow anti-self-approval (TSK-003)", () => {
     expect(s.awaiting_gate).toBeUndefined();
   });
 });
+
+describe("nikoflow coverage id attributes (PRD/ADR coverage gate)", () => {
+  const RID = "11111111-2222-3333-4444-555555555555";
+
+  it("extracts, splits, trims and dedupes the prd stories attr", () => {
+    const t = `<nikoflow-gate phase="prd" stories="ST-001, ST-002 ST-002,,  ST-003" request-id="${RID}">SEAMS_CONFIRMED</nikoflow-gate>`;
+    const m = detectNikoflowGate(t, { phase: "prd", requestId: RID });
+    expect(m.matched).toBe(true);
+    expect(m.stories).toEqual(["ST-001", "ST-002", "ST-003"]);
+  });
+
+  it("prd stories attr present but empty → []", () => {
+    const t = `<nikoflow-gate phase="prd" stories="" request-id="${RID}">SEAMS_CONFIRMED</nikoflow-gate>`;
+    const m = detectNikoflowGate(t, { phase: "prd", requestId: RID });
+    expect(m.matched).toBe(true);
+    expect(m.stories).toEqual([]);
+  });
+
+  it("prd stories attr absent → undefined (legacy tag, coverage untracked)", () => {
+    const t = `<nikoflow-gate phase="prd" request-id="${RID}">SEAMS_CONFIRMED</nikoflow-gate>`;
+    const m = detectNikoflowGate(t, { phase: "prd", requestId: RID });
+    expect(m.matched).toBe(true);
+    expect(m.stories).toBeUndefined();
+  });
+
+  it("non-prd phases ignore a stories attr", () => {
+    const t = `<nikoflow-gate phase="interview" stories="ST-001" request-id="${RID}">CONFIRMED</nikoflow-gate>`;
+    const m = detectNikoflowGate(t, { phase: "interview", requestId: RID });
+    expect(m.matched).toBe(true);
+    expect(m.stories).toBeUndefined();
+  });
+
+  it("extracts adr decision-ids on RECORDED", () => {
+    const t = `<nikoflow-gate phase="adr" decision="docs/adr/0001-x.md" decision-ids="ADR-0001,ADR-0002" request-id="${RID}">RECORDED</nikoflow-gate>`;
+    const m = detectNikoflowGate(t, { phase: "adr", requestId: RID });
+    expect(m.matched).toBe(true);
+    expect(m.decision_ids).toEqual(["ADR-0001", "ADR-0002"]);
+  });
+
+  it("adr SKIPPED without decision-ids → undefined (handler maps it to [])", () => {
+    const t = `<nikoflow-gate phase="adr" skip="trivial" request-id="${RID}">SKIPPED</nikoflow-gate>`;
+    const m = detectNikoflowGate(t, { phase: "adr", requestId: RID });
+    expect(m.matched).toBe(true);
+    expect(m.decision_ids).toBeUndefined();
+  });
+});

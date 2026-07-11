@@ -57,6 +57,7 @@ import {
   getPhasePrompt,
   setNikoflowDepth,
   setNikoflowAutonomyMode,
+  recordNikoflowCoverageIds,
   advanceNikoflowPhase,
   requiresNikoflowHumanGate,
   mintGateRequest,
@@ -69,6 +70,7 @@ import {
   detectNikoflowReviewerVerdict,
   readTickets,
   validateTicketDag,
+  validateTicketCoverage,
   lintTicketsFile,
   getNextTicket,
   allTicketsDone,
@@ -1033,7 +1035,8 @@ const NIKOFLOW_ADVANCING_GATES = new Set(['depth', 'interview', 'adr', 'prd', 't
 function nikoflowGatePrecondition(
   gate: string,
   workingDir: string,
-  sessionId?: string,
+  sessionId: string | undefined,
+  state: NikoflowState,
 ): string | null {
   if (gate !== 'tickets') return null;
   // Lint the RAW file first so shape errors (blocked_by as a string, bad status)
@@ -1049,6 +1052,16 @@ function nikoflowGatePrecondition(
   const dag = validateTicketDag(tickets);
   if (!dag.ok) {
     return `tickets.json is invalid: ${dag.errors.join('; ')}. Fix the breakdown before approving.`;
+  }
+  // PRD/ADR coverage: ids recorded at those gates must each be claimed by ≥1
+  // ticket, and tickets may not claim unrecorded ids. Undefined dimensions
+  // (legacy state / attr omitted) are skipped — backward compatible.
+  const cov = validateTicketCoverage(tickets, {
+    story_ids: state.prd_story_ids,
+    decision_ids: state.adr_decision_ids,
+  });
+  if (cov.length > 0) {
+    return `ticket coverage gap: ${cov.join('; ')}. Every recorded PRD story / ADR decision needs ≥1 ticket; fix ids before approving.`;
   }
   return null;
 }
@@ -1588,10 +1601,21 @@ export async function checkNikoflowLoop(
       if (match.autonomy_mode) {
         setNikoflowAutonomyMode(workingDir, match.autonomy_mode, sessionId);
       }
+      // Coverage ids ride the passing gate tag: PRD stories from `stories`,
+      // ADR decisions from `decision-ids` (SKIPPED → nothing trackable → []).
+      if (gate === 'prd' && match.stories) {
+        recordNikoflowCoverageIds(workingDir, { stories: match.stories }, sessionId);
+      }
+      if (gate === 'adr') {
+        const ids = match.payload === 'SKIPPED' ? [] : match.decision_ids;
+        if (ids) {
+          recordNikoflowCoverageIds(workingDir, { decisions: ids }, sessionId);
+        }
+      }
       // Gate confirmed by the user, but some gates also need a valid artifact
       // (e.g. tickets.json). If missing/invalid, block with the error instead of
       // advancing, keeping the same request-id so the fixed artifact re-passes.
-      const preconditionError = nikoflowGatePrecondition(gate, workingDir, sessionId);
+      const preconditionError = nikoflowGatePrecondition(gate, workingDir, sessionId, current);
       if (preconditionError) {
         // The user approved, but the required artifact is missing/invalid. Rotate
         // the request-id so this approval cannot silently ratify a DIFFERENT

@@ -49,6 +49,10 @@ export interface GateMatch {
   payload?: string;
   /** For the verify gate: the reviewer's numeric score, if present. */
   score?: number;
+  /** For the prd gate: story ids from the `stories` attr (undefined = attr absent). */
+  stories?: string[];
+  /** For the adr gate: decision ids from the `decision-ids` attr (undefined = attr absent). */
+  decision_ids?: string[];
 }
 
 // Precompiled attribute matchers for the known gate attributes — avoids a fresh
@@ -62,7 +66,14 @@ const ATTR_REGEXES: Record<string, RegExp> = {
   mode: /(?<![\w-])mode=(["'])(.*?)\1/i,
   spec: /(?<![\w-])spec=(["'])(.*?)\1/i,
   quality: /(?<![\w-])quality=(["'])(.*?)\1/i,
+  stories: /(?<![\w-])stories=(["'])(.*?)\1/i,
+  "decision-ids": /(?<![\w-])decision-ids=(["'])(.*?)\1/i,
 };
+
+/** Split a comma/whitespace-separated id-list attribute into trimmed, deduped ids. */
+function splitIdList(value: string): string[] {
+  return [...new Set(value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean))];
+}
 
 function extractAttribute(attributes: string, name: string): string | undefined {
   // No `g` flag → exec always starts at 0, so a shared precompiled regex is safe.
@@ -171,6 +182,16 @@ export function detectNikoflowGate(
       if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 10) {
         result.score = parsed;
       }
+    }
+    // Coverage id lists ride the gate tag (attr present + empty → []; attr
+    // absent → undefined so legacy tags keep coverage untracked).
+    if (opts.phase === "prd") {
+      const storiesAttr = extractAttribute(attributes, "stories");
+      if (storiesAttr !== undefined) result.stories = splitIdList(storiesAttr);
+    }
+    if (opts.phase === "adr") {
+      const decisionIdsAttr = extractAttribute(attributes, "decision-ids");
+      if (decisionIdsAttr !== undefined) result.decision_ids = splitIdList(decisionIdsAttr);
     }
     if (opts.phase === "depth") {
       const depthAttr = extractAttribute(attributes, "depth")?.toLowerCase();

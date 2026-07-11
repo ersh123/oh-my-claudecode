@@ -62,8 +62,8 @@ the `request-id` that the phase prompt gives you. Emit each tag on its own line.
 
 - Depth (during Grilling): `<nikoflow-gate phase="depth" depth="tactical|standard|deep" request-id="…">CONFIRMED</nikoflow-gate>`
 - Interview: `<nikoflow-gate phase="interview" request-id="…">CONFIRMED</nikoflow-gate>`
-- ADR: `<nikoflow-gate phase="adr" decision="docs/adr/NNNN-slug.md" request-id="…">RECORDED</nikoflow-gate>` or `<nikoflow-gate phase="adr" skip="reason" request-id="…">SKIPPED</nikoflow-gate>`
-- PRD: `<nikoflow-gate phase="prd" request-id="…">SEAMS_CONFIRMED</nikoflow-gate>`
+- ADR: `<nikoflow-gate phase="adr" decision="docs/adr/NNNN-slug.md" decision-ids="ADR-NNNN" request-id="…">RECORDED</nikoflow-gate>` or `<nikoflow-gate phase="adr" skip="reason" request-id="…">SKIPPED</nikoflow-gate>` — each id in `decision-ids` must later be carried by ≥1 ticket's `decision_ids`.
+- PRD: `<nikoflow-gate phase="prd" stories="ST-001,ST-002" request-id="…">SEAMS_CONFIRMED</nikoflow-gate>` — list every User Story id in `stories`; the Tickets gate enforces that each is covered by ≥1 ticket's `story_id`.
 - Tickets: `<nikoflow-gate phase="tickets" request-id="…">APPROVED</nikoflow-gate>` — also requires a valid `tickets.json` (see below).
 - Execute (per ticket): the reviewer emits BOTH a structured verdict and the gate — a bare gate does not count:
   `<nikoflow-verdict spec="pass" quality="approved">findings with file:line / none</nikoflow-verdict>` then
@@ -83,10 +83,12 @@ Anti-self-approval — the gates are enforced, not honour-system:
   in code fences do not count.
 
 tickets.json (session state) shape — the Tickets gate validates it (no cycles, no dangling
-blocked_by, valid shape) before APPROVED is accepted:
+blocked_by, valid shape, and PRD/ADR coverage: every story/decision id recorded at those
+gates needs ≥1 covering ticket, and tickets may not claim unrecorded ids) before APPROVED
+is accepted:
 ```json
 { "version": 1, "tickets": [
-  { "id": "TSK-001", "story_id": "US-1", "title": "…",
+  { "id": "TSK-001", "story_id": "ST-001", "decision_ids": [], "title": "…",
     "acceptance": ["…"], "blocked_by": [], "self_verify": "…",
     "pbt_required": false, "status": "todo" }
 ] }
